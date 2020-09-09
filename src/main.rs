@@ -1,13 +1,12 @@
+use std::fs::File;
+use std::io::prelude::*;
+use std::path::{Path, PathBuf};
+
 use anyhow::Result;
-use futures::prelude::*;
-use futures::stream::FuturesUnordered;
 use log::*;
 use simplelog::*;
 use structopt::StructOpt;
-use tokio::fs::File;
-use tokio::prelude::*;
-
-use std::path::{Path, PathBuf};
+use rayon::prelude::*;
 
 const MEGA: u64 = 1024*1024;
 
@@ -26,21 +25,17 @@ struct Args {
     files: Vec<PathBuf>
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let args = Args::from_args();
     init_logger(args.verbose, args.timestamps);
 
-    let mut processes = args.files.into_iter().map(|file| {
-        tokio::spawn(async move { process_file(&file).await })
-    }).collect::<FuturesUnordered<_>>();
-    while let Some(_fut) = processes.next().await {
-    }
-    Ok(())
+    args.files.into_par_iter().try_for_each(|file| {
+        process_file(&file)
+    })
 }
 
-async fn process_file(path: &Path) -> Result<()> {
-    let _file = open_file(path).await;
+fn process_file(path: &Path) -> Result<()> {
+    let _file = open_file(path);
     Ok(())
 }
 
@@ -68,18 +63,18 @@ fn init_logger(verbosity: u8, timestamps: bool) {
     TermLogger::init(level, builder.build(), TerminalMode::Stderr).expect("Couldn't init logger");
 }
 
-async fn open_file(path: &Path) -> Result<Box<dyn AsRef<[u8]>>>
+fn open_file(path: &Path) -> Result<Box<dyn AsRef<[u8]>>>
 {
-    let mut fh = File::open(path).await?;
-    let file_length = fh.metadata().await?.len();
+    let mut fh = File::open(path)?;
+    let file_length = fh.metadata()?.len();
     if file_length < 10*MEGA {
         debug!("{} is < 10MB, reading to buffer", path.display());
         let mut buffer = Vec::new();
-        fh.read_to_end(&mut buffer).await?;
+        fh.read_to_end(&mut buffer)?;
         Ok(Box::new(buffer))
     } else {
         debug!("{} is > 10MB, memory mapping", path.display());
-        let mapping = unsafe { memmap::Mmap::map(&fh.into_std().await)? };
+        let mapping = unsafe { memmap::Mmap::map(&fh)? };
         Ok(Box::new(mapping))
     }
 }
