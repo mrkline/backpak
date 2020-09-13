@@ -3,12 +3,16 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use fastcdc::FastCDC;
 use log::*;
+use rayon::prelude::*;
+use sha2::{digest::generic_array::GenericArray, Digest, Sha224};
 use simplelog::*;
 use structopt::StructOpt;
-use rayon::prelude::*;
 
-const MEGA: u64 = 1024*1024;
+const MEGA: u64 = 1024 * 1024;
+
+type Sha224Sum = GenericArray<u8, <Sha224 as Digest>::OutputSize>;
 
 #[derive(Debug, StructOpt)]
 #[structopt(verbatim_doc_comment)]
@@ -22,20 +26,48 @@ struct Args {
     #[structopt(short, long)]
     timestamps: bool,
 
-    files: Vec<PathBuf>
+    files: Vec<PathBuf>,
 }
 
 fn main() -> Result<()> {
     let args = Args::from_args();
     init_logger(args.verbose, args.timestamps);
 
-    args.files.into_par_iter().try_for_each(|file| {
-        process_file(&file)
-    })
+    args.files
+        .par_iter()
+        .try_for_each(|file| process_file(&file))
+}
+
+struct Chunk {
+    start: usize,
+    end: usize,
+    hash: Sha224Sum,
 }
 
 fn process_file(path: &Path) -> Result<()> {
-    let _file = open_file(path);
+    let file = open_file(path)?;
+    let file_bytes: &[u8] = (*file).as_ref();
+    let chunks = FastCDC::new(file_bytes, 1024 * 512, 1024 * 1024, 1024 * 1024 * 2);
+    let chunks: Vec<Chunk> = chunks
+        .collect::<Vec<_>>()
+        .into_par_iter()
+        .map(|chunk| {
+            let start = chunk.offset;
+            let end = chunk.offset + chunk.length;
+            let hash = Sha224::digest(&file_bytes[start..end]);
+            Chunk { start, end, hash }
+        })
+        .collect();
+
+    for chunk in chunks {
+        eprintln!(
+            "{}: [{}..{}] {:x}",
+            path.display(),
+            chunk.start,
+            chunk.end,
+            chunk.hash
+        );
+    }
     Ok(())
 }
 
@@ -63,11 +95,10 @@ fn init_logger(verbosity: u8, timestamps: bool) {
     TermLogger::init(level, builder.build(), TerminalMode::Stderr).expect("Couldn't init logger");
 }
 
-fn open_file(path: &Path) -> Result<Box<dyn AsRef<[u8]>>>
-{
+fn open_file(path: &Path) -> Result<Box<dyn AsRef<[u8]>>> {
     let mut fh = File::open(path)?;
     let file_length = fh.metadata()?.len();
-    if file_length < 10*MEGA {
+    if file_length < 10 * MEGA {
         debug!("{} is < 10MB, reading to buffer", path.display());
         let mut buffer = Vec::new();
         fh.read_to_end(&mut buffer)?;
