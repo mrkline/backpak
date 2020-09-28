@@ -45,6 +45,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
+name = "backup-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "fastcdc",
+ "log",
+ "memmap",
+ "rayon",
+ "sha2",
+ "simplelog",
+ "structopt",
+]
+
+[[package]]
 name = "base64"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -524,20 +538,6 @@ dependencies = [
  "libc",
  "wasi 0.10.0+wasi-snapshot-preview1",
  "winapi",
-]
-
-[[package]]
-name = "tokio-test"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "fastcdc",
- "log",
- "memmap",
- "rayon",
- "sha2",
- "simplelog",
- "structopt",
 ]
 
 [[package]]
