@@ -1,11 +1,16 @@
+use std::path::PathBuf;
+use std::sync::mpsc::channel;
+use std::thread;
 
 use anyhow::Result;
 use rayon::prelude::*;
 use simplelog::*;
 use structopt::StructOpt;
-use std::path::PathBuf;
 
 mod chunk;
+mod hashing;
+mod pack;
+mod serialize_hash;
 
 #[derive(Debug, StructOpt)]
 #[structopt(verbatim_doc_comment)]
@@ -26,11 +31,19 @@ fn main() -> Result<()> {
     let args = Args::from_args();
     init_logger(args.verbose, args.timestamps);
 
-    let _chunked_files: Vec<_> = args.files
-        .par_iter()
-        .map(|file| chunk::chunk_file(&file))
-        .collect();
+    let (tx, rx) = channel();
 
+    let packer = thread::spawn(move || pack::pack(rx));
+
+    args.files
+        .into_par_iter()
+        .map(|file| chunk::chunk_file(file))
+        .try_for_each_with::<_, _, Result<()>>(tx, |tx, chunked_file| {
+            tx.send(chunked_file?).expect("Packer exited early");
+            Ok(())
+        })?;
+
+    packer.join().unwrap()?;
     Ok(())
 }
 
@@ -57,4 +70,3 @@ fn init_logger(verbosity: u8, timestamps: bool) {
 
     TermLogger::init(level, builder.build(), TerminalMode::Stderr).expect("Couldn't init logger");
 }
-

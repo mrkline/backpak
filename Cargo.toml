@@ -11,7 +11,18 @@ anyhow = "1.0"
 fastcdc = "1.0"
 log = "0.4"
 memmap = "0.7"
+num_cpus = "1.0"
 sha2 = "0.9"
+serde = "1.0"
+serde_bytes = "0.11"
+serde_derive = "1.0"
+serde_repr = "0.1"
+serde_cbor = "0.11"
 simplelog = "0.7"
 structopt = "0.3.8"
 rayon = "1.4"
+
+
+[dependencies.zstd]
+version = "0.5"
+features = ["zstdmt"]

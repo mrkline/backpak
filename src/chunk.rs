@@ -1,31 +1,41 @@
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use fastcdc::FastCDC;
 use log::*;
 use rayon::prelude::*;
-use sha2::{digest::generic_array::GenericArray, Digest, Sha224};
+use sha2::{Digest, Sha224};
 
-type Sha224Sum = GenericArray<u8, <Sha224 as Digest>::OutputSize>;
+use crate::hashing::Sha224Sum;
 
 const MEGA: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Chunk {
-    start: usize,
-    end: usize,
-    hash: Sha224Sum,
+    pub start: usize,
+    pub end: usize,
+    pub hash: Sha224Sum,
 }
 
 pub struct ChunkedFile {
+    pub name: PathBuf,
     pub file: Box<dyn AsRef<[u8]> + Send>,
-    pub chunks: Vec<Chunk>
+    pub chunks: Vec<Chunk>,
 }
 
-pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
-    let file = open_file(path)?;
+impl ChunkedFile {
+    pub fn iter(&self) -> impl Iterator<Item = (&[u8], Sha224Sum)> {
+        self.chunks.iter().map(move |c| {
+            let file_bytes: &[u8] = (*self.file).as_ref();
+            (&file_bytes[c.start..c.end], c.hash)
+        })
+    }
+}
+
+pub fn chunk_file(path: PathBuf) -> Result<ChunkedFile> {
+    let file = open_file(&path)?;
     let file_bytes: &[u8] = (*file).as_ref();
     let chunks = FastCDC::new(file_bytes, 1024 * 512, 1024 * 1024, 1024 * 1024 * 2);
     let chunks: Vec<fastcdc::Chunk> = chunks.collect();
@@ -51,7 +61,11 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
             chunk.hash
         );
     }
-    Ok(ChunkedFile { file, chunks })
+    Ok(ChunkedFile {
+        name: path,
+        file,
+        chunks,
+    })
 }
 
 fn open_file(path: &Path) -> Result<Box<dyn AsRef<[u8]> + Send>> {
@@ -68,4 +82,3 @@ fn open_file(path: &Path) -> Result<Box<dyn AsRef<[u8]> + Send>> {
         Ok(Box::new(mapping))
     }
 }
-
