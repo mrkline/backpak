@@ -7,11 +7,9 @@ use std::sync::mpsc::Receiver;
 use anyhow::Result;
 use log::*;
 use serde_derive::*;
-use serde_repr::*;
-use sha2::{Digest, Sha224};
 
 use crate::chunk::Chunk;
-use crate::hashing::Sha224Sum;
+use crate::hashing::ObjectId;
 
 pub const DEFAULT_PACK_TARGET_SIZE: u64 = 1024 * 1024 * 100; // 100 MB
 
@@ -65,8 +63,7 @@ pub fn pack(rx: Receiver<Chunk>) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Copy, Clone, Serialize_repr, Deserialize_repr)]
-#[repr(u8)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 enum BlobType {
     Data,
     Tree,
@@ -76,8 +73,7 @@ enum BlobType {
 struct PackManifestEntry {
     blob_type: BlobType,
     length: u32,
-    #[serde(with = "crate::serialize_hash")]
-    hash: Sha224Sum,
+    hash: ObjectId,
 }
 
 type PackManifest = Vec<PackManifestEntry>;
@@ -121,11 +117,11 @@ impl Packfile {
     }
 
     /// Finalize the packfile, returning the manifest and its hash.
-    fn finalize(mut self) -> Result<(Sha224Sum, PackManifest)> {
+    fn finalize(mut self) -> Result<(ObjectId, PackManifest)> {
         let manifest = serde_cbor::to_vec(&self.manifest)?;
         let manifest_len = manifest.len() as u32;
 
-        let hash = Sha224::digest(&manifest);
+        let hash = ObjectId::new(&manifest);
 
         self.writer.write_all(&manifest)?;
 

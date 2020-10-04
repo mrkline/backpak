@@ -7,9 +7,8 @@ use anyhow::Result;
 use fastcdc::FastCDC;
 use log::*;
 use rayon::prelude::*;
-use sha2::{Digest, Sha224};
 
-use crate::hashing::Sha224Sum;
+use crate::hashing::ObjectId;
 
 const MEGA: u64 = 1024 * 1024;
 
@@ -18,7 +17,7 @@ pub struct Chunk {
     file: Arc<dyn AsRef<[u8]> + Send + Sync>,
     start: usize,
     end: usize,
-    pub hash: Sha224Sum,
+    pub hash: ObjectId,
 }
 
 impl Chunk {
@@ -48,7 +47,7 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
             let file = file.clone();
             let start = chunk.offset;
             let end = chunk.offset + chunk.length;
-            let hash = Sha224::digest(&file_bytes[start..end]);
+            let hash = ObjectId::new(&file_bytes[start..end]);
             Chunk {
                 file,
                 start,

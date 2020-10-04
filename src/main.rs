@@ -1,15 +1,12 @@
-use std::path::PathBuf;
-use std::sync::mpsc::channel;
-use std::thread;
-
 use anyhow::Result;
 use simplelog::*;
 use structopt::StructOpt;
 
+mod backup;
 mod chunk;
 mod hashing;
 mod pack;
-mod serialize_hash;
+mod tree;
 
 #[derive(Debug, StructOpt)]
 #[structopt(verbatim_doc_comment)]
@@ -23,25 +20,22 @@ struct Args {
     #[structopt(short, long)]
     timestamps: bool,
 
-    files: Vec<PathBuf>,
+    #[structopt(subcommand)]
+    subcommand: Subcommand,
+}
+
+#[derive(Debug, StructOpt)]
+enum Subcommand {
+    Backup(backup::Args),
 }
 
 fn main() -> Result<()> {
     let args = Args::from_args();
     init_logger(args.verbose, args.timestamps);
 
-    let (tx, rx) = channel();
-
-    let packer = thread::spawn(move || pack::pack(rx));
-
-    for chunks in args.files.iter().map(|file| chunk::chunk_file(&file)) {
-        for chunk in chunks? {
-            tx.send(chunk).expect("Packer exited early");
-        }
+    match args.subcommand {
+        Subcommand::Backup(b) => backup::run(b),
     }
-
-    packer.join().unwrap()?;
-    Ok(())
 }
 
 /// Set up simplelog to spit messages to stderr.
