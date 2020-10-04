@@ -51,8 +51,8 @@ impl<'de> serde::Deserialize<'de> for ObjectId {
     where
         D: serde::Deserializer<'de>,
     {
-        let bytes: &[u8] = serde_bytes::deserialize(deserializer)?;
-        Ok(ObjectId::new(bytes))
+        let bytes: Vec<u8> = serde_bytes::deserialize(deserializer)?;
+        Ok(ObjectId::new(&bytes))
     }
 }
 

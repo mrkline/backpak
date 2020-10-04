@@ -3,6 +3,7 @@ use simplelog::*;
 use structopt::StructOpt;
 
 mod backup;
+mod cat;
 mod chunk;
 mod hashing;
 mod pack;
@@ -27,6 +28,7 @@ struct Args {
 #[derive(Debug, StructOpt)]
 enum Subcommand {
     Backup(backup::Args),
+    Cat(cat::Args),
 }
 
 fn main() -> Result<()> {
@@ -35,6 +37,7 @@ fn main() -> Result<()> {
 
     match args.subcommand {
         Subcommand::Backup(b) => backup::run(b),
+        Subcommand::Cat(b) => cat::run(b),
     }
 }
 

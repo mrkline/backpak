@@ -17,7 +17,7 @@ pub struct Chunk {
     file: Arc<dyn AsRef<[u8]> + Send + Sync>,
     start: usize,
     end: usize,
-    pub hash: ObjectId,
+    pub id: ObjectId,
 }
 
 impl Chunk {
@@ -47,12 +47,12 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
             let file = file.clone();
             let start = chunk.offset;
             let end = chunk.offset + chunk.length;
-            let hash = ObjectId::new(&file_bytes[start..end]);
+            let id = ObjectId::new(&file_bytes[start..end]);
             Chunk {
                 file,
                 start,
                 end,
-                hash,
+                id,
             }
         })
         .collect();
@@ -63,7 +63,7 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
             path.display(),
             chunk.start,
             chunk.end,
-            chunk.hash
+            chunk.id
         );
     }
     Ok(chunks)

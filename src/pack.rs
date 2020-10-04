@@ -1,19 +1,21 @@
 use std::fs::File;
-use std::io;
+use std::io::{self, SeekFrom};
 use std::io::prelude::*;
 use std::path::Path;
 use std::sync::mpsc::Receiver;
 
-use anyhow::Result;
+use anyhow::*;
 use log::*;
 use serde_derive::*;
 
 use crate::chunk::Chunk;
 use crate::hashing::ObjectId;
+use crate::tree::Tree;
 
 pub const DEFAULT_PACK_TARGET_SIZE: u64 = 1024 * 1024 * 100; // 100 MB
 
 type ZstdEncoder<W> = zstd::stream::write::Encoder<W>;
+type ZstdDecoder<R> = zstd::stream::read::Decoder<R>;
 
 /// Packs chunked files received from the given channel.
 pub fn pack(rx: Receiver<Chunk>) -> Result<()> {
@@ -64,19 +66,21 @@ pub fn pack(rx: Receiver<Chunk>) -> Result<()> {
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum BlobType {
     Data,
     Tree,
 }
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-struct PackManifestEntry {
+pub struct PackManifestEntry {
+    #[serde(rename = "type")]
     blob_type: BlobType,
     length: u32,
-    hash: ObjectId,
+    id: ObjectId,
 }
 
-type PackManifest = Vec<PackManifestEntry>;
+pub type PackManifest = Vec<PackManifestEntry>;
 
 struct Packfile {
     writer: ZstdEncoder<File>,
@@ -85,7 +89,9 @@ struct Packfile {
 
 impl Packfile {
     fn new<P: AsRef<Path>>(p: P) -> io::Result<Self> {
-        let fh = File::create(p)?;
+        let mut fh = File::create(p)?;
+        fh.write_all(b"MKBAKPAK")?;
+
         let mut zstd = ZstdEncoder::new(fh, 0)?;
         zstd.multithread(num_cpus::get_physical() as u32)?;
         Ok(Self {
@@ -94,7 +100,7 @@ impl Packfile {
         })
     }
 
-    /// Write the given file chunk to the packfile and put its hash in the manifest.
+    /// Write the given file chunk to the packfile and put its ID in the manifest.
     fn write_file_chunk(&mut self, chunk: &Chunk) -> io::Result<()> {
         let chunk_len: usize = chunk.len();
         assert!(chunk_len <= u32::MAX as usize);
@@ -103,7 +109,22 @@ impl Packfile {
         self.manifest.push(PackManifestEntry {
             blob_type: BlobType::Data,
             length: chunk_len as u32,
-            hash: chunk.hash,
+            id: chunk.id,
+        });
+        Ok(())
+    }
+
+    fn write_tree(&mut self, tree: &Tree) -> Result<()> {
+        let tree_cbor = serde_cbor::to_vec(tree)?;
+        assert!(tree_cbor.len() < u32::MAX as usize);
+
+        let id = ObjectId::new(&tree_cbor);
+
+        self.writer.write_all(&tree_cbor)?;
+        self.manifest.push(PackManifestEntry {
+            blob_type: BlobType::Tree,
+            length: tree_cbor.len() as u32,
+            id
         });
         Ok(())
     }
@@ -116,24 +137,53 @@ impl Packfile {
         Ok(fh.metadata()?.len())
     }
 
-    /// Finalize the packfile, returning the manifest and its hash.
-    fn finalize(mut self) -> Result<(ObjectId, PackManifest)> {
+    /// Finalize the packfile, returning the manifest and its ID.
+    fn finalize(self) -> Result<(ObjectId, PackManifest)> {
+        // Serialize the manifest.
         let manifest = serde_cbor::to_vec(&self.manifest)?;
-        let manifest_len = manifest.len() as u32;
+        // A pack file is identified by the hash of its (uncompressed) manifest.
+        let id = ObjectId::new(&manifest);
 
-        let hash = ObjectId::new(&manifest);
-
-        self.writer.write_all(&manifest)?;
-
+        // Finish the compression stream for blobs and trees.
+        // We'll compress the manifest separately so we can decompress it
+        // without reading everything before it.
         let mut fh: File = self.writer.finish()?;
-        fh.write_all(&manifest_len.to_be_bytes())?;
+
+        // The manifest CBOR will have lots of redundant data - compress it down.
+        // TODO: Is multithreading worth it here?
+        // This shouldn't be much data compared to blobs and trees.
+        let manifest = zstd::block::compress(&manifest, 0)?;
+        let manifest_length = manifest.len() as u32;
+
+        fh.write_all(&manifest)?;
+
+        // Write the length of the (compressed) manifest to the end of the file,
+        // making it simple and fast to examine the manifest:
+        // read the last four bytes, seek to the start of the manifest,
+        // and decompress it.
+        fh.write_all(&manifest_length.to_be_bytes())?;
 
         info!(
-            "After finish: {} bytes, hash {:x}",
+            "After finish: {} bytes, ID {:x}",
             fh.metadata()?.len(),
-            hash
+            id
         );
         fh.sync_all()?;
-        Ok((hash, self.manifest))
+        Ok((id, self.manifest))
     }
+}
+
+pub fn read_packfile_manifest(file: &Path) -> Result<PackManifest> {
+    let mut fh = File::open(file).with_context(|| format!("Couldn't open {}", file.display()))?;
+
+    fh.seek(SeekFrom::End(-4))?;
+    let mut manifest_length: [u8; 4] = [0; 4];
+    fh.read_exact(&mut manifest_length)?;
+
+    let manifest_length = u32::from_be_bytes(manifest_length);
+    fh.seek(SeekFrom::End(-(manifest_length as i64) - 4))?;
+    let decoder = ZstdDecoder::new(fh.take(manifest_length as u64))?;
+
+    let manifest: PackManifest = serde_cbor::from_reader(decoder)?;
+    Ok(manifest)
 }
