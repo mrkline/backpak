@@ -10,7 +10,7 @@ use serde_derive::*;
 use serde_repr::*;
 use sha2::{Digest, Sha224};
 
-use crate::chunk::ChunkedFile;
+use crate::chunk::Chunk;
 use crate::hashing::Sha224Sum;
 
 pub const DEFAULT_PACK_TARGET_SIZE: u64 = 1024 * 1024 * 100; // 100 MB
@@ -18,48 +18,46 @@ pub const DEFAULT_PACK_TARGET_SIZE: u64 = 1024 * 1024 * 100; // 100 MB
 type ZstdEncoder<W> = zstd::stream::write::Encoder<W>;
 
 /// Packs chunked files received from the given channel.
-pub fn pack(rx: Receiver<ChunkedFile>) -> Result<()> {
+pub fn pack(rx: Receiver<Chunk>) -> Result<()> {
     let mut packfile = Packfile::new("temp.pack")?;
 
     let mut bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_PACK_TARGET_SIZE;
 
     // For each chunked file...
-    while let Ok(chunked_file) = rx.recv() {
+    while let Ok(chunk) = rx.recv() {
         // For each chunk in that file...
-        for (chunk, hash) in chunked_file.iter() {
-            // Write the pack into the file, keeping track of how many bytes
-            // we've written so far.
-            packfile.write_file_chunk(chunk, hash)?;
-            bytes_written += chunk.len() as u64;
+        // Write the pack into the file, keeping track of how many bytes
+        // we've written so far.
+        packfile.write_file_chunk(&chunk)?;
+        bytes_written += chunk.len() as u64;
 
-            // We've written as many bytes as we want the pack size to to be,
-            // but we don't know how much they've compressed to.
-            // Flush the compressor to see how much space we've actually taken up.
-            if bytes_written >= bytes_before_next_check {
+        // We've written as many bytes as we want the pack size to to be,
+        // but we don't know how much they've compressed to.
+        // Flush the compressor to see how much space we've actually taken up.
+        if bytes_written >= bytes_before_next_check {
+            debug!(
+                "Wrote {} bytes into pack <TODO>, checking compressed size...",
+                bytes_written
+            );
+
+            let compressed_size = packfile.flush_and_check_size()?;
+
+            // If we're close enough to our target size, stop
+            if compressed_size >= DEFAULT_PACK_TARGET_SIZE * 9 / 10 {
                 debug!(
-                    "Wrote {} bytes into pack <TODO>, checking compressed size...",
-                    bytes_written
+                    "Compressed size is {} (> 90% of {}). Bailing.",
+                    compressed_size, DEFAULT_PACK_TARGET_SIZE
                 );
-
-                let compressed_size = packfile.flush_and_check_size()?;
-
-                // If we're close enough to our target size, stop
-                if compressed_size >= DEFAULT_PACK_TARGET_SIZE * 9 / 10 {
-                    debug!(
-                        "Compressed size is {} (> 90% of {}). Bailing.",
-                        compressed_size, DEFAULT_PACK_TARGET_SIZE
-                    );
-                    break;
-                }
-                // Otherwise, write some more
-                else {
-                    bytes_before_next_check = DEFAULT_PACK_TARGET_SIZE - compressed_size;
-                    debug!(
-                        "Compressed size is {}. Writing another {} bytes",
-                        compressed_size, bytes_before_next_check
-                    );
-                }
+                break;
+            }
+            // Otherwise, write some more
+            else {
+                bytes_before_next_check = DEFAULT_PACK_TARGET_SIZE - compressed_size;
+                debug!(
+                    "Compressed size is {}. Writing another {} bytes",
+                    compressed_size, bytes_before_next_check
+                );
             }
         }
     }
@@ -101,14 +99,15 @@ impl Packfile {
     }
 
     /// Write the given file chunk to the packfile and put its hash in the manifest.
-    fn write_file_chunk(&mut self, chunk: &[u8], hash: Sha224Sum) -> io::Result<()> {
-        assert!(chunk.len() <= u32::MAX as usize);
+    fn write_file_chunk(&mut self, chunk: &Chunk) -> io::Result<()> {
+        let chunk_len: usize = chunk.len();
+        assert!(chunk_len <= u32::MAX as usize);
 
-        self.writer.write_all(chunk)?;
+        self.writer.write_all(chunk.bytes())?;
         self.manifest.push(PackManifestEntry {
             blob_type: BlobType::Data,
-            length: chunk.len() as u32,
-            hash,
+            length: chunk_len as u32,
+            hash: chunk.hash,
         });
         Ok(())
     }

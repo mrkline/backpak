@@ -3,7 +3,6 @@ use std::sync::mpsc::channel;
 use std::thread;
 
 use anyhow::Result;
-use rayon::prelude::*;
 use simplelog::*;
 use structopt::StructOpt;
 
@@ -35,13 +34,11 @@ fn main() -> Result<()> {
 
     let packer = thread::spawn(move || pack::pack(rx));
 
-    args.files
-        .into_par_iter()
-        .map(|file| chunk::chunk_file(file))
-        .try_for_each_with::<_, _, Result<()>>(tx, |tx, chunked_file| {
-            tx.send(chunked_file?).expect("Packer exited early");
-            Ok(())
-        })?;
+    for chunks in args.files.iter().map(|file| chunk::chunk_file(&file)) {
+        for chunk in chunks? {
+            tx.send(chunk).expect("Packer exited early");
+        }
+    }
 
     packer.join().unwrap()?;
     Ok(())
