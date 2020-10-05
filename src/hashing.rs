@@ -4,6 +4,13 @@ use std::io::prelude::*;
 
 use sha2::{digest::generic_array::GenericArray, Digest, Sha224};
 
+static mut HEXIFY: bool = false;
+
+/// HORRENDOUS HACK (see ObjectID's `serialize()`).
+pub unsafe fn hexify_ids() {
+    HEXIFY = true;
+}
+
 /// The hash (a SHA224) used to identify all objects in our system.
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct ObjectId {
@@ -42,7 +49,26 @@ impl fmt::UpperHex for ObjectId {
 
 impl serde::Serialize for ObjectId {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_bytes(self.digest.as_slice())
+        // HORRENDOUS HACK
+        // When saving our actual metadata to disk/cloud, we want to serialize
+        // hashes as their raw bytes, but when printing objects in the `cat`
+        // subcommand, we want hex.
+        //
+        // `serde_hex` won't work because that _always_ makes bytes hex, which
+        // isn't what we want.
+        //
+        // `std::any::Any` won't work because `S` would have to be `'static`,
+        // and we can't put additional bounds on the Serialize trait's `serialize()`.
+        //
+        // `serde_state` might work, but would need more plumbing.
+        //
+        // So hang your head in shame and use a global variable.
+        // (Obvious but worth saying: set it at the start and don't mess with it after.)
+        if unsafe { HEXIFY } {
+            serializer.serialize_str(&format!("{:x}", self))
+        } else {
+            serializer.serialize_bytes(self.digest.as_slice())
+        }
     }
 }
 
