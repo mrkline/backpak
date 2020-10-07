@@ -1,4 +1,6 @@
-use anyhow::Result;
+use std::path::PathBuf;
+
+use anyhow::*;
 use simplelog::*;
 use structopt::StructOpt;
 
@@ -6,6 +8,7 @@ mod backup;
 mod cat;
 mod chunk;
 mod hashing;
+mod init;
 mod pack;
 mod tree;
 
@@ -21,12 +24,16 @@ struct Args {
     #[structopt(short, long)]
     timestamps: bool,
 
+    #[structopt(short, long)]
+    repository: PathBuf,
+
     #[structopt(subcommand)]
     subcommand: Subcommand,
 }
 
 #[derive(Debug, StructOpt)]
 enum Subcommand {
+    Init,
     Backup(backup::Args),
     Cat(cat::Args),
 }
@@ -36,6 +43,7 @@ fn main() -> Result<()> {
     init_logger(args.verbose, args.timestamps);
 
     match args.subcommand {
+        Subcommand::Init => init::run(&args.repository),
         Subcommand::Backup(b) => backup::run(b),
         Subcommand::Cat(b) => cat::run(b),
     }
