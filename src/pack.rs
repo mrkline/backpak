@@ -1,6 +1,6 @@
 use std::fs::File;
-use std::io::{self, SeekFrom};
 use std::io::prelude::*;
+use std::io::{self, SeekFrom};
 use std::path::Path;
 use std::sync::mpsc::Receiver;
 
@@ -14,23 +14,30 @@ use crate::tree::Tree;
 
 pub const DEFAULT_PACK_TARGET_SIZE: u64 = 1024 * 1024 * 100; // 100 MB
 
+const PACK_MAGIC_BYTES: [u8; 8] = *b"MKBAKPAK";
+
 type ZstdEncoder<W> = zstd::stream::write::Encoder<W>;
 type ZstdDecoder<R> = zstd::stream::read::Decoder<R>;
 
+pub enum Blob {
+    Chunk(crate::chunk::Chunk),
+    Tree(crate::tree::Tree),
+}
+
 /// Packs chunked files received from the given channel.
-pub fn pack(rx: Receiver<Chunk>) -> Result<()> {
+pub fn pack(rx: Receiver<Blob>) -> Result<()> {
     let mut packfile = Packfile::new("temp.pack")?;
 
     let mut bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_PACK_TARGET_SIZE;
 
     // For each chunked file...
-    while let Ok(chunk) = rx.recv() {
-        // For each chunk in that file...
-        // Write the pack into the file, keeping track of how many bytes
-        // we've written so far.
-        packfile.write_file_chunk(&chunk)?;
-        bytes_written += chunk.len() as u64;
+    while let Ok(blob) = rx.recv() {
+        // Track how many (uncompressed) bytes we've written to the file so far.
+        bytes_written += match blob {
+            Blob::Chunk(chunk) => packfile.write_file_chunk(&chunk)?,
+            Blob::Tree(tree) => packfile.write_tree(&tree)?,
+        };
 
         // We've written as many bytes as we want the pack size to to be,
         // but we don't know how much they've compressed to.
@@ -90,7 +97,7 @@ struct Packfile {
 impl Packfile {
     fn new<P: AsRef<Path>>(p: P) -> io::Result<Self> {
         let mut fh = File::create(p)?;
-        fh.write_all(b"MKBAKPAK")?;
+        fh.write_all(&PACK_MAGIC_BYTES)?;
 
         let mut zstd = ZstdEncoder::new(fh, 0)?;
         zstd.multithread(num_cpus::get_physical() as u32)?;
@@ -101,32 +108,33 @@ impl Packfile {
     }
 
     /// Write the given file chunk to the packfile and put its ID in the manifest.
-    fn write_file_chunk(&mut self, chunk: &Chunk) -> io::Result<()> {
-        let chunk_len: usize = chunk.len();
-        assert!(chunk_len <= u32::MAX as usize);
+    fn write_file_chunk(&mut self, chunk: &Chunk) -> io::Result<u64> {
+        let chunk_length = chunk.len();
+        assert!(chunk_length <= u32::MAX as usize);
 
         self.writer.write_all(chunk.bytes())?;
         self.manifest.push(PackManifestEntry {
             blob_type: BlobType::Data,
-            length: chunk_len as u32,
+            length: chunk_length as u32,
             id: chunk.id,
         });
-        Ok(())
+        Ok(chunk_length as u64)
     }
 
-    fn write_tree(&mut self, tree: &Tree) -> Result<()> {
+    fn write_tree(&mut self, tree: &Tree) -> Result<u64> {
         let tree_cbor = serde_cbor::to_vec(tree)?;
-        assert!(tree_cbor.len() < u32::MAX as usize);
+        let tree_length = tree_cbor.len();
+        assert!(tree_length < u32::MAX as usize);
 
         let id = ObjectId::new(&tree_cbor);
 
         self.writer.write_all(&tree_cbor)?;
         self.manifest.push(PackManifestEntry {
             blob_type: BlobType::Tree,
-            length: tree_cbor.len() as u32,
-            id
+            length: tree_length as u32,
+            id,
         });
-        Ok(())
+        Ok(tree_length as u64)
     }
 
     /// Flush the compressor and check the size of the packfile so far.
@@ -163,11 +171,7 @@ impl Packfile {
         // and decompress it.
         fh.write_all(&manifest_length.to_be_bytes())?;
 
-        info!(
-            "After finish: {} bytes, ID {:x}",
-            fh.metadata()?.len(),
-            id
-        );
+        info!("After finish: {} bytes, ID {:x}", fh.metadata()?.len(), id);
         fh.sync_all()?;
         Ok((id, self.manifest))
     }
@@ -176,14 +180,34 @@ impl Packfile {
 pub fn read_packfile_manifest(file: &Path) -> Result<PackManifest> {
     let mut fh = File::open(file).with_context(|| format!("Couldn't open {}", file.display()))?;
 
+    check_magic(&mut fh)?;
+
     fh.seek(SeekFrom::End(-4))?;
     let mut manifest_length: [u8; 4] = [0; 4];
     fh.read_exact(&mut manifest_length)?;
 
     let manifest_length = u32::from_be_bytes(manifest_length);
-    fh.seek(SeekFrom::End(-(manifest_length as i64) - 4))?;
+    let manifest_location = -(manifest_length as i64) - 4;
+    fh.seek(SeekFrom::End(manifest_location)).with_context(|| {
+        format!(
+            "Couldn't seek {} bytes from the end of packfile to find manifest",
+            manifest_location
+        )
+    })?;
     let decoder = ZstdDecoder::new(fh.take(manifest_length as u64))?;
 
     let manifest: PackManifest = serde_cbor::from_reader(decoder)?;
     Ok(manifest)
+}
+
+fn check_magic(fh: &mut File) -> Result<()> {
+    let mut magic: [u8; 8] = [0; 8];
+    fh.read_exact(&mut magic)?;
+    ensure!(
+        magic == PACK_MAGIC_BYTES,
+        "Expected magic bytes {}, found {}",
+        unsafe { std::str::from_utf8_unchecked(&PACK_MAGIC_BYTES) },
+        String::from_utf8_lossy(&magic)
+    );
+    Ok(())
 }
