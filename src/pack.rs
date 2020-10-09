@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::io::{self, SeekFrom};
+use std::io::{self, BufWriter, SeekFrom};
 use std::path::Path;
 use std::sync::mpsc::Receiver;
 
@@ -169,7 +169,7 @@ impl Packfile {
         // Finish the compression stream for blobs and trees.
         // We'll compress the manifest separately so we can decompress it
         // without reading everything before it.
-        let mut fh: File = self.writer.finish()?;
+        let mut fh: BufWriter<File> = BufWriter::new(self.writer.finish()?);
 
         // The manifest CBOR will have lots of redundant data - compress it down.
         // TODO: Is multithreading worth it here?
@@ -184,7 +184,11 @@ impl Packfile {
         // read the last four bytes, seek to the start of the manifest,
         // and decompress it.
         fh.write_all(&manifest_length.to_be_bytes())?;
-        info!("After finish: {} bytes, ID {:x}", fh.metadata()?.len(), id);
+        info!(
+            "After finish: {} bytes, ID {:x}",
+            fh.get_ref().metadata()?.len(),
+            id
+        );
         drop(fh);
 
         fs::rename(TEMP_PACKFILE_LOCATION, format!("{:x}.pack", id))?;
