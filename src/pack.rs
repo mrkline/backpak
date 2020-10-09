@@ -59,6 +59,7 @@ pub fn pack(rx: Receiver<Blob>) -> Result<()> {
                 );
                 packfile.finalize()?;
 
+                // TODO: Send the packfile's ID and manifest to some indexer thread.
                 // TODO: Send the completed packfile off to the backend.
 
                 packfile = Packfile::new()?;
@@ -77,6 +78,7 @@ pub fn pack(rx: Receiver<Blob>) -> Result<()> {
     }
     if bytes_written > 0 {
         packfile.finalize()?;
+        // TODO: Send the packfile's ID and manifest to some indexer thread.
         // TODO: Send the completed packfile off to the backend.
     }
     Ok(())

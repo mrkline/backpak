@@ -12,7 +12,7 @@ pub unsafe fn hexify_ids() {
 }
 
 /// The hash (a SHA224) used to identify all objects in our system.
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ObjectId {
     digest: GenericArray<u8, <Sha224 as Digest>::OutputSize>,
 }
