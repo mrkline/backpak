@@ -5,6 +5,7 @@ use std::thread;
 use anyhow::Result;
 use structopt::StructOpt;
 
+use crate::backend;
 use crate::chunk;
 use crate::pack;
 use crate::tree::*;
@@ -15,8 +16,10 @@ pub struct Args {
     files: Vec<PathBuf>,
 }
 
-pub fn run(args: Args) -> Result<()> {
+pub fn run(repository: &str, args: Args) -> Result<()> {
     let (mut tx, rx) = channel();
+
+    let backend = backend::open(repository)?;
 
     let packer = thread::spawn(move || pack::pack(rx));
 
