@@ -1,9 +1,8 @@
-use std::path::PathBuf;
-
 use anyhow::*;
 use simplelog::*;
 use structopt::StructOpt;
 
+mod backend;
 mod backup;
 mod cat;
 mod chunk;
@@ -25,7 +24,7 @@ struct Args {
     timestamps: bool,
 
     #[structopt(short, long)]
-    repository: PathBuf,
+    repository: String,
 
     #[structopt(subcommand)]
     subcommand: Subcommand,
@@ -44,7 +43,7 @@ fn main() -> Result<()> {
 
     match args.subcommand {
         Subcommand::Init => init::run(&args.repository),
-        Subcommand::Backup(b) => backup::run(b),
+        Subcommand::Backup(b) => backup::run(&args.repository, b),
         Subcommand::Cat(b) => cat::run(b),
     }
 }

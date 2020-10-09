@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
 use std::path::Path;
@@ -8,6 +8,7 @@ use anyhow::*;
 use log::*;
 use serde_derive::*;
 
+use crate::backend::Backend;
 use crate::chunk::Chunk;
 use crate::hashing::ObjectId;
 use crate::tree::Tree;
@@ -26,7 +27,7 @@ pub enum Blob {
 
 /// Packs chunked files received from the given channel.
 pub fn pack(rx: Receiver<Blob>) -> Result<()> {
-    let mut packfile = Packfile::new("temp.pack")?;
+    let mut packfile = Packfile::new()?;
 
     let mut bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_PACK_TARGET_SIZE;
@@ -56,7 +57,13 @@ pub fn pack(rx: Receiver<Blob>) -> Result<()> {
                     "Compressed size is {} (> 90% of {}). Bailing.",
                     compressed_size, DEFAULT_PACK_TARGET_SIZE
                 );
-                break;
+                packfile.finalize()?;
+
+                // TODO: Send the completed packfile off to the backend.
+
+                packfile = Packfile::new()?;
+                bytes_written = 0;
+                bytes_before_next_check = DEFAULT_PACK_TARGET_SIZE;
             }
             // Otherwise, write some more
             else {
@@ -68,7 +75,10 @@ pub fn pack(rx: Receiver<Blob>) -> Result<()> {
             }
         }
     }
-    packfile.finalize()?;
+    if bytes_written > 0 {
+        packfile.finalize()?;
+        // TODO: Send the completed packfile off to the backend.
+    }
     Ok(())
 }
 
@@ -94,9 +104,13 @@ struct Packfile {
     manifest: PackManifest,
 }
 
+// TODO: Obviously this should all take place in a configurable temp directory
+
+const TEMP_PACKFILE_LOCATION: &str = "temp.pack";
+
 impl Packfile {
-    fn new<P: AsRef<Path>>(p: P) -> io::Result<Self> {
-        let mut fh = File::create(p)?;
+    fn new() -> io::Result<Self> {
+        let mut fh = File::create(TEMP_PACKFILE_LOCATION)?;
         fh.write_all(&PACK_MAGIC_BYTES)?;
 
         let mut zstd = ZstdEncoder::new(fh, 0)?;
@@ -170,9 +184,11 @@ impl Packfile {
         // read the last four bytes, seek to the start of the manifest,
         // and decompress it.
         fh.write_all(&manifest_length.to_be_bytes())?;
-
         info!("After finish: {} bytes, ID {:x}", fh.metadata()?.len(), id);
-        fh.sync_all()?;
+        drop(fh);
+
+        fs::rename(TEMP_PACKFILE_LOCATION, format!("{:x}.pack", id))?;
+
         Ok((id, self.manifest))
     }
 }
