@@ -7,6 +7,7 @@ mod backup;
 mod cat;
 mod chunk;
 mod hashing;
+mod index;
 mod init;
 mod pack;
 mod tree;
