@@ -7,6 +7,7 @@ use structopt::StructOpt;
 
 use crate::backend;
 use crate::chunk;
+use crate::index;
 use crate::pack;
 use crate::tree::*;
 
@@ -17,18 +18,22 @@ pub struct Args {
 }
 
 pub fn run(repository: &str, args: Args) -> Result<()> {
-    let (mut tx, rx) = channel();
+    let (mut blob_tx, blob_rx) = channel();
+    let (pack_tx, pack_rx) = channel();
 
     let backend = backend::open(repository)?;
 
-    let packer = thread::spawn(move || pack::pack(rx));
+    let packer = thread::spawn(move || pack::pack(blob_rx, pack_tx));
+    let indexer = thread::spawn(move || index::index(pack_rx));
 
-    let tree = pack_tree(&args.files, &mut tx)?;
-    tx.send(pack::Blob::Tree(tree))
+    let tree = pack_tree(&args.files, &mut blob_tx)?;
+    blob_tx
+        .send(pack::Blob::Tree(tree))
         .expect("Packer exited early");
-    drop(tx);
+    drop(blob_tx);
 
     packer.join().unwrap()?;
+    indexer.join().unwrap()?;
     Ok(())
 }
 
