@@ -1,3 +1,5 @@
+use std::io::prelude::*;
+
 use anyhow::Result;
 
 mod fs;
@@ -13,7 +15,18 @@ pub fn determine_type(_repository: &str) -> Result<BackendType> {
     Ok(BackendType::Filesystem)
 }
 
-pub trait Backend {}
+// TODO: Should we make these async? Some backends (such as S3 via Rusoto)
+// are going to be async, but we could `block_on()` for each request...
+pub trait Backend {
+    /// Read from the given key
+    fn read(&mut self, from: &str) -> Result<Box<dyn Read + Send>>;
+
+    /// Write the given read stream to the given key
+    fn write(&mut self, from: &mut dyn Read, to: &str) -> Result<()>;
+
+    /// Lists all keys with the given prefix
+    fn list(&mut self, prefix: &str) -> Result<Vec<String>>;
+}
 
 pub fn initialize(repository: &str) -> Result<()> {
     match determine_type(repository)? {

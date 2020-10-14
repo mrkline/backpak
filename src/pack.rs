@@ -2,13 +2,12 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 use std::io::{self, BufWriter, SeekFrom};
 use std::path::Path;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::*;
 
 use anyhow::*;
 use log::*;
 use serde_derive::*;
 
-use crate::backend::Backend;
 use crate::chunk::Chunk;
 use crate::file_util::check_magic;
 use crate::hashing::ObjectId;
@@ -23,7 +22,11 @@ pub enum Blob {
 }
 
 /// Packs chunked files received from the given channel.
-pub fn pack(rx: Receiver<Blob>, tx: Sender<PackMetadata>) -> Result<()> {
+pub fn pack(
+    rx: Receiver<Blob>,
+    to_index: Sender<PackMetadata>,
+    to_upload: SyncSender<String>,
+) -> Result<()> {
     let mut packfile = Packfile::new()?;
 
     let mut bytes_written: u64 = 0;
@@ -41,7 +44,7 @@ pub fn pack(rx: Receiver<Blob>, tx: Sender<PackMetadata>) -> Result<()> {
         // but we don't know how much they've compressed to.
         // Flush the compressor to see how much space we've actually taken up.
         if bytes_written >= bytes_before_next_check {
-            debug!(
+            trace!(
                 "Wrote {} bytes into pack, checking compressed size...",
                 bytes_written
             );
@@ -50,14 +53,19 @@ pub fn pack(rx: Receiver<Blob>, tx: Sender<PackMetadata>) -> Result<()> {
 
             // If we're close enough to our target size, stop
             if compressed_size >= DEFAULT_TARGET_SIZE * 9 / 10 {
-                debug!(
+                trace!(
                     "Compressed pack size is {} (> 90% of {}). Starting another pack.",
-                    compressed_size, DEFAULT_TARGET_SIZE
+                    compressed_size,
+                    DEFAULT_TARGET_SIZE
                 );
                 let metadata = packfile.finalize()?;
 
-                tx.send(metadata)?;
-                // TODO: Send the completed packfile off to the backend.
+                to_upload
+                    .send(format!("{:x}.pack", metadata.id))
+                    .context("packer -> uploader channel exited early")?;
+                to_index
+                    .send(metadata)
+                    .context("packer -> indexer channel exited early")?;
 
                 packfile = Packfile::new()?;
                 bytes_written = 0;
@@ -66,17 +74,22 @@ pub fn pack(rx: Receiver<Blob>, tx: Sender<PackMetadata>) -> Result<()> {
             // Otherwise, write some more
             else {
                 bytes_before_next_check = DEFAULT_TARGET_SIZE - compressed_size;
-                debug!(
+                trace!(
                     "Compressed pack size is {}. Writing another {} bytes",
-                    compressed_size, bytes_before_next_check
+                    compressed_size,
+                    bytes_before_next_check
                 );
             }
         }
     }
     if bytes_written > 0 {
         let metadata = packfile.finalize()?;
-        tx.send(metadata)?;
-        // TODO: Send the completed packfile off to the backend.
+        to_upload
+            .send(format!("{:x}.pack", metadata.id))
+            .context("packer -> uploader channel exited early")?;
+        to_index
+            .send(metadata)
+            .context("packer -> indexer channel exited early")?;
     }
     Ok(())
 }

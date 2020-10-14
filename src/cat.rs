@@ -14,7 +14,7 @@ pub struct Args {
 
 #[derive(Debug, StructOpt)]
 pub enum Subcommand {
-    Pack { filename: PathBuf }, // TODO: ID! (once we have indexing)
+    Pack { filename: PathBuf },  // TODO: ID! (once we have indexing)
     Index { filename: PathBuf }, // TODO: ID!
 }
 
@@ -27,7 +27,7 @@ pub fn run(args: Args) -> Result<()> {
         Subcommand::Pack { filename } => {
             let manifest = pack::manifest_from_file(&filename)?;
             serde_json::to_writer(std::io::stdout(), &manifest)?;
-        },
+        }
         Subcommand::Index { filename } => {
             let index = index::from_file(&filename)?;
             serde_json::to_writer(std::io::stdout(), &index)?;
