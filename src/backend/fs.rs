@@ -2,6 +2,7 @@ use super::*;
 
 use std::env::set_current_dir;
 use std::fs::*;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use anyhow::*;
@@ -25,7 +26,7 @@ impl FilesystemBackend {
             create_dir(format!("packs/{:02x}", b))?;
         }
 
-        create_dir("index")?;
+        create_dir("indexes")?;
 
         Ok(())
     }
@@ -51,4 +52,23 @@ impl FilesystemBackend {
     }
 }
 
-impl Backend for FilesystemBackend {}
+impl Backend for FilesystemBackend {
+    fn read(&mut self, from: &str) -> Result<Box<dyn Read + Send>> {
+        let from = self.base_directory.join(from);
+        Ok(Box::new(File::open(&from).with_context(|| {
+            format!("Couldn't open {}", from.display())
+        })?))
+    }
+
+    fn write(&mut self, from: &mut dyn Read, to: &str) -> Result<()> {
+        let to = self.base_directory.join(to);
+        let mut fh =
+            File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
+        io::copy(from, &mut fh)?;
+        Ok(())
+    }
+
+    fn list(&mut self, _prefix: &str) -> Result<Vec<String>> {
+        todo!();
+    }
+}

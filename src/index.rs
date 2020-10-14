@@ -3,7 +3,7 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::Path;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, SyncSender};
 
 use anyhow::*;
 use log::*;
@@ -22,7 +22,7 @@ pub struct Index {
     pub packs: BTreeMap<ObjectId, PackManifest>,
 }
 
-pub fn index(rx: Receiver<PackMetadata>) -> Result<()> {
+pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Result<()> {
     let mut index = Index::default();
 
     // For each chunked file...
@@ -33,7 +33,7 @@ pub fn index(rx: Receiver<PackMetadata>) -> Result<()> {
             id
         );
 
-        debug!(
+        trace!(
             "Wrote {} packs into index, checking compressed size...",
             index.packs.len()
         );
@@ -50,9 +50,11 @@ pub fn index(rx: Receiver<PackMetadata>) -> Result<()> {
                 "Index {:x} finished ({} bytes). Starting another...",
                 index_id, compressed_size
             );
-            fs::rename(TEMP_INDEX_LOCATION, format!("{:x}.index", index_id))?;
-
-            // TODO: Send the completed index off to the backend.
+            let id_name = format!("{:x}.index", index_id);
+            fs::rename(TEMP_INDEX_LOCATION, &id_name)?;
+            to_upload
+                .send(id_name.clone())
+                .context("indexer -> uploader channel exited early")?;
 
             index = Index::default();
         }
@@ -60,9 +62,12 @@ pub fn index(rx: Receiver<PackMetadata>) -> Result<()> {
     if index.packs.len() > 0 {
         let (index_id, compressed_size) = write_index(&index)?;
         info!("Index {:x} finished ({} bytes)", index_id, compressed_size);
-        fs::rename(TEMP_INDEX_LOCATION, format!("{:x}.index", index_id))?;
 
-        // TODO: Send the completed index off to the backend.
+        let id_name = format!("{:x}.index", index_id);
+        fs::rename(TEMP_INDEX_LOCATION, &id_name)?;
+        to_upload
+            .send(id_name)
+            .context("indexer -> uploader channel exited early")?;
     }
     Ok(())
 }
@@ -96,7 +101,9 @@ fn write_index(index: &Index) -> Result<(ObjectId, u64)> {
 }
 
 pub fn from_file(file: &Path) -> Result<Index> {
-    let mut fh = BufReader::new(File::open(file).with_context(|| format!("Couldn't open {}", file.display()))?);
+    let mut fh = BufReader::new(
+        File::open(file).with_context(|| format!("Couldn't open {}", file.display()))?,
+    );
 
     check_magic(&mut fh, MAGIC_BYTES)?;
 
