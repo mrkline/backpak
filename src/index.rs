@@ -1,12 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
+use std::io::BufReader;
+use std::path::Path;
 use std::sync::mpsc::Receiver;
 
 use anyhow::*;
 use log::*;
 use serde_derive::*;
 
+use crate::file_util::check_magic;
 use crate::hashing::{HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
 use crate::DEFAULT_TARGET_SIZE;
@@ -90,4 +93,14 @@ fn write_index(index: &Index) -> Result<(ObjectId, u64)> {
     // as the pack list.)
 
     Ok((id, length))
+}
+
+pub fn from_file(file: &Path) -> Result<Index> {
+    let mut fh = BufReader::new(File::open(file).with_context(|| format!("Couldn't open {}", file.display()))?);
+
+    check_magic(&mut fh, MAGIC_BYTES)?;
+
+    let decoder = zstd::stream::read::Decoder::new(fh)?;
+    let index = serde_cbor::from_reader(decoder)?;
+    Ok(index)
 }
