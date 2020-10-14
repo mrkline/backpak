@@ -206,7 +206,7 @@ impl Packfile {
     }
 }
 
-pub fn read_packfile_manifest(file: &Path) -> Result<PackManifest> {
+pub fn manifest_from_file(file: &Path) -> Result<PackManifest> {
     let mut fh = File::open(file).with_context(|| format!("Couldn't open {}", file.display()))?;
 
     check_magic(&mut fh, MAGIC_BYTES)?;
