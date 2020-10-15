@@ -2,6 +2,7 @@ use std::fmt;
 use std::io;
 use std::io::prelude::*;
 
+use anyhow::*;
 use sha2::{digest::generic_array::GenericArray, Digest, Sha224};
 
 static mut HEXIFY: bool = false;
@@ -35,15 +36,22 @@ impl fmt::Debug for ObjectId {
     }
 }
 
-impl fmt::LowerHex for ObjectId {
+impl fmt::Display for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.digest.fmt(f)
+        write!(f, "{:056x}", self.digest)
     }
 }
 
-impl fmt::UpperHex for ObjectId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.digest.fmt(f)
+impl std::str::FromStr for ObjectId {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let bytes = hex::decode(s)?;
+        ensure!(
+            bytes.len() == <Sha224 as Digest>::output_size(),
+            "Expected SHA224 hex"
+        );
+        Ok(ObjectId::from_digest(*GenericArray::from_slice(&bytes)))
     }
 }
 
@@ -65,7 +73,7 @@ impl serde::Serialize for ObjectId {
         // So hang your head in shame and use a global variable.
         // (Obvious but worth saying: set it at the start and don't mess with it after.)
         if unsafe { HEXIFY } {
-            serializer.serialize_str(&format!("{:x}", self))
+            serializer.serialize_str(&format!("{}", self))
         } else {
             serializer.serialize_bytes(self.digest.as_slice())
         }

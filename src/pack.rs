@@ -61,7 +61,7 @@ pub fn pack(
                 let metadata = packfile.finalize()?;
 
                 to_upload
-                    .send(format!("{:x}.pack", metadata.id))
+                    .send(format!("{}.pack", metadata.id))
                     .context("packer -> uploader channel exited early")?;
                 to_index
                     .send(metadata)
@@ -85,7 +85,7 @@ pub fn pack(
     if bytes_written > 0 {
         let metadata = packfile.finalize()?;
         to_upload
-            .send(format!("{:x}.pack", metadata.id))
+            .send(format!("{}.pack", metadata.id))
             .context("packer -> uploader channel exited early")?;
         to_index
             .send(metadata)
@@ -204,13 +204,13 @@ impl Packfile {
         // and decompress it.
         fh.write_all(&manifest_length.to_be_bytes())?;
         info!(
-            "Pack {:x} finished ({} bytes)",
+            "Pack {} finished ({} bytes)",
             id,
             fh.get_ref().metadata()?.len(),
         );
         fh.into_inner()?.sync_all()?;
 
-        fs::rename(TEMP_PACKFILE_LOCATION, format!("{:x}.pack", id))?;
+        fs::rename(TEMP_PACKFILE_LOCATION, format!("{}.pack", id))?;
 
         Ok(PackMetadata {
             id,

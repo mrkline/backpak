@@ -1,6 +1,10 @@
+use std::ffi::OsStr;
 use std::io::prelude::*;
+use std::path::Path;
 
 use anyhow::Result;
+
+use crate::hashing::ObjectId;
 
 mod fs;
 
@@ -26,6 +30,10 @@ pub trait Backend {
 
     /// Lists all keys with the given prefix
     fn list(&mut self, prefix: &str) -> Result<Vec<String>>;
+
+    fn read_index(&mut self, id: ObjectId) -> Result<Box<dyn Read + Send>> {
+        self.read(&format!("indexes/{}.index", id))
+    }
 }
 
 pub fn initialize(repository: &str) -> Result<()> {
@@ -39,4 +47,12 @@ pub fn open(repository: &str) -> Result<Box<dyn Backend + Send>> {
         BackendType::Filesystem => Box::new(fs::FilesystemBackend::open(repository)?),
     };
     Ok(backend)
+}
+
+pub fn destination(src: &str) -> String {
+    match Path::new(src).extension().and_then(OsStr::to_str) {
+        Some("pack") => format!("packs/{}/{}", &src[0..2], src),
+        Some("index") => format!("indexes/{}", src),
+        _ => panic!("Unexpected extension on file to upload: {}", src),
+    }
 }

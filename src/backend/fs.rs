@@ -68,7 +68,33 @@ impl Backend for FilesystemBackend {
         Ok(())
     }
 
-    fn list(&mut self, _prefix: &str) -> Result<Vec<String>> {
-        todo!();
+    fn list(&mut self, prefix: &str) -> Result<Vec<String>> {
+        let prefix = self.base_directory.join(prefix);
+
+        if prefix.is_file() {
+            return Ok(vec![prefix.to_str().expect("non-UTF-8 prefix").to_owned()]);
+        }
+
+        let paths: Vec<String> = walk_dir(&prefix)?
+            .iter()
+            .map(|p| p.strip_prefix(&prefix).unwrap())
+            .map(|p| p.to_str().expect("non-UTF-8 path in fs backend").to_owned())
+            .collect();
+
+        Ok(paths)
     }
+}
+
+fn walk_dir(dir: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            paths.append(&mut walk_dir(&path)?);
+        } else {
+            paths.push(path);
+        }
+    }
+    Ok(paths)
 }
