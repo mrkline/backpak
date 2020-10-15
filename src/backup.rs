@@ -1,6 +1,5 @@
-use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::*;
 use std::thread;
 
@@ -69,18 +68,10 @@ fn upload(backend: &mut dyn backend::Backend, rx: Receiver<String>) -> Result<()
     while let Ok(path) = rx.recv() {
         let mut fh =
             File::open(&path).with_context(|| format!("Couldn't open {} for upload", path))?;
-        let to = destination(&path);
+        let to = backend::destination(&path);
         backend.write(&mut fh, &to)?;
         debug!("Backed up {}. Removing temp copy", path);
         fs::remove_file(&path).with_context(|| format!("Couldn't remove {}", path))?
     }
     Ok(())
-}
-
-fn destination(src: &str) -> String {
-    match Path::new(src).extension().and_then(OsStr::to_str) {
-        Some("pack") => format!("packs/{}/{}", &src[0..2], src),
-        Some("index") => format!("indexes/{}", src),
-        _ => panic!("Unexpected extension on file to upload: {}", src),
-    }
 }

@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::io::BufReader;
-use std::path::Path;
 use std::sync::mpsc::{Receiver, SyncSender};
 
 use anyhow::*;
@@ -29,7 +27,7 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
     while let Ok(PackMetadata { id, manifest }) = rx.recv() {
         ensure!(
             index.packs.insert(id, manifest).is_none(),
-            "Duplicate pack received: {:x}",
+            "Duplicate pack received: {}",
             id
         );
 
@@ -47,10 +45,10 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
         // If we're close enough to our target size, stop
         if compressed_size >= DEFAULT_TARGET_SIZE {
             info!(
-                "Index {:x} finished ({} bytes). Starting another...",
+                "Index {} finished ({} bytes). Starting another...",
                 index_id, compressed_size
             );
-            let id_name = format!("{:x}.index", index_id);
+            let id_name = format!("{}.index", index_id);
             fs::rename(TEMP_INDEX_LOCATION, &id_name)?;
             to_upload
                 .send(id_name.clone())
@@ -59,11 +57,11 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
             index = Index::default();
         }
     }
-    if index.packs.len() > 0 {
+    if !index.packs.is_empty() {
         let (index_id, compressed_size) = write_index(&index)?;
-        info!("Index {:x} finished ({} bytes)", index_id, compressed_size);
+        info!("Index {} finished ({} bytes)", index_id, compressed_size);
 
-        let id_name = format!("{:x}.index", index_id);
+        let id_name = format!("{}.index", index_id);
         fs::rename(TEMP_INDEX_LOCATION, &id_name)?;
         to_upload
             .send(id_name)
@@ -100,14 +98,10 @@ fn write_index(index: &Index) -> Result<(ObjectId, u64)> {
     Ok((id, length))
 }
 
-pub fn from_file(file: &Path) -> Result<Index> {
-    let mut fh = BufReader::new(
-        File::open(file).with_context(|| format!("Couldn't open {}", file.display()))?,
-    );
+pub fn from_reader<R: Read>(r: &mut R) -> Result<Index> {
+    check_magic(r, MAGIC_BYTES)?;
 
-    check_magic(&mut fh, MAGIC_BYTES)?;
-
-    let decoder = zstd::stream::read::Decoder::new(fh)?;
+    let decoder = zstd::stream::read::Decoder::new(r)?;
     let index = serde_cbor::from_reader(decoder)?;
     Ok(index)
 }

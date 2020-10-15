@@ -50,6 +50,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "fastcdc",
+ "hex",
  "log",
  "memmap",
  "num_cpus",
@@ -291,6 +292,12 @@ checksum = "4c30f6d0bc6b00693347368a67d41b58f2fb851215ff1da49e90fe2c5c667151"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "hex"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "644f9158b2f133fd50f5fb3242878846d9eb792e445c893805ff0e3824006e35"
 
 [[package]]
 name = "itertools"

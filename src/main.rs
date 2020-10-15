@@ -48,7 +48,7 @@ fn main() -> Result<()> {
     match args.subcommand {
         Subcommand::Init => init::run(&args.repository),
         Subcommand::Backup(b) => backup::run(&args.repository, b),
-        Subcommand::Cat(b) => cat::run(b),
+        Subcommand::Cat(b) => cat::run(&args.repository, b),
     }
 }
 

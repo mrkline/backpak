@@ -59,7 +59,7 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
 
     for chunk in &chunks {
         trace!(
-            "{}: [{}..{}] {:x}",
+            "{}: [{}..{}] {}",
             path.display(),
             chunk.start,
             chunk.end,
