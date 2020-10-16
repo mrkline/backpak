@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::io::{self, BufWriter, SeekFrom};
+use std::io::{self, BufReader, BufWriter, SeekFrom};
 use std::sync::mpsc::*;
 
 use anyhow::*;
@@ -20,13 +20,36 @@ pub enum Blob {
     Tree(crate::tree::Tree),
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BlobType {
+    Data,
+    Tree,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PackManifestEntry {
+    #[serde(rename = "type")]
+    pub blob_type: BlobType,
+    pub length: u32,
+    pub id: ObjectId,
+}
+
+pub type PackManifest = Vec<PackManifestEntry>;
+
+#[derive(Debug, Clone)]
+pub struct PackMetadata {
+    pub id: ObjectId,
+    pub manifest: PackManifest,
+}
+
 /// Packs chunked files received from the given channel.
 pub fn pack(
     rx: Receiver<Blob>,
     to_index: Sender<PackMetadata>,
     to_upload: SyncSender<String>,
 ) -> Result<()> {
-    let mut packfile = Packfile::new()?;
+    let mut packfile = PackfileWriter::new()?;
 
     let mut bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
@@ -66,7 +89,7 @@ pub fn pack(
                     .send(metadata)
                     .context("packer -> indexer channel exited early")?;
 
-                packfile = Packfile::new()?;
+                packfile = PackfileWriter::new()?;
                 bytes_written = 0;
                 bytes_before_next_check = DEFAULT_TARGET_SIZE;
             }
@@ -93,32 +116,10 @@ pub fn pack(
     Ok(())
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum BlobType {
-    Data,
-    Tree,
-}
-
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-pub struct PackManifestEntry {
-    #[serde(rename = "type")]
-    blob_type: BlobType,
-    length: u32,
-    id: ObjectId,
-}
-
-pub type PackManifest = Vec<PackManifestEntry>;
-
-#[derive(Debug)]
-pub struct PackMetadata {
-    pub id: ObjectId,
-    pub manifest: PackManifest,
-}
-
 type ZstdEncoder<W> = zstd::stream::write::Encoder<W>;
+type ZstdDecoder<R> = zstd::stream::read::Decoder<R>;
 
-struct Packfile {
+struct PackfileWriter {
     writer: ZstdEncoder<File>,
     manifest: PackManifest,
 }
@@ -127,7 +128,7 @@ struct Packfile {
 
 const TEMP_PACKFILE_LOCATION: &str = "temp.pack";
 
-impl Packfile {
+impl PackfileWriter {
     fn new() -> io::Result<Self> {
         let mut fh = File::create(TEMP_PACKFILE_LOCATION)?;
         fh.write_all(MAGIC_BYTES)?;
@@ -220,7 +221,7 @@ impl Packfile {
 }
 
 pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
-    check_magic(r, MAGIC_BYTES)?;
+    check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for packfile")?;
 
     r.seek(SeekFrom::End(-4))?;
     let mut manifest_length: [u8; 4] = [0; 4];
@@ -234,8 +235,31 @@ pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
             manifest_location
         )
     })?;
-    let decoder = zstd::stream::read::Decoder::new(r.take(manifest_length as u64))?;
+    let decoder = ZstdDecoder::new(r.take(manifest_length as u64))
+        .context("Decompression of packfile manifest failed")?;
 
-    let manifest: PackManifest = serde_cbor::from_reader(decoder)?;
+    let manifest: PackManifest =
+        serde_cbor::from_reader(decoder).context("CBOR decodeing of packfile manifest failed")?;
     Ok(manifest)
+}
+
+pub struct PackfileReader<R: Seek + Read> {
+    reader: R,
+    manifest: PackManifest
+}
+
+impl<R: Seek + Read> PackfileReader<R> {
+    pub fn new(mut r: R, manifest_from_index: &PackManifest) -> Result<Self> {
+        let file_manifest = manifest_from_reader(&mut r)?;
+        ensure!(
+            file_manifest == *manifest_from_index,
+            "Index doesn't match the packfile's manifest"
+        );
+
+        Ok(Self { reader: r, manifest: file_manifest })
+    }
+
+    // TODO: Impl iterate? A method that returns an iterator?
+    // Since all blobs are compressed together, we can't seek,
+    // so we have to do a linear run through.
 }

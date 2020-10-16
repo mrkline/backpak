@@ -5,8 +5,6 @@ use std::fs::*;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use anyhow::*;
-
 pub struct FilesystemBackend {
     base_directory: PathBuf,
 }
@@ -79,7 +77,7 @@ impl Backend for FilesystemBackend {
 
         let paths: Vec<String> = walk_dir(&prefix)?
             .iter()
-            .map(|p| p.strip_prefix(&prefix).unwrap())
+            .map(|p| p.strip_prefix(&self.base_directory).unwrap())
             .map(|p| p.to_str().expect("non-UTF-8 path in fs backend").to_owned())
             .collect();
 
