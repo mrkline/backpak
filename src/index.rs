@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::mpsc::{Receiver, SyncSender};
 
@@ -107,13 +108,13 @@ pub fn build_master_index(backend: &dyn Backend) -> Result<Index> {
     let mut loaded_indexes: BTreeMap<ObjectId, BTreeMap<ObjectId, PackManifest>> = BTreeMap::new();
 
     for index in backend.list_indexes()? {
-        // Skip it if it's already on our "supersedes" list
-        let to_load_id = index
-            .strip_suffix(".index")
-            .ok_or_else(|| anyhow!("Index file from backend {} didn't end in `.index`", index))
-            .and_then(ObjectId::from_str)?;
+        let to_load_id = Path::new(&index)
+            .file_stem()
+            .ok_or_else(|| anyhow!("Couldn't determine index ID from {}", index))
+            .and_then(|hex| ObjectId::from_str(hex.to_str().unwrap()))?;
 
-        let mut loaded_index = from_reader(&mut backend.read(&index)?)?;
+        let mut loaded_index = from_reader(&mut backend.read(&index)?)
+            .with_context(|| format!("Couldn't load index {}", index))?;
         superseded_indexes.append(&mut loaded_index.supersedes);
         ensure!(
             loaded_indexes
@@ -142,10 +143,29 @@ pub fn build_master_index(backend: &dyn Backend) -> Result<Index> {
     })
 }
 
-pub fn from_reader<R: Read>(r: &mut R) -> Result<Index> {
-    check_magic(r, MAGIC_BYTES)?;
+/// Given an index, produce a mapping that relates blobs -> their packs
+pub fn blob_to_pack_map(index: &Index) -> Result<BTreeMap<ObjectId, ObjectId>> {
+    let mut mapping = BTreeMap::new();
 
-    let decoder = zstd::stream::read::Decoder::new(r)?;
-    let index = serde_cbor::from_reader(decoder)?;
+    for (pack_id, manifest) in &index.packs {
+        for blob in manifest {
+            ensure!(
+                mapping.insert(blob.id, *pack_id).is_none(),
+                "Duplicate blob {} in pack {}",
+                blob.id,
+                pack_id
+            );
+        }
+    }
+
+    Ok(mapping)
+}
+
+pub fn from_reader<R: Read>(r: &mut R) -> Result<Index> {
+    check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for index file")?;
+
+    let decoder =
+        zstd::stream::read::Decoder::new(r).context("Decompression of index file failed")?;
+    let index = serde_cbor::from_reader(decoder).context("CBOR decoding of index file failed")?;
     Ok(index)
 }

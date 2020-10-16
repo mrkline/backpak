@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::io::prelude::*;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::*;
 
 use crate::hashing::ObjectId;
 
@@ -36,13 +36,17 @@ pub trait Backend {
     // Let's put all the layout-specific stuff here so that we don't have paths
     // spread throughout the codebase.
 
-    fn read_pack(&self, id: ObjectId) -> Result<Box<dyn SeekableReader + Send>> {
+    fn read_pack(&self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send>> {
         let hex = id.to_string();
-        self.read(&format!("packs/{}/{}.pack", &hex[0..2], hex))
+        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
+        self.read(&pack_path)
+            .with_context(|| format!("Couldn't open {}", pack_path))
     }
 
-    fn read_index(&self, id: ObjectId) -> Result<Box<dyn SeekableReader + Send>> {
-        self.read(&format!("indexes/{}.index", id))
+    fn read_index(&self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send>> {
+        let index_path = format!("indexes/{}.index", id);
+        self.read(&index_path)
+            .with_context(|| format!("Couldn't open {}", index_path))
     }
 
     fn list_indexes(&self) -> Result<Vec<String>> {
