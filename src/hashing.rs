@@ -19,7 +19,7 @@ pub struct ObjectId {
 }
 
 impl ObjectId {
-    pub fn new(bytes: &[u8]) -> Self {
+    pub fn hash(bytes: &[u8]) -> Self {
         Self {
             digest: Sha224::digest(bytes),
         }
@@ -32,13 +32,13 @@ impl ObjectId {
 
 impl fmt::Debug for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.digest.fmt(f)
+        write!(f, "{{ digest: {} }}", hex::encode(self.digest))
     }
 }
 
 impl fmt::Display for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:056x}", self.digest)
+        write!(f, "{}", hex::encode(self.digest))
     }
 }
 
@@ -73,7 +73,7 @@ impl serde::Serialize for ObjectId {
         // So hang your head in shame and use a global variable.
         // (Obvious but worth saying: set it at the start and don't mess with it after.)
         if unsafe { HEXIFY } {
-            serializer.serialize_str(&format!("{}", self))
+            serializer.serialize_str(&hex::encode(self.digest.as_slice()))
         } else {
             serializer.serialize_bytes(self.digest.as_slice())
         }
@@ -86,7 +86,7 @@ impl<'de> serde::Deserialize<'de> for ObjectId {
         D: serde::Deserializer<'de>,
     {
         let bytes: Vec<u8> = serde_bytes::deserialize(deserializer)?;
-        Ok(ObjectId::new(&bytes))
+        Ok(ObjectId::from_digest(*GenericArray::from_slice(&bytes)))
     }
 }
 

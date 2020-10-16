@@ -19,20 +19,34 @@ pub fn determine_type(_repository: &str) -> Result<BackendType> {
     Ok(BackendType::Filesystem)
 }
 
+pub trait SeekableReader: Read + Seek {}
+
 // TODO: Should we make these async? Some backends (such as S3 via Rusoto)
 // are going to be async, but we could `block_on()` for each request...
 pub trait Backend {
     /// Read from the given key
-    fn read(&mut self, from: &str) -> Result<Box<dyn Read + Send>>;
+    fn read(&self, from: &str) -> Result<Box<dyn SeekableReader + Send>>;
 
     /// Write the given read stream to the given key
     fn write(&mut self, from: &mut dyn Read, to: &str) -> Result<()>;
 
     /// Lists all keys with the given prefix
-    fn list(&mut self, prefix: &str) -> Result<Vec<String>>;
+    fn list(&self, prefix: &str) -> Result<Vec<String>>;
 
-    fn read_index(&mut self, id: ObjectId) -> Result<Box<dyn Read + Send>> {
+    // Let's put all the layout-specific stuff here so that we don't have paths
+    // spread throughout the codebase.
+
+    fn read_pack(&self, id: ObjectId) -> Result<Box<dyn SeekableReader + Send>> {
+        let hex = id.to_string();
+        self.read(&format!("packs/{}/{}.pack", &hex[0..2], hex))
+    }
+
+    fn read_index(&self, id: ObjectId) -> Result<Box<dyn SeekableReader + Send>> {
         self.read(&format!("indexes/{}.index", id))
+    }
+
+    fn list_indexes(&self) -> Result<Vec<String>> {
+        self.list("indexes/")
     }
 }
 
@@ -49,6 +63,7 @@ pub fn open(repository: &str) -> Result<Box<dyn Backend + Send>> {
     Ok(backend)
 }
 
+/// Returns the desitnation path for the given temp file based on its extension
 pub fn destination(src: &str) -> String {
     match Path::new(src).extension().and_then(OsStr::to_str) {
         Some("pack") => format!("packs/{}/{}", &src[0..2], src),
