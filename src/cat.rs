@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use anyhow::Result;
 use structopt::StructOpt;
 
@@ -16,7 +14,7 @@ pub struct Args {
 
 #[derive(Debug, StructOpt)]
 pub enum Subcommand {
-    Pack { filename: PathBuf }, // TODO: ID! (once we have indexing)
+    Pack { id: ObjectId },
     Index { id: ObjectId },
 }
 
@@ -26,12 +24,13 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
     } // Shame.
 
     match args.subcommand {
-        Subcommand::Pack { filename } => {
-            let manifest = pack::manifest_from_file(&filename)?;
+        Subcommand::Pack { id } => {
+            let backend = backend::open(repository)?;
+            let manifest = pack::manifest_from_reader(&mut backend.read_pack(id)?)?;
             serde_json::to_writer(std::io::stdout(), &manifest)?;
         }
         Subcommand::Index { id } => {
-            let mut backend = backend::open(repository)?;
+            let backend = backend::open(repository)?;
             let index = index::from_reader(&mut backend.read_index(id)?)?;
             serde_json::to_writer(std::io::stdout(), &index)?;
         }

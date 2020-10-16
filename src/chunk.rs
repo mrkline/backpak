@@ -47,7 +47,7 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
             let file = file.clone();
             let start = chunk.offset;
             let end = chunk.offset + chunk.length;
-            let id = ObjectId::new(&file_bytes[start..end]);
+            let id = ObjectId::hash(&file_bytes[start..end]);
             Chunk {
                 file,
                 start,

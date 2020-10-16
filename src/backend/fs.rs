@@ -11,6 +11,8 @@ pub struct FilesystemBackend {
     base_directory: PathBuf,
 }
 
+impl SeekableReader for File {}
+
 impl FilesystemBackend {
     pub fn initialize(repository: &str) -> Result<()> {
         ensure!(
@@ -53,7 +55,7 @@ impl FilesystemBackend {
 }
 
 impl Backend for FilesystemBackend {
-    fn read(&mut self, from: &str) -> Result<Box<dyn Read + Send>> {
+    fn read(&self, from: &str) -> Result<Box<dyn SeekableReader + Send>> {
         let from = self.base_directory.join(from);
         Ok(Box::new(File::open(&from).with_context(|| {
             format!("Couldn't open {}", from.display())
@@ -68,7 +70,7 @@ impl Backend for FilesystemBackend {
         Ok(())
     }
 
-    fn list(&mut self, prefix: &str) -> Result<Vec<String>> {
+    fn list(&self, prefix: &str) -> Result<Vec<String>> {
         let prefix = self.base_directory.join(prefix);
 
         if prefix.is_file() {

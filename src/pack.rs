@@ -1,7 +1,6 @@
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::io::{self, BufWriter, SeekFrom};
-use std::path::Path;
 use std::sync::mpsc::*;
 
 use anyhow::*;
@@ -111,6 +110,7 @@ pub struct PackManifestEntry {
 
 pub type PackManifest = Vec<PackManifestEntry>;
 
+#[derive(Debug)]
 pub struct PackMetadata {
     pub id: ObjectId,
     pub manifest: PackManifest,
@@ -159,7 +159,7 @@ impl Packfile {
         let tree_length = tree_cbor.len();
         assert!(tree_length < u32::MAX as usize);
 
-        let id = ObjectId::new(&tree_cbor);
+        let id = ObjectId::hash(&tree_cbor);
 
         self.writer.write_all(&tree_cbor)?;
         self.manifest.push(PackManifestEntry {
@@ -183,7 +183,7 @@ impl Packfile {
         // Serialize the manifest.
         let manifest = serde_cbor::to_vec(&self.manifest)?;
         // A pack file is identified by the hash of its (uncompressed) manifest.
-        let id = ObjectId::new(&manifest);
+        let id = ObjectId::hash(&manifest);
 
         // Finish the compression stream for blobs and trees.
         // We'll compress the manifest separately so we can decompress it
@@ -219,24 +219,22 @@ impl Packfile {
     }
 }
 
-pub fn manifest_from_file(file: &Path) -> Result<PackManifest> {
-    let mut fh = File::open(file).with_context(|| format!("Couldn't open {}", file.display()))?;
+pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
+    check_magic(r, MAGIC_BYTES)?;
 
-    check_magic(&mut fh, MAGIC_BYTES)?;
-
-    fh.seek(SeekFrom::End(-4))?;
+    r.seek(SeekFrom::End(-4))?;
     let mut manifest_length: [u8; 4] = [0; 4];
-    fh.read_exact(&mut manifest_length)?;
+    r.read_exact(&mut manifest_length)?;
 
     let manifest_length = u32::from_be_bytes(manifest_length);
     let manifest_location = -(manifest_length as i64) - 4;
-    fh.seek(SeekFrom::End(manifest_location)).with_context(|| {
+    r.seek(SeekFrom::End(manifest_location)).with_context(|| {
         format!(
             "Couldn't seek {} bytes from the end of packfile to find manifest",
             manifest_location
         )
     })?;
-    let decoder = zstd::stream::read::Decoder::new(fh.take(manifest_length as u64))?;
+    let decoder = zstd::stream::read::Decoder::new(r.take(manifest_length as u64))?;
 
     let manifest: PackManifest = serde_cbor::from_reader(decoder)?;
     Ok(manifest)

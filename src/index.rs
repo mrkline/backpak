@@ -1,12 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
+use std::str::FromStr;
 use std::sync::mpsc::{Receiver, SyncSender};
 
 use anyhow::*;
 use log::*;
 use serde_derive::*;
 
+use crate::backend::Backend;
 use crate::file_util::check_magic;
 use crate::hashing::{HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
@@ -23,7 +25,7 @@ pub struct Index {
 pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Result<()> {
     let mut index = Index::default();
 
-    // For each chunked file...
+    // For each pack...
     while let Ok(PackMetadata { id, manifest }) = rx.recv() {
         ensure!(
             index.packs.insert(id, manifest).is_none(),
@@ -96,6 +98,48 @@ fn write_index(index: &Index) -> Result<(ObjectId, u64)> {
     // as the pack list.)
 
     Ok((id, length))
+}
+
+pub fn build_master_index(backend: &dyn Backend) -> Result<Index> {
+    let mut superseded_indexes = BTreeSet::new();
+
+    // Don't combine the indexes until we know which ones to exclude.
+    let mut loaded_indexes: BTreeMap<ObjectId, BTreeMap<ObjectId, PackManifest>> = BTreeMap::new();
+
+    for index in backend.list_indexes()? {
+        // Skip it if it's already on our "supersedes" list
+        let to_load_id = index
+            .strip_suffix(".index")
+            .ok_or_else(|| anyhow!("Index file from backend {} didn't end in `.index`", index))
+            .and_then(ObjectId::from_str)?;
+
+        let mut loaded_index = from_reader(&mut backend.read(&index)?)?;
+        superseded_indexes.append(&mut loaded_index.supersedes);
+        ensure!(
+            loaded_indexes
+                .insert(to_load_id, loaded_index.packs)
+                .is_none(),
+            "Duplicate index file {} read from backend!",
+            index
+        );
+    }
+
+    // Strip out superseded indexes.
+    for superseded in &superseded_indexes {
+        if loaded_indexes.remove(&superseded).is_some() {
+            info!("Index {} is superseded and can be deleted.", superseded);
+        }
+    }
+
+    let mut master_pack_map = BTreeMap::new();
+    for index in loaded_indexes.values_mut() {
+        master_pack_map.append(index);
+    }
+
+    Ok(Index {
+        supersedes: superseded_indexes,
+        packs: master_pack_map,
+    })
 }
 
 pub fn from_reader<R: Read>(r: &mut R) -> Result<Index> {
