@@ -1,3 +1,6 @@
+use std::io;
+use std::io::prelude::*;
+
 use anyhow::*;
 use log::*;
 use structopt::StructOpt;
@@ -6,6 +9,7 @@ use crate::backend;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
+use crate::tree;
 
 #[derive(Debug, StructOpt)]
 pub struct Args {
@@ -36,16 +40,35 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
                 .ok_or_else(|| anyhow!("Can't find blob {} in the index", id))?;
             info!("Blob {} found in pack {}", id, containing_pack_id);
             let index_manifest = index.packs.get(containing_pack_id).unwrap();
-            pack::PackfileReader::new(backend.read_pack(&containing_pack_id)?, index_manifest)
-                .with_context(|| format!("Couldn't open pack {}", id))?;
+            let mut reader =
+                pack::PackfileReader::new(backend.read_pack(&containing_pack_id)?, index_manifest)
+                    .with_context(|| format!("Couldn't open pack {}", id))?;
+
+            let (manifest_entry, blob) = reader
+                .iter()?
+                .find(|res| match res {
+                    Ok((entry, _)) => entry.id == id,
+                    Err(_) => false,
+                })
+                .expect("Couldn't find blob in pack")
+                .unwrap();
+            debug_assert!(manifest_entry.id == id);
+            match manifest_entry.blob_type {
+                pack::BlobType::Chunk => io::stdout().write_all(&blob)?,
+                pack::BlobType::Tree => {
+                    let tree: tree::Tree = serde_cbor::from_slice(&blob)
+                        .with_context(|| format!("CBOR decoding of tree {} failed", id))?;
+                    serde_json::to_writer(io::stdout(), &tree)?;
+                }
+            }
         }
         Subcommand::Pack { id } => {
             let manifest = pack::manifest_from_reader(&mut backend.read_pack(&id)?)?;
-            serde_json::to_writer(std::io::stdout(), &manifest)?;
+            serde_json::to_writer(io::stdout(), &manifest)?;
         }
         Subcommand::Index { id } => {
             let index = index::from_reader(&mut backend.read_index(&id)?)?;
-            serde_json::to_writer(std::io::stdout(), &index)?;
+            serde_json::to_writer(io::stdout(), &index)?;
         }
     }
     Ok(())

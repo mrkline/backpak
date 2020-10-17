@@ -7,8 +7,14 @@ use crate::hashing::ObjectId;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeType {
-    File { content: Vec<ObjectId> },
-    Dir { subtree: ObjectId },
+    File {
+        // Restic calls this "content", but "contents" seems more common:
+        // https://english.stackexchange.com/questions/56831/file-content-vs-file-contents
+        contents: Vec<ObjectId>,
+    },
+    Dir {
+        subtree: ObjectId,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -23,7 +23,11 @@ pub enum Blob {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BlobType {
-    Data,
+    /// A chunk of a file.
+    ///
+    /// **TODO:** Restic calls these "data". Should we follow suit?
+    Chunk,
+    /// File and directory metadata
     Tree,
 }
 
@@ -148,7 +152,7 @@ impl PackfileWriter {
 
         self.writer.write_all(chunk.bytes())?;
         self.manifest.push(PackManifestEntry {
-            blob_type: BlobType::Data,
+            blob_type: BlobType::Chunk,
             length: chunk_length as u32,
             id: chunk.id,
         });
@@ -243,9 +247,9 @@ pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
     Ok(manifest)
 }
 
-pub struct PackfileReader<R: Seek + Read> {
+pub struct PackfileReader<R: Read> {
     reader: R,
-    manifest: PackManifest
+    manifest: PackManifest,
 }
 
 impl<R: Seek + Read> PackfileReader<R> {
@@ -256,10 +260,54 @@ impl<R: Seek + Read> PackfileReader<R> {
             "Index doesn't match the packfile's manifest"
         );
 
-        Ok(Self { reader: r, manifest: file_manifest })
+        Ok(Self {
+            reader: r,
+            manifest: file_manifest,
+        })
     }
 
-    // TODO: Impl iterate? A method that returns an iterator?
-    // Since all blobs are compressed together, we can't seek,
-    // so we have to do a linear run through.
+    pub fn iter(&mut self) -> Result<PackIterator<R>> {
+        self.reader
+            .seek(SeekFrom::Start(MAGIC_BYTES.len() as u64))?;
+        let decoder = ZstdDecoder::new(&mut self.reader)?;
+        Ok(PackIterator {
+            decoder,
+            manifest: &self.manifest,
+            manifest_index: 0,
+        })
+    }
+}
+
+// TODO: Use streaming-iterator to avoid allocating a fresh buffer each time, etc.
+pub struct PackIterator<'a, R: Read> {
+    decoder: ZstdDecoder<BufReader<&'a mut R>>,
+    manifest: &'a PackManifest,
+    manifest_index: usize,
+}
+
+impl<'a, R: Read> Iterator for PackIterator<'a, R> {
+    type Item = Result<(PackManifestEntry, Vec<u8>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.manifest_index >= self.manifest.len() {
+            return None;
+        }
+        Some(self.get_next())
+    }
+}
+
+impl<'a, R: Read> PackIterator<'a, R> {
+    // Next, with the None case out of the way for easier error handling
+    fn get_next(&mut self) -> Result<(PackManifestEntry, Vec<u8>)> {
+        let next_entry = self.manifest[self.manifest_index];
+        let mut buf = Vec::with_capacity(next_entry.length as usize);
+
+        let mut blob_reader = (&mut self.decoder).take(next_entry.length as u64);
+        blob_reader
+            .read_to_end(&mut buf)
+            .with_context(|| format!("Couldn't read bytes for blob {}", next_entry.id))?;
+
+        self.manifest_index += 1;
+        Ok((next_entry, buf))
+    }
 }
