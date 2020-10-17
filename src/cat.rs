@@ -40,19 +40,13 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
                 .ok_or_else(|| anyhow!("Can't find blob {} in the index", id))?;
             info!("Blob {} found in pack {}", id, containing_pack_id);
             let index_manifest = index.packs.get(containing_pack_id).unwrap();
-            let mut reader =
-                pack::PackfileReader::new(backend.read_pack(&containing_pack_id)?, index_manifest)
-                    .with_context(|| format!("Couldn't open pack {}", id))?;
 
-            let (manifest_entry, blob) = reader
-                .iter()?
-                .find(|res| match res {
-                    Ok((entry, _)) => entry.id == id,
-                    Err(_) => false,
-                })
-                .expect("Couldn't find blob in pack")
-                .unwrap();
+            let mut reader = backend.read_pack(&containing_pack_id)?;
+
+            let (manifest_entry, blob) = pack::extract_blob(&mut reader, &id, &index_manifest)?;
+
             debug_assert!(manifest_entry.id == id);
+            assert!(!blob.is_empty());
             match manifest_entry.blob_type {
                 pack::BlobType::Chunk => io::stdout().write_all(&blob)?,
                 pack::BlobType::Tree => {

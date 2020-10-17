@@ -90,22 +90,45 @@ impl<'de> serde::Deserialize<'de> for ObjectId {
     }
 }
 
-pub struct HashingWriter<W> {
-    inner: W,
+pub struct HashingReader<R> {
+    inner: R,
     hasher: Sha224,
 }
 
-#[allow(dead_code)]
-impl<W: Write> HashingWriter<W> {
-    pub fn new(inner: W) -> Self {
+impl<R: Read> HashingReader<R> {
+    pub fn new(inner: R) -> Self {
         Self {
             inner,
             hasher: Sha224::new(),
         }
     }
 
-    pub fn inner(&self) -> &W {
-        &self.inner
+    pub fn finalize(self) -> (ObjectId, R) {
+        (ObjectId::from_digest(self.hasher.finalize()), self.inner)
+    }
+}
+
+impl<R: Read> Read for HashingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read_result = self.inner.read(buf);
+        if let Ok(count) = read_result {
+            self.hasher.update(&buf[..count]);
+        }
+        read_result
+    }
+}
+
+pub struct HashingWriter<W> {
+    inner: W,
+    hasher: Sha224,
+}
+
+impl<W: Write> HashingWriter<W> {
+    pub fn new(inner: W) -> Self {
+        Self {
+            inner,
+            hasher: Sha224::new(),
+        }
     }
 
     pub fn finalize(self) -> (ObjectId, W) {
