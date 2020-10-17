@@ -49,15 +49,15 @@ fn pack_tree(paths: &[PathBuf], tx: &mut Sender<pack::Blob>) -> Result<Tree> {
     for path in paths {
         if path.is_dir() {
         } else {
-            let mut content = Vec::new();
+            let mut contents = Vec::new();
             for chunk in chunk::chunk_file(&path)? {
-                content.push(chunk.id);
+                contents.push(chunk.id);
                 tx.send(pack::Blob::Chunk(chunk))
                     .context("backup -> packer channel exited early")?;
             }
             nodes.push(Node {
                 name: PathBuf::from(path.file_name().expect("Given path ended in ..")),
-                node_type: NodeType::File { content },
+                node_type: NodeType::File { contents },
             });
         }
     }
