@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::io::{self, BufReader, BufWriter, SeekFrom};
+use std::io::{self, BufWriter, SeekFrom};
 use std::sync::mpsc::*;
 
 use anyhow::*;
@@ -9,7 +9,7 @@ use serde_derive::*;
 
 use crate::chunk::Chunk;
 use crate::file_util::check_magic;
-use crate::hashing::ObjectId;
+use crate::hashing::{HashingReader, ObjectId};
 use crate::tree::Tree;
 use crate::DEFAULT_TARGET_SIZE;
 
@@ -247,67 +247,47 @@ pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
     Ok(manifest)
 }
 
-pub struct PackfileReader<R: Read> {
-    reader: R,
-    manifest: PackManifest,
-}
+/// Extracts a single blob from a packfile.
+/// Useful for `cat blob`.
+pub fn extract_blob<R: Read>(
+    packfile: &mut R,
+    blob_id: &ObjectId,
+    manifest_from_index: &PackManifest,
+) -> Result<(PackManifestEntry, Vec<u8>)> {
+    assert!(
+        manifest_from_index
+            .iter()
+            .find(|entry| entry.id == *blob_id)
+            .is_some(),
+        "Given blob ID isn't in the given index"
+    );
 
-impl<R: Seek + Read> PackfileReader<R> {
-    pub fn new(mut r: R, manifest_from_index: &PackManifest) -> Result<Self> {
-        let file_manifest = manifest_from_reader(&mut r)?;
-        ensure!(
-            file_manifest == *manifest_from_index,
-            "Index doesn't match the packfile's manifest"
-        );
+    check_magic(packfile, MAGIC_BYTES).context("Wrong magic bytes for packfile")?;
 
-        Ok(Self {
-            reader: r,
-            manifest: file_manifest,
-        })
-    }
+    let mut decoder = ZstdDecoder::new(packfile).context("Decompression of blob stream failed")?;
 
-    pub fn iter(&mut self) -> Result<PackIterator<R>> {
-        self.reader
-            .seek(SeekFrom::Start(MAGIC_BYTES.len() as u64))?;
-        let decoder = ZstdDecoder::new(&mut self.reader)?;
-        Ok(PackIterator {
-            decoder,
-            manifest: &self.manifest,
-            manifest_index: 0,
-        })
-    }
-}
+    let mut sink = io::sink();
 
-// TODO: Use streaming-iterator to avoid allocating a fresh buffer each time, etc.
-pub struct PackIterator<'a, R: Read> {
-    decoder: ZstdDecoder<BufReader<&'a mut R>>,
-    manifest: &'a PackManifest,
-    manifest_index: usize,
-}
+    for entry in manifest_from_index {
+        if entry.id == *blob_id {
+            let mut hashing_decoder = HashingReader::new(decoder.take(entry.length as u64));
 
-impl<'a, R: Read> Iterator for PackIterator<'a, R> {
-    type Item = Result<(PackManifestEntry, Vec<u8>)>;
+            let mut buf = Vec::with_capacity(entry.length as usize);
+            hashing_decoder.read_to_end(&mut buf)?;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.manifest_index >= self.manifest.len() {
-            return None;
+            let (hash, _) = hashing_decoder.finalize();
+            ensure!(
+                *blob_id == hash,
+                "Calculated hash of blob ({}) doesn't match ID {}",
+                hash,
+                *blob_id
+            );
+
+            return Ok((*entry, buf));
+        } else {
+            io::copy(&mut (&mut decoder).take(entry.length as u64), &mut sink)?;
         }
-        Some(self.get_next())
     }
-}
 
-impl<'a, R: Read> PackIterator<'a, R> {
-    // Next, with the None case out of the way for easier error handling
-    fn get_next(&mut self) -> Result<(PackManifestEntry, Vec<u8>)> {
-        let next_entry = self.manifest[self.manifest_index];
-        let mut buf = Vec::with_capacity(next_entry.length as usize);
-
-        let mut blob_reader = (&mut self.decoder).take(next_entry.length as u64);
-        blob_reader
-            .read_to_end(&mut buf)
-            .with_context(|| format!("Couldn't read bytes for blob {}", next_entry.id))?;
-
-        self.manifest_index += 1;
-        Ok((next_entry, buf))
-    }
+    unreachable!();
 }
