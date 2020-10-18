@@ -5,6 +5,7 @@ use structopt::StructOpt;
 mod backend;
 mod backup;
 mod cat;
+mod check;
 mod chunk;
 mod file_util;
 mod hashing;
@@ -39,6 +40,7 @@ enum Subcommand {
     Init,
     Backup(backup::Args),
     Cat(cat::Args),
+    Check(check::Args),
 }
 
 fn main() -> Result<()> {
@@ -48,7 +50,8 @@ fn main() -> Result<()> {
     match args.subcommand {
         Subcommand::Init => init::run(&args.repository),
         Subcommand::Backup(b) => backup::run(&args.repository, b),
-        Subcommand::Cat(b) => cat::run(&args.repository, b),
+        Subcommand::Cat(c) => cat::run(&args.repository, c),
+        Subcommand::Check(c) => check::run(&args.repository, c),
     }
 }
 
