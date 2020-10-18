@@ -8,7 +8,7 @@ use log::*;
 use serde_derive::*;
 
 use crate::chunk::Chunk;
-use crate::file_util::check_magic;
+use crate::file_util;
 use crate::hashing::{HashingReader, ObjectId};
 use crate::tree::Tree;
 use crate::DEFAULT_TARGET_SIZE;
@@ -224,8 +224,33 @@ impl PackfileWriter {
     }
 }
 
+/// Verifies everything in the packfile matches the given manifest from the index.
+pub fn verify<R: Read>(packfile: &mut R, manifest_from_index: &PackManifest) -> Result<()> {
+    check_magic(packfile)?;
+
+    let mut decoder = ZstdDecoder::new(packfile).context("Decompression of blob stream failed")?;
+
+    for entry in manifest_from_index {
+        let mut hashing_decoder = HashingReader::new((&mut decoder).take(entry.length as u64));
+
+        let mut buf = Vec::with_capacity(entry.length as usize);
+        hashing_decoder.read_to_end(&mut buf)?;
+
+        let (hash, _) = hashing_decoder.finalize();
+        ensure!(
+            entry.id == hash,
+            "Calculated hash of blob ({}) doesn't match ID {}",
+            hash,
+            entry.id
+        );
+        debug!("Blob {} matches its ID", entry.id);
+    }
+
+    Ok(())
+}
+
 pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
-    check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for packfile")?;
+    check_magic(r)?;
 
     r.seek(SeekFrom::End(-4))?;
     let mut manifest_length: [u8; 4] = [0; 4];
@@ -262,7 +287,7 @@ pub fn extract_blob<R: Read>(
         "Given blob ID isn't in the given index"
     );
 
-    check_magic(packfile, MAGIC_BYTES).context("Wrong magic bytes for packfile")?;
+    check_magic(packfile)?;
 
     let mut decoder = ZstdDecoder::new(packfile).context("Decompression of blob stream failed")?;
 
@@ -290,4 +315,8 @@ pub fn extract_blob<R: Read>(
     }
 
     unreachable!();
+}
+
+fn check_magic<R: Read>(r: &mut R) -> Result<()> {
+    file_util::check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for packfile")
 }
