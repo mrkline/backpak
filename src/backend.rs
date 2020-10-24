@@ -60,7 +60,7 @@ pub fn initialize(repository: &str) -> Result<()> {
     }
 }
 
-pub fn open(repository: &str) -> Result<Box<dyn Backend + Send>> {
+pub fn open(repository: &str) -> Result<Box<dyn Backend + Send + Sync>> {
     let backend = match determine_type(repository)? {
         BackendType::Filesystem => Box::new(fs::FilesystemBackend::open(repository)?),
     };

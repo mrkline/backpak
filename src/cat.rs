@@ -57,7 +57,9 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
             }
         }
         Subcommand::Pack { id } => {
-            let manifest = pack::manifest_from_reader(&mut backend.read_pack(&id)?)?;
+            let mut pack = backend.read_pack(&id)?;
+            pack::check_magic(&mut pack)?;
+            let manifest = pack::manifest_from_reader(&mut pack)?;
             serde_json::to_writer(io::stdout(), &manifest)?;
         }
         Subcommand::Index { id } => {
