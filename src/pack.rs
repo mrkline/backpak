@@ -225,7 +225,7 @@ impl PackfileWriter {
 }
 
 /// Verifies everything in the packfile matches the given manifest from the index.
-pub fn verify<R: Read>(packfile: &mut R, manifest_from_index: &PackManifest) -> Result<()> {
+pub fn verify<R: Read + Seek>(packfile: &mut R, manifest_from_index: &PackManifest) -> Result<()> {
     check_magic(packfile)?;
 
     let mut decoder = ZstdDecoder::new(packfile).context("Decompression of blob stream failed")?;
@@ -243,15 +243,26 @@ pub fn verify<R: Read>(packfile: &mut R, manifest_from_index: &PackManifest) -> 
             hash,
             entry.id
         );
-        debug!("Blob {} matches its ID", entry.id);
+        trace!("Blob {} matches its ID", entry.id);
     }
+
+    // Attempting to read the manifest using `serde_cbor::from_reader()`
+    // without the correct `take()` length produces errors.
+    // Should we rearrange the file so that isn't a problem?
+    // Or is that fine, since verification isn't as performance critical
+    // as other interactions?
+    let mut packfile = decoder.finish();
+    let manifest_from_file = manifest_from_reader(&mut packfile)?;
+
+    ensure!(
+        *manifest_from_index == manifest_from_file,
+        "Pack manifest doesn't match its index entry and file contents"
+    );
 
     Ok(())
 }
 
 pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
-    check_magic(r)?;
-
     r.seek(SeekFrom::End(-4))?;
     let mut manifest_length: [u8; 4] = [0; 4];
     r.read_exact(&mut manifest_length)?;
@@ -268,7 +279,7 @@ pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
         .context("Decompression of packfile manifest failed")?;
 
     let manifest: PackManifest =
-        serde_cbor::from_reader(decoder).context("CBOR decodeing of packfile manifest failed")?;
+        serde_cbor::from_reader(decoder).context("CBOR decoding of packfile manifest failed")?;
     Ok(manifest)
 }
 
@@ -317,6 +328,6 @@ pub fn extract_blob<R: Read>(
     unreachable!();
 }
 
-fn check_magic<R: Read>(r: &mut R) -> Result<()> {
+pub fn check_magic<R: Read>(r: &mut R) -> Result<()> {
     file_util::check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for packfile")
 }
