@@ -20,30 +20,50 @@ pub struct Args {
 }
 
 pub fn run(repository: &str, args: Args) -> Result<()> {
-    let (mut blob_tx, blob_rx) = channel();
-    let (pack_tx, pack_rx) = channel();
-    let (pack_upload_tx, upload_rx) = sync_channel(1);
-    let index_upload_tx = pack_upload_tx.clone();
+    let (chunk_tx, chunk_rx) = channel();
+    let (tree_tx, tree_rx) = channel();
+    let (chunk_pack_tx, pack_rx) = channel();
+    let tree_pack_tx = chunk_pack_tx.clone();
+    let (chunk_pack_upload_tx, upload_rx) = sync_channel(1);
+    let tree_pack_upload_tx = chunk_pack_upload_tx.clone();
+    let index_upload_tx = chunk_pack_upload_tx.clone();
 
     let mut backend = backend::open(repository)?;
 
-    let packer = thread::spawn(move || pack::pack(blob_rx, pack_tx, pack_upload_tx));
+    // TODO: Get these paths out of config? Some constants in a shared module?
+    let chunk_packer = thread::spawn(move || {
+        pack::pack(
+            "temp-chunks.pack",
+            chunk_rx,
+            chunk_pack_tx,
+            chunk_pack_upload_tx,
+        )
+    });
+    let tree_packer = thread::spawn(move || {
+        pack::pack(
+            "temp-trees.pack",
+            tree_rx,
+            tree_pack_tx,
+            tree_pack_upload_tx,
+        )
+    });
     let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
     let uploader = thread::spawn(move || upload(&mut *backend, upload_rx));
 
-    let tree = pack_tree(&args.files, &mut blob_tx)?;
-    blob_tx
+    let tree = pack_tree(&args.files, chunk_tx)?;
+    tree_tx
         .send(pack::Blob::Tree(tree))
-        .expect("backup -> packer channel exited early");
-    drop(blob_tx);
+        .expect("backup -> tree packer channel exited early");
+    drop(tree_tx);
 
-    packer.join().unwrap()?;
+    chunk_packer.join().unwrap()?;
+    tree_packer.join().unwrap()?;
     indexer.join().unwrap()?;
     uploader.join().unwrap()?;
     Ok(())
 }
 
-fn pack_tree(paths: &[PathBuf], tx: &mut Sender<pack::Blob>) -> Result<Tree> {
+fn pack_tree(paths: &[PathBuf], tx: Sender<pack::Blob>) -> Result<Tree> {
     let mut nodes = Vec::new();
 
     for path in paths {
@@ -53,7 +73,7 @@ fn pack_tree(paths: &[PathBuf], tx: &mut Sender<pack::Blob>) -> Result<Tree> {
             for chunk in chunk::chunk_file(&path)? {
                 contents.push(chunk.id);
                 tx.send(pack::Blob::Chunk(chunk))
-                    .context("backup -> packer channel exited early")?;
+                    .context("backup -> chunk packer channel exited early")?;
             }
             nodes.push(Node {
                 name: PathBuf::from(path.file_name().expect("Given path ended in ..")),

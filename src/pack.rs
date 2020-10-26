@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::io::{self, BufWriter, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
 
 use anyhow::*;
@@ -48,12 +49,13 @@ pub struct PackMetadata {
 }
 
 /// Packs chunked files received from the given channel.
-pub fn pack(
+pub fn pack<P: AsRef<Path>>(
+    temp_path: P,
     rx: Receiver<Blob>,
     to_index: Sender<PackMetadata>,
     to_upload: SyncSender<String>,
 ) -> Result<()> {
-    let mut packfile = PackfileWriter::new()?;
+    let mut packfile = PackfileWriter::new(temp_path.as_ref())?;
 
     let mut bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
@@ -93,7 +95,7 @@ pub fn pack(
                     .send(metadata)
                     .context("packer -> indexer channel exited early")?;
 
-                packfile = PackfileWriter::new()?;
+                packfile = PackfileWriter::new(temp_path.as_ref())?;
                 bytes_written = 0;
                 bytes_before_next_check = DEFAULT_TARGET_SIZE;
             }
@@ -124,22 +126,22 @@ type ZstdEncoder<W> = zstd::stream::write::Encoder<W>;
 type ZstdDecoder<R> = zstd::stream::read::Decoder<R>;
 
 struct PackfileWriter {
+    path: PathBuf,
     writer: ZstdEncoder<File>,
     manifest: PackManifest,
 }
 
 // TODO: Obviously this should all take place in a configurable temp directory
 
-const TEMP_PACKFILE_LOCATION: &str = "temp.pack";
-
 impl PackfileWriter {
-    fn new() -> io::Result<Self> {
-        let mut fh = File::create(TEMP_PACKFILE_LOCATION)?;
+    fn new(path: &Path) -> io::Result<Self> {
+        let mut fh = File::create(path)?;
         fh.write_all(MAGIC_BYTES)?;
 
         let mut zstd = ZstdEncoder::new(fh, 0)?;
         zstd.multithread(num_cpus::get_physical() as u32)?;
         Ok(Self {
+            path: path.to_owned(),
             writer: zstd,
             manifest: Vec::new(),
         })
@@ -215,7 +217,7 @@ impl PackfileWriter {
         );
         fh.into_inner()?.sync_all()?;
 
-        fs::rename(TEMP_PACKFILE_LOCATION, format!("{}.pack", id))?;
+        fs::rename(self.path, format!("{}.pack", id))?;
 
         Ok(PackMetadata {
             id,
