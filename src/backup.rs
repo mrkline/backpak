@@ -11,7 +11,7 @@ use crate::backend;
 use crate::chunk;
 use crate::index;
 use crate::pack;
-use crate::tree::*;
+use crate::tree;
 
 /// Create a new mod directory here (or wherever -C gave)
 #[derive(Debug, StructOpt)]
@@ -63,25 +63,39 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
     Ok(())
 }
 
-fn pack_tree(paths: &[PathBuf], tx: Sender<pack::Blob>) -> Result<Tree> {
-    let mut nodes = Vec::new();
+fn pack_tree(paths: &[PathBuf], tx: Sender<pack::Blob>) -> Result<tree::Tree> {
+    let mut nodes = tree::Tree::new();
 
     for path in paths {
         if path.is_dir() {
         } else {
+            // TOCTOU? Is that better than opening the file and changing
+            // its access time? Maybe, but we also might use the metadata
+            // as criteria to skip the file once we build out more efficient
+            // snapshotting.
+            let metadata = tree::get_metadata(path)?;
+
             let mut contents = Vec::new();
             for chunk in chunk::chunk_file(&path)? {
                 contents.push(chunk.id);
                 tx.send(pack::Blob::Chunk(chunk))
                     .context("backup -> chunk packer channel exited early")?;
             }
-            nodes.push(Node {
-                name: PathBuf::from(path.file_name().expect("Given path ended in ..")),
-                node_type: NodeType::File { contents },
-            });
+            ensure!(
+                nodes
+                    .insert(
+                        PathBuf::from(path.file_name().expect("Given path ended in ..")),
+                        tree::Node {
+                            metadata,
+                            contents: tree::NodeContents::File { contents }
+                        }
+                    )
+                    .is_none(),
+                "Duplicate tree entries"
+            );
         }
     }
-    Ok(Tree { nodes })
+    Ok(nodes)
 }
 
 fn upload(backend: &mut dyn backend::Backend, rx: Receiver<String>) -> Result<()> {
