@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use anyhow::*;
 use log::*;
 use rayon::prelude::*;
@@ -16,6 +18,8 @@ pub struct Args {
 pub fn run(repository: &str, _args: Args) -> Result<()> {
     let backend = backend::open(repository)?;
 
+    let borked = AtomicUsize::new(0);
+
     let index = index::build_master_index(&*backend)?;
     index
         .packs
@@ -26,9 +30,15 @@ pub fn run(repository: &str, _args: Args) -> Result<()> {
                 let mut pack = backend.read_pack(pack_id)?;
                 if let Err(e) = pack::verify(&mut pack, manifest) {
                     error!("Problem with pack {}: {:?}", pack_id, e);
+                    borked.fetch_add(1, Ordering::Relaxed);
                 }
                 Ok(())
             },
         )?;
-    Ok(())
+    let borked = borked.load(Ordering::SeqCst);
+    if borked > 0 {
+        Err(anyhow!("{} broken packs", borked))
+    } else {
+        Ok(())
+    }
 }
