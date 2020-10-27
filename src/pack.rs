@@ -293,10 +293,7 @@ pub fn extract_blob<R: Read>(
     manifest_from_index: &PackManifest,
 ) -> Result<(PackManifestEntry, Vec<u8>)> {
     assert!(
-        manifest_from_index
-            .iter()
-            .find(|entry| entry.id == *blob_id)
-            .is_some(),
+        manifest_from_index.iter().any(|entry| entry.id == *blob_id),
         "Given blob ID isn't in the given index"
     );
 
