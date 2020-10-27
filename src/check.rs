@@ -6,39 +6,48 @@ use rayon::prelude::*;
 use structopt::StructOpt;
 
 use crate::backend;
+use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
 
 #[derive(Debug, StructOpt)]
 pub struct Args {
     #[structopt(short, long)]
-    check_data: bool,
+    check_packs: bool,
 }
 
-pub fn run(repository: &str, _args: Args) -> Result<()> {
+pub fn run(repository: &str, args: Args) -> Result<()> {
     let backend = backend::open(repository)?;
+    let index = index::build_master_index(&*backend)?;
 
     let borked = AtomicUsize::new(0);
-
-    let index = index::build_master_index(&*backend)?;
-    index
-        .packs
-        .par_iter()
-        .try_for_each_with::<_, _, anyhow::Result<()>>(
-            &backend,
-            |backend, (pack_id, manifest)| {
-                let mut pack = backend.read_pack(pack_id)?;
-                if let Err(e) = pack::verify(&mut pack, manifest) {
-                    error!("Problem with pack {}: {:?}", pack_id, e);
-                    borked.fetch_add(1, Ordering::Relaxed);
-                }
-                Ok(())
-            },
-        )?;
+    index.packs.par_iter().for_each(|(pack_id, manifest)| {
+        if let Err(e) = check_pack(&*backend, pack_id, manifest, args.check_packs) {
+            error!("Problem with pack {}: {:?}", pack_id, e);
+            borked.fetch_add(1, Ordering::Relaxed);
+        }
+    });
     let borked = borked.load(Ordering::SeqCst);
     if borked > 0 {
         Err(anyhow!("{} broken packs", borked))
     } else {
         Ok(())
     }
+}
+
+#[inline]
+fn check_pack(
+    backend: &dyn backend::Backend,
+    pack_id: &ObjectId,
+    manifest: &pack::PackManifest,
+    check_packs: bool,
+) -> Result<()> {
+    let mut pack = backend.read_pack(pack_id)?;
+    if check_packs {
+        pack::verify(&mut pack, manifest)?;
+        trace!("Pack {} successfully verified", pack_id);
+    } else {
+        trace!("Pack {} found and successfully opened", pack_id);
+    }
+    Ok(())
 }
