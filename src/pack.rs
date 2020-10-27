@@ -241,7 +241,7 @@ pub fn verify<R: Read + Seek>(packfile: &mut R, manifest_from_index: &PackManife
         let (hash, _) = hashing_decoder.finalize();
         ensure!(
             entry.id == hash,
-            "Calculated hash of blob ({}) doesn't match ID {}",
+            "Calculated hash of blob ({}) doesn't match its ID ({})",
             hash,
             entry.id
         );
