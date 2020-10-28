@@ -23,11 +23,11 @@ pub struct NodeMetadata {
     user_id: Option<u32>,
     group_id: Option<u32>,
     #[serde(with = "prettify::date_time")]
-    change_time: DateTime<Utc>,
+    change_time: Option<DateTime<Utc>>,
     #[serde(with = "prettify::date_time")]
-    access_time: DateTime<Utc>,
+    access_time: Option<DateTime<Utc>>,
     #[serde(with = "prettify::date_time")]
-    modify_time: DateTime<Utc>,
+    modify_time: Option<DateTime<Utc>>,
 }
 
 #[cfg(target_family = "unix")]
@@ -38,9 +38,9 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
     let mode = Some(meta.mode());
     let user_id = Some(meta.uid());
     let group_id = Some(meta.gid());
-    let change_time = chrono::Utc.timestamp(meta.ctime(), meta.ctime_nsec() as u32);
-    let access_time = chrono::Utc.timestamp(meta.atime(), meta.atime_nsec() as u32);
-    let modify_time = chrono::Utc.timestamp(meta.mtime(), meta.mtime_nsec() as u32);
+    let change_time = Some(chrono::Utc.timestamp(meta.ctime(), meta.ctime_nsec() as u32));
+    let access_time = Some(chrono::Utc.timestamp(meta.atime(), meta.atime_nsec() as u32));
+    let modify_time = Some(chrono::Utc.timestamp(meta.mtime(), meta.mtime_nsec() as u32));
 
     Ok(NodeMetadata {
         mode,
