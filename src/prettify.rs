@@ -28,6 +28,30 @@ pub fn should_prettify() -> bool {
 }
 
 pub mod date_time {
+    use chrono::serde::ts_nanoseconds;
+    use chrono::{offset::Utc, DateTime};
+    use serde::{Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(dt: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if super::should_prettify() {
+            dt.serialize(serializer)
+        } else {
+            ts_nanoseconds::serialize(dt, serializer)
+        }
+    }
+
+    pub fn deserialize<'de, D>(d: D) -> Result<DateTime<Utc>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        ts_nanoseconds::deserialize(d)
+    }
+}
+
+pub mod date_time_option {
     use chrono::serde::ts_nanoseconds_option;
     use chrono::{offset::Utc, DateTime};
     use serde::{Deserializer, Serialize, Serializer};
