@@ -9,32 +9,21 @@ use serde_derive::*;
 use crate::hashing::ObjectId;
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase", tag = "type")]
 pub enum NodeContents {
-    File {
-        // Restic calls this "content", but "contents" seems more common:
-        // https://english.stackexchange.com/questions/56831/file-content-vs-file-contents
-        contents: Vec<ObjectId>,
-    },
-    Dir {
-        subtree: ObjectId,
-    },
+    File { chunks: Vec<ObjectId> },
+    Dir { subtree: ObjectId },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LinuxMetadata {
-    mode: u32,
-    uid: u32,
-    gid: u32,
-    ctime: DateTime<Utc>,
-    atime: DateTime<Utc>,
-    mtime: DateTime<Utc>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum NodeMetadata {
-    Linux(LinuxMetadata),
-    // TODO: Windows? POSIX?
+pub struct NodeMetadata {
+    // POSIX-specific stuff. Could be none if run in Windows land.
+    mode: Option<u32>,
+    user_id: Option<u32>,
+    group_id: Option<u32>,
+    change_time: DateTime<Utc>,
+    access_time: DateTime<Utc>,
+    modify_time: DateTime<Utc>,
 }
 
 #[cfg(target_os = "linux")]
@@ -42,25 +31,26 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
     use std::os::linux::fs::MetadataExt;
 
     let meta = fs::metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
-    let mode = meta.st_mode();
-    let uid = meta.st_uid();
-    let gid = meta.st_gid();
-    let ctime = chrono::Utc.timestamp(meta.st_ctime(), meta.st_ctime_nsec() as u32);
-    let atime = chrono::Utc.timestamp(meta.st_atime(), meta.st_atime_nsec() as u32);
-    let mtime = chrono::Utc.timestamp(meta.st_mtime(), meta.st_mtime_nsec() as u32);
+    let mode = Some(meta.st_mode());
+    let user_id = Some(meta.st_uid());
+    let group_id = Some(meta.st_gid());
+    let change_time = chrono::Utc.timestamp(meta.st_ctime(), meta.st_ctime_nsec() as u32);
+    let access_time = chrono::Utc.timestamp(meta.st_atime(), meta.st_atime_nsec() as u32);
+    let modify_time = chrono::Utc.timestamp(meta.st_mtime(), meta.st_mtime_nsec() as u32);
 
-    Ok(NodeMetadata::Linux(LinuxMetadata {
+    Ok(NodeMetadata {
         mode,
-        uid,
-        gid,
-        ctime,
-        atime,
-        mtime,
-    }))
+        user_id,
+        group_id,
+        change_time,
+        access_time,
+        modify_time,
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Node {
+    #[serde(flatten)]
     pub contents: NodeContents,
     pub metadata: NodeMetadata,
 }

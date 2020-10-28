@@ -75,9 +75,9 @@ fn pack_tree(paths: &[PathBuf], tx: Sender<pack::Blob>) -> Result<tree::Tree> {
             // snapshotting.
             let metadata = tree::get_metadata(path)?;
 
-            let mut contents = Vec::new();
+            let mut chunks = Vec::new();
             for chunk in chunk::chunk_file(&path)? {
-                contents.push(chunk.id);
+                chunks.push(chunk.id);
                 tx.send(pack::Blob::Chunk(chunk))
                     .context("backup -> chunk packer channel exited early")?;
             }
@@ -87,7 +87,7 @@ fn pack_tree(paths: &[PathBuf], tx: Sender<pack::Blob>) -> Result<tree::Tree> {
                         PathBuf::from(path.file_name().expect("Given path ended in ..")),
                         tree::Node {
                             metadata,
-                            contents: tree::NodeContents::File { contents }
+                            contents: tree::NodeContents::File { chunks }
                         }
                     )
                     .is_none(),
