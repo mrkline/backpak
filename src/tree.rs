@@ -30,17 +30,17 @@ pub struct NodeMetadata {
     modify_time: DateTime<Utc>,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(target_family = "unix")]
 pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
-    use std::os::linux::fs::MetadataExt;
+    use std::os::unix::fs::MetadataExt;
 
     let meta = fs::metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
-    let mode = Some(meta.st_mode());
-    let user_id = Some(meta.st_uid());
-    let group_id = Some(meta.st_gid());
-    let change_time = chrono::Utc.timestamp(meta.st_ctime(), meta.st_ctime_nsec() as u32);
-    let access_time = chrono::Utc.timestamp(meta.st_atime(), meta.st_atime_nsec() as u32);
-    let modify_time = chrono::Utc.timestamp(meta.st_mtime(), meta.st_mtime_nsec() as u32);
+    let mode = Some(meta.mode());
+    let user_id = Some(meta.uid());
+    let group_id = Some(meta.gid());
+    let change_time = chrono::Utc.timestamp(meta.ctime(), meta.ctime_nsec() as u32);
+    let access_time = chrono::Utc.timestamp(meta.atime(), meta.atime_nsec() as u32);
+    let modify_time = chrono::Utc.timestamp(meta.mtime(), meta.mtime_nsec() as u32);
 
     Ok(NodeMetadata {
         mode,
