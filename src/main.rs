@@ -12,6 +12,7 @@ mod hashing;
 mod index;
 mod init;
 mod pack;
+mod prettify;
 mod tree;
 
 pub const DEFAULT_TARGET_SIZE: u64 = 1024 * 1024 * 100; // 100 MB
