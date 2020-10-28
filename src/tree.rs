@@ -7,6 +7,7 @@ use chrono::{offset::Utc, DateTime, TimeZone};
 use serde_derive::*;
 
 use crate::hashing::ObjectId;
+use crate::prettify;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
@@ -21,8 +22,11 @@ pub struct NodeMetadata {
     mode: Option<u32>,
     user_id: Option<u32>,
     group_id: Option<u32>,
+    #[serde(with = "prettify::date_time")]
     change_time: DateTime<Utc>,
+    #[serde(with = "prettify::date_time")]
     access_time: DateTime<Utc>,
+    #[serde(with = "prettify::date_time")]
     modify_time: DateTime<Utc>,
 }
 

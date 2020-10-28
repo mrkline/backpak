@@ -5,13 +5,6 @@ use std::io::prelude::*;
 use anyhow::*;
 use sha2::{digest::generic_array::GenericArray, Digest, Sha224};
 
-static mut HEXIFY: bool = false;
-
-/// HORRENDOUS HACK (see ObjectID's `serialize()`).
-pub unsafe fn hexify_ids() {
-    HEXIFY = true;
-}
-
 /// The hash (a SHA224) used to identify all objects in our system.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ObjectId {
@@ -72,7 +65,7 @@ impl serde::Serialize for ObjectId {
         //
         // So hang your head in shame and use a global variable.
         // (Obvious but worth saying: set it at the start and don't mess with it after.)
-        if unsafe { HEXIFY } {
+        if crate::prettify::should_prettify() {
             serializer.serialize_str(&hex::encode(self.digest.as_slice()))
         } else {
             serializer.serialize_bytes(self.digest.as_slice())

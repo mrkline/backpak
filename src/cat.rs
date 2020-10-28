@@ -26,8 +26,8 @@ pub enum Subcommand {
 
 pub fn run(repository: &str, args: Args) -> Result<()> {
     unsafe {
-        crate::hashing::hexify_ids();
-    } // Shame.
+        crate::prettify::prettify_serialize();
+    }
 
     let backend = backend::open(repository)?;
 
