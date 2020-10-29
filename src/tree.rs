@@ -108,3 +108,9 @@ pub struct Node {
 }
 
 pub type Tree = BTreeMap<PathBuf, Node>;
+
+pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
+    let tree_cbor = serde_cbor::to_vec(tree)?;
+    let id = ObjectId::hash(&tree_cbor);
+    Ok((tree_cbor, id))
+}

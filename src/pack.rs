@@ -11,14 +11,20 @@ use serde_derive::*;
 use crate::chunk::Chunk;
 use crate::file_util;
 use crate::hashing::{HashingReader, ObjectId};
-use crate::tree::Tree;
 use crate::DEFAULT_TARGET_SIZE;
 
 const MAGIC_BYTES: &[u8] = b"MKBAKPAK";
 
 pub enum Blob {
     Chunk(crate::chunk::Chunk),
-    Tree(crate::tree::Tree),
+    /// FIXME: Something more strongly typed than a bag of bytes
+    ///        and its ID? Or should we send all chunks over that way too?
+    ///        (What's nice is that chunks currently are just arcs to their
+    ///        underlying buffers, so sending it here is just a ref bump.)
+    Tree {
+        bytes: Vec<u8>,
+        id: ObjectId,
+    },
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -65,7 +71,7 @@ pub fn pack<P: AsRef<Path>>(
         // Track how many (uncompressed) bytes we've written to the file so far.
         bytes_written += match blob {
             Blob::Chunk(chunk) => packfile.write_file_chunk(&chunk)?,
-            Blob::Tree(tree) => packfile.write_tree(&tree)?,
+            Blob::Tree { bytes, id } => packfile.write_tree(bytes, id)?,
         };
 
         // We've written as many bytes as we want the pack size to to be,
@@ -161,14 +167,11 @@ impl PackfileWriter {
         Ok(chunk_length as u64)
     }
 
-    fn write_tree(&mut self, tree: &Tree) -> Result<u64> {
-        let tree_cbor = serde_cbor::to_vec(tree)?;
-        let tree_length = tree_cbor.len();
+    fn write_tree(&mut self, bytes: Vec<u8>, id: ObjectId) -> Result<u64> {
+        let tree_length = bytes.len();
         assert!(tree_length < u32::MAX as usize);
 
-        let id = ObjectId::hash(&tree_cbor);
-
-        self.writer.write_all(&tree_cbor)?;
+        self.writer.write_all(&bytes)?;
         self.manifest.push(PackManifestEntry {
             blob_type: BlobType::Tree,
             length: tree_length as u32,

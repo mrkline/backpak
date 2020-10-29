@@ -9,6 +9,7 @@ use structopt::StructOpt;
 
 use crate::backend;
 use crate::chunk;
+use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
 use crate::tree;
@@ -20,8 +21,8 @@ pub struct Args {
 }
 
 pub fn run(repository: &str, args: Args) -> Result<()> {
-    let (chunk_tx, chunk_rx) = channel();
-    let (tree_tx, tree_rx) = channel();
+    let (mut chunk_tx, chunk_rx) = channel();
+    let (mut tree_tx, tree_rx) = channel();
     let (chunk_pack_tx, pack_rx) = channel();
     let tree_pack_tx = chunk_pack_tx.clone();
     let (chunk_pack_upload_tx, upload_rx) = sync_channel(1);
@@ -50,10 +51,10 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
     let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
     let uploader = thread::spawn(move || upload(&mut *backend, upload_rx));
 
-    let tree = pack_tree(&args.files, chunk_tx)?;
-    tree_tx
-        .send(pack::Blob::Tree(tree))
-        .expect("backup -> tree packer channel exited early");
+    // TODO: The ID of the tree root is what we reference in the snapshot.
+    let _root = pack_tree(&args.files, &mut chunk_tx, &mut tree_tx)?;
+
+    drop(chunk_tx);
     drop(tree_tx);
 
     chunk_packer.join().unwrap()?;
@@ -63,11 +64,18 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
     Ok(())
 }
 
-fn pack_tree(paths: &[PathBuf], tx: Sender<pack::Blob>) -> Result<tree::Tree> {
+// TODO: Take paths as a BTreeSet so they're always in lexicographical order?
+fn pack_tree(
+    paths: &[PathBuf],
+    chunk_tx: &mut Sender<pack::Blob>,
+    tree_tx: &mut Sender<pack::Blob>,
+) -> Result<ObjectId> {
     let mut nodes = tree::Tree::new();
 
     for path in paths {
         if path.is_dir() {
+            // TODO: Gather the dir entries in `path`, call pack_tree with them,
+            // and add an entry to `nodes` for the subtree.
         } else {
             // TOCTOU? Is that better than opening the file and changing
             // its access time? Maybe, but we also might use the metadata
@@ -80,7 +88,8 @@ fn pack_tree(paths: &[PathBuf], tx: Sender<pack::Blob>) -> Result<tree::Tree> {
             let mut chunk_ids = Vec::new();
             for chunk in chunks {
                 chunk_ids.push(chunk.id);
-                tx.send(pack::Blob::Chunk(chunk))
+                chunk_tx
+                    .send(pack::Blob::Chunk(chunk))
                     .context("backup -> chunk packer channel exited early")?;
             }
             ensure!(
@@ -100,7 +109,11 @@ fn pack_tree(paths: &[PathBuf], tx: Sender<pack::Blob>) -> Result<tree::Tree> {
             );
         }
     }
-    Ok(nodes)
+    let (bytes, id) = tree::serialize_and_hash(&nodes)?;
+    tree_tx
+        .send(pack::Blob::Tree { bytes, id })
+        .expect("backup -> tree packer channel exited early");
+    Ok(id)
 }
 
 fn upload(backend: &mut dyn backend::Backend, rx: Receiver<String>) -> Result<()> {
