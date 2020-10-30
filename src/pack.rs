@@ -54,6 +54,16 @@ pub struct PackMetadata {
     pub manifest: PackManifest,
 }
 
+/// Serializes a pack's manifest and get its ID.
+///
+/// A pack file is identified by the hash of its (uncompressed) manifest.
+fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, ObjectId)> {
+    let manifest = serde_cbor::to_vec(&manifest)?;
+    let id = ObjectId::hash(&manifest);
+
+    Ok((manifest, id))
+}
+
 /// Packs chunked files received from the given channel.
 pub fn pack<P: AsRef<Path>>(
     temp_path: P,
@@ -190,10 +200,7 @@ impl PackfileWriter {
 
     /// Finalize the packfile, returning the manifest and its ID.
     fn finalize(self) -> Result<PackMetadata> {
-        // Serialize the manifest.
-        let manifest = serde_cbor::to_vec(&self.manifest)?;
-        // A pack file is identified by the hash of its (uncompressed) manifest.
-        let id = ObjectId::hash(&manifest);
+        let (manifest, id) = serialize_and_hash(&self.manifest)?;
 
         // Finish the compression stream for blobs and trees.
         // We'll compress the manifest separately so we can decompress it
@@ -230,7 +237,10 @@ impl PackfileWriter {
 }
 
 /// Verifies everything in the packfile matches the given manifest from the index.
-pub fn verify<R: Read + Seek>(packfile: &mut R, manifest_from_index: &PackManifest) -> Result<()> {
+pub fn verify<R: Read + Seek>(
+    packfile: &mut R,
+    manifest_from_index: &[PackManifestEntry],
+) -> Result<()> {
     check_magic(packfile)?;
 
     let mut decoder = ZstdDecoder::new(packfile).context("Decompression of blob stream failed")?;
@@ -260,7 +270,7 @@ pub fn verify<R: Read + Seek>(packfile: &mut R, manifest_from_index: &PackManife
     let manifest_from_file = manifest_from_reader(&mut packfile)?;
 
     ensure!(
-        *manifest_from_index == manifest_from_file,
+        manifest_from_index == manifest_from_file,
         "Pack manifest doesn't match its index entry and file contents"
     );
 
