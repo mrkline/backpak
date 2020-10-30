@@ -61,10 +61,12 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
     drop(chunk_tx);
     drop(tree_tx);
 
+    // TODO: Join errors together so that we don't just get errors from
+    // the first one of these to fail.
+    uploader.join().unwrap()?;
     chunk_packer.join().unwrap()?;
     tree_packer.join().unwrap()?;
     indexer.join().unwrap()?;
-    uploader.join().unwrap()?;
     Ok(())
 }
 
@@ -128,7 +130,7 @@ fn pack_tree(
     let (bytes, id) = tree::serialize_and_hash(&nodes)?;
     tree_tx
         .send(pack::Blob::Tree { bytes, id })
-        .expect("backup -> tree packer channel exited early");
+        .context("backup -> tree packer channel exited early")?;
     Ok(id)
 }
 
