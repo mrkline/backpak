@@ -17,7 +17,7 @@ use crate::DEFAULT_TARGET_SIZE;
 
 const MAGIC_BYTES: &[u8] = b"MKBAKIDX";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Index {
     pub supersedes: BTreeSet<ObjectId>,
     pub packs: BTreeMap<ObjectId, PackManifest>,
@@ -43,7 +43,7 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
         // That way the temp index should always contain a complete list of packs,
         // allowing us to resume a backup from the last finished pack.
 
-        let (index_id, compressed_size) = write_index(&index)?;
+        let (index_id, compressed_size) = to_temp_file(&index)?;
 
         // If we're close enough to our target size, stop
         if compressed_size >= DEFAULT_TARGET_SIZE {
@@ -61,7 +61,7 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
         }
     }
     if !index.packs.is_empty() {
-        let (index_id, compressed_size) = write_index(&index)?;
+        let (index_id, compressed_size) = to_temp_file(&index)?;
         info!("Index {} finished ({} bytes)", index_id, compressed_size);
 
         let id_name = format!("{}.index", index_id);
@@ -77,8 +77,17 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
 //
 const TEMP_INDEX_LOCATION: &str = "temp.index";
 
-fn write_index(index: &Index) -> Result<(ObjectId, u64)> {
+fn to_temp_file(index: &Index) -> Result<(ObjectId, u64)> {
+    // Could we speed things up by reusing the same file handle instead of
+    // opening, writing, and closing each time we update the WIP index file?
+    // Probably, but we'd have to seek back to the beginning each time,
+    // _and_ we'd be assuming that the file grows larger each time.
+    // (This might not be true since its contents are compressed...)
     let mut fh = File::create(TEMP_INDEX_LOCATION)?;
+    to_file(&mut fh, index)
+}
+
+fn to_file(fh: &mut File, index: &Index) -> Result<(ObjectId, u64)> {
     fh.write_all(MAGIC_BYTES)?;
 
     let mut zstd = zstd::stream::write::Encoder::new(fh, 0)?;
@@ -173,11 +182,12 @@ pub fn from_reader<R: Read>(r: &mut R) -> Result<Index> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    use tempfile::tempfile;
+
     use crate::pack::*;
 
-    #[test]
-    /// Pack manifest and ID remains stable from build to build.
-    fn stability() -> Result<()> {
+    fn build_test_index() -> Index {
         let mut supersedes = BTreeSet::new();
         supersedes.insert(ObjectId::hash(b"Some previous index"));
         supersedes.insert(ObjectId::hash(b"Another previous index"));
@@ -218,7 +228,13 @@ mod test {
                 },
             ],
         );
-        let index = Index { supersedes, packs };
+        Index { supersedes, packs }
+    }
+
+    #[test]
+    /// Pack manifest and ID remains stable from build to build.
+    fn stability() -> Result<()> {
+        let index = build_test_index();
 
         /*
         let mut fh = File::create("tests/references/index.stability")?;
@@ -240,6 +256,19 @@ mod test {
         // but having some example CBOR in the repo seems helpful.)
         let from_example = fs::read("tests/references/index.stability")?;
         assert_eq!(index, from_example);
+        Ok(())
+    }
+
+    #[test]
+    fn round_trip() -> Result<()> {
+        let index = build_test_index();
+        let mut fh = tempfile()?;
+        to_file(&mut fh, &index)?;
+
+        fh.seek(std::io::SeekFrom::Start(0))?;
+        let read_index = from_reader(&mut fh)?;
+
+        assert_eq!(index, read_index);
         Ok(())
     }
 }
