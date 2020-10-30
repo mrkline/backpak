@@ -1,14 +1,13 @@
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::io::{self, BufWriter, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc::*;
 
 use anyhow::*;
 use log::*;
 use serde_derive::*;
 
-use crate::chunk::Chunk;
 use crate::file_util;
 use crate::hashing::{HashingReader, ObjectId};
 use crate::DEFAULT_TARGET_SIZE;
@@ -71,18 +70,22 @@ pub fn pack<P: AsRef<Path>>(
     to_index: Sender<PackMetadata>,
     to_upload: SyncSender<String>,
 ) -> Result<()> {
-    let mut packfile = PackfileWriter::new(temp_path.as_ref())?;
+    let fh = File::create(temp_path.as_ref())
+        .with_context(|| format!("Couldn't create file {}", temp_path.as_ref().display()))?;
+    let mut packfile = PackfileWriter::new(fh)?;
 
     let mut bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
 
     // For each chunked file...
     while let Ok(blob) = rx.recv() {
-        // Track how many (uncompressed) bytes we've written to the file so far.
-        bytes_written += match blob {
-            Blob::Chunk(chunk) => packfile.write_file_chunk(&chunk)?,
-            Blob::Tree { bytes, id } => packfile.write_tree(bytes, id)?,
+        // Write a blob and check how many (uncompressed) bytes we've written to the file so far.
+        let (bytes, blob_type, id) = match &blob {
+            Blob::Chunk(chunk) => (chunk.bytes(), BlobType::Chunk, &chunk.id),
+            Blob::Tree { bytes, id } => (bytes.as_slice(), BlobType::Tree, id),
         };
+        bytes_written += packfile.write_blob(bytes, blob_type, *id)?;
+        drop(blob);
 
         // We've written as many bytes as we want the pack size to to be,
         // but we don't know how much they've compressed to.
@@ -103,15 +106,20 @@ pub fn pack<P: AsRef<Path>>(
                     DEFAULT_TARGET_SIZE
                 );
                 let metadata = packfile.finalize()?;
+                let finalized_path = format!("{}.pack", metadata.id);
+                fs::rename(temp_path.as_ref(), &finalized_path)?;
 
                 to_upload
-                    .send(format!("{}.pack", metadata.id))
+                    .send(finalized_path)
                     .context("packer -> uploader channel exited early")?;
                 to_index
                     .send(metadata)
                     .context("packer -> indexer channel exited early")?;
 
-                packfile = PackfileWriter::new(temp_path.as_ref())?;
+                let fh = File::create(temp_path.as_ref()).with_context(|| {
+                    format!("Couldn't create file {}", temp_path.as_ref().display())
+                })?;
+                packfile = PackfileWriter::new(fh)?;
                 bytes_written = 0;
                 bytes_before_next_check = DEFAULT_TARGET_SIZE;
             }
@@ -128,8 +136,10 @@ pub fn pack<P: AsRef<Path>>(
     }
     if bytes_written > 0 {
         let metadata = packfile.finalize()?;
+        let finalized_path = format!("{}.pack", metadata.id);
+        fs::rename(temp_path.as_ref(), &finalized_path)?;
         to_upload
-            .send(format!("{}.pack", metadata.id))
+            .send(finalized_path)
             .context("packer -> uploader channel exited early")?;
         to_index
             .send(metadata)
@@ -142,7 +152,6 @@ type ZstdEncoder<W> = zstd::stream::write::Encoder<W>;
 type ZstdDecoder<R> = zstd::stream::read::Decoder<R>;
 
 struct PackfileWriter {
-    path: PathBuf,
     writer: ZstdEncoder<File>,
     manifest: PackManifest,
 }
@@ -150,44 +159,29 @@ struct PackfileWriter {
 // TODO: Obviously this should all take place in a configurable temp directory
 
 impl PackfileWriter {
-    fn new(path: &Path) -> io::Result<Self> {
-        let mut fh = File::create(path)?;
+    fn new(mut fh: File) -> io::Result<Self> {
         fh.write_all(MAGIC_BYTES)?;
 
         let mut zstd = ZstdEncoder::new(fh, 0)?;
         zstd.multithread(num_cpus::get_physical() as u32)?;
         Ok(Self {
-            path: path.to_owned(),
             writer: zstd,
             manifest: Vec::new(),
         })
     }
 
-    /// Write the given file chunk to the packfile and put its ID in the manifest.
-    fn write_file_chunk(&mut self, chunk: &Chunk) -> io::Result<u64> {
-        let chunk_length = chunk.len();
-        assert!(chunk_length <= u32::MAX as usize);
+    /// Write the given file chunk or tree to the packfile and add it to the manifest.
+    fn write_blob(&mut self, blob: &[u8], blob_type: BlobType, id: ObjectId) -> io::Result<u64> {
+        let blob_length = blob.len();
+        assert!(blob_length <= u32::MAX as usize);
 
-        self.writer.write_all(chunk.bytes())?;
+        self.writer.write_all(blob)?;
         self.manifest.push(PackManifestEntry {
-            blob_type: BlobType::Chunk,
-            length: chunk_length as u32,
-            id: chunk.id,
-        });
-        Ok(chunk_length as u64)
-    }
-
-    fn write_tree(&mut self, bytes: Vec<u8>, id: ObjectId) -> Result<u64> {
-        let tree_length = bytes.len();
-        assert!(tree_length < u32::MAX as usize);
-
-        self.writer.write_all(&bytes)?;
-        self.manifest.push(PackManifestEntry {
-            blob_type: BlobType::Tree,
-            length: tree_length as u32,
+            blob_type,
+            length: blob_length as u32,
             id,
         });
-        Ok(tree_length as u64)
+        Ok(blob_length as u64)
     }
 
     /// Flush the compressor and check the size of the packfile so far.
@@ -226,8 +220,6 @@ impl PackfileWriter {
             fh.get_ref().metadata()?.len(),
         );
         fh.into_inner()?.sync_all()?;
-
-        fs::rename(self.path, format!("{}.pack", id))?;
 
         Ok(PackMetadata {
             id,
