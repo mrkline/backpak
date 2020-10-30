@@ -1,4 +1,6 @@
+use std::collections::BTreeSet;
 use std::fs::{self, File};
+use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc::*;
 use std::thread;
@@ -51,8 +53,10 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
     let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
     let uploader = thread::spawn(move || upload(&mut *backend, upload_rx));
 
+    let args: BTreeSet<PathBuf> = args.files.into_iter().collect();
+
     // TODO: The ID of the tree root is what we reference in the snapshot.
-    let _root = pack_tree(&args.files, &mut chunk_tx, &mut tree_tx)?;
+    let _root = pack_tree(&args, &mut chunk_tx, &mut tree_tx)?;
 
     drop(chunk_tx);
     drop(tree_tx);
@@ -64,25 +68,36 @@ pub fn run(repository: &str, args: Args) -> Result<()> {
     Ok(())
 }
 
-// TODO: Take paths as a BTreeSet so they're always in lexicographical order?
 fn pack_tree(
-    paths: &[PathBuf],
+    paths: &BTreeSet<PathBuf>,
     chunk_tx: &mut Sender<pack::Blob>,
     tree_tx: &mut Sender<pack::Blob>,
 ) -> Result<ObjectId> {
     let mut nodes = tree::Tree::new();
 
     for path in paths {
-        if path.is_dir() {
-            // TODO: Gather the dir entries in `path`, call pack_tree with them,
-            // and add an entry to `nodes` for the subtree.
-        } else {
-            // TOCTOU? Is that better than opening the file and changing
-            // its access time? Maybe, but we also might use the metadata
-            // as criteria to skip the file once we build out more efficient
-            // snapshotting.
-            let metadata = tree::get_metadata(path)?;
+        // TOCTOU? Is that better than opening the file and changing
+        // its access time? Maybe, but we also might use the metadata
+        // as criteria to skip the file once we build out more efficient
+        // snapshotting.
+        let metadata = tree::get_metadata(path)?;
 
+        let node = if path.is_dir() {
+            // Gather the dir entries in `path`, call pack_tree with them,
+            // and add an entry to `nodes` for the subtree.
+            let subpaths = fs::read_dir(path)?
+                .map(|entry| entry.map(|e| e.path()))
+                .collect::<io::Result<BTreeSet<PathBuf>>>()
+                .with_context(|| format!("Failed iterating subdirectory {}", path.display()))?;
+
+            let subtree: ObjectId = pack_tree(&subpaths, chunk_tx, tree_tx)
+                .with_context(|| format!("Failed to pack subdirectory {}", path.display()))?;
+
+            tree::Node {
+                metadata,
+                contents: tree::NodeContents::Directory { subtree },
+            }
+        } else {
             let chunks = chunk::chunk_file(&path)?;
             let length = chunks.iter().map(|c| c.len() as u64).sum();
             let mut chunk_ids = Vec::new();
@@ -92,22 +107,23 @@ fn pack_tree(
                     .send(pack::Blob::Chunk(chunk))
                     .context("backup -> chunk packer channel exited early")?;
             }
-            ensure!(
-                nodes
-                    .insert(
-                        PathBuf::from(path.file_name().expect("Given path ended in ..")),
-                        tree::Node {
-                            metadata,
-                            contents: tree::NodeContents::File {
-                                chunks: chunk_ids,
-                                length
-                            }
-                        }
-                    )
-                    .is_none(),
-                "Duplicate tree entries"
-            );
-        }
+            tree::Node {
+                metadata,
+                contents: tree::NodeContents::File {
+                    chunks: chunk_ids,
+                    length,
+                },
+            }
+        };
+        ensure!(
+            nodes
+                .insert(
+                    PathBuf::from(path.file_name().expect("Given path ended in ..")),
+                    node
+                )
+                .is_none(),
+            "Duplicate tree entries"
+        );
     }
     let (bytes, id) = tree::serialize_and_hash(&nodes)?;
     tree_tx

@@ -13,7 +13,7 @@ use crate::prettify;
 #[serde(rename_all = "lowercase", tag = "type")]
 pub enum NodeContents {
     File { chunks: Vec<ObjectId>, length: u64 },
-    Dir { subtree: ObjectId },
+    Directory { subtree: ObjectId },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
