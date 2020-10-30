@@ -53,7 +53,7 @@ impl FilesystemBackend {
 }
 
 impl Backend for FilesystemBackend {
-    fn read(&self, from: &str) -> Result<Box<dyn SeekableReader + Send>> {
+    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn SeekableReader + Send + 'a>> {
         let from = self.base_directory.join(from);
         Ok(Box::new(File::open(&from).with_context(|| {
             format!("Couldn't open {}", from.display())

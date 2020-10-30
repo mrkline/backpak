@@ -7,6 +7,7 @@ use anyhow::*;
 use crate::hashing::ObjectId;
 
 mod fs;
+mod memory;
 
 pub enum BackendType {
     Filesystem,
@@ -25,7 +26,7 @@ pub trait SeekableReader: Read + Seek {}
 // are going to be async, but we could `block_on()` for each request...
 pub trait Backend {
     /// Read from the given key
-    fn read(&self, from: &str) -> Result<Box<dyn SeekableReader + Send>>;
+    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn SeekableReader + Send + 'a>>;
 
     /// Write the given read stream to the given key
     fn write(&mut self, from: &mut dyn Read, to: &str) -> Result<()>;
@@ -36,14 +37,14 @@ pub trait Backend {
     // Let's put all the layout-specific stuff here so that we don't have paths
     // spread throughout the codebase.
 
-    fn read_pack(&self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send>> {
+    fn read_pack<'a>(&'a self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send + 'a>> {
         let hex = id.to_string();
         let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
         self.read(&pack_path)
             .with_context(|| format!("Couldn't open {}", pack_path))
     }
 
-    fn read_index(&self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send>> {
+    fn read_index<'a>(&'a self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send + 'a>> {
         let index_path = format!("indexes/{}.index", id);
         self.read(&index_path)
             .with_context(|| format!("Couldn't open {}", index_path))
