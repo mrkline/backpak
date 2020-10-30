@@ -169,3 +169,77 @@ pub fn from_reader<R: Read>(r: &mut R) -> Result<Index> {
     let index = serde_cbor::from_reader(decoder).context("CBOR decoding of index file failed")?;
     Ok(index)
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::pack::*;
+
+    #[test]
+    /// Pack manifest and ID remains stable from build to build.
+    fn stability() -> Result<()> {
+        let mut supersedes = BTreeSet::new();
+        supersedes.insert(ObjectId::hash(b"Some previous index"));
+        supersedes.insert(ObjectId::hash(b"Another previous index"));
+
+        let mut packs = BTreeMap::new();
+        packs.insert(
+            ObjectId::hash(b"pack o' chunks"),
+            vec![
+                PackManifestEntry {
+                    blob_type: BlobType::Chunk,
+                    length: 42,
+                    id: ObjectId::hash(b"a chunk"),
+                },
+                PackManifestEntry {
+                    blob_type: BlobType::Chunk,
+                    length: 9001,
+                    id: ObjectId::hash(b"another chunk"),
+                },
+            ],
+        );
+        packs.insert(
+            ObjectId::hash(b"pack o'trees"),
+            vec![
+                PackManifestEntry {
+                    blob_type: BlobType::Tree,
+                    length: 182,
+                    id: ObjectId::hash(b"first tree"),
+                },
+                PackManifestEntry {
+                    blob_type: BlobType::Tree,
+                    length: 22,
+                    id: ObjectId::hash(b"second tree"),
+                },
+                PackManifestEntry {
+                    blob_type: BlobType::Tree,
+                    length: 11,
+                    id: ObjectId::hash(b"third tree"),
+                },
+            ],
+        );
+        let index = Index { supersedes, packs };
+
+        /*
+        let mut fh = File::create("tests/references/index.stability")?;
+        let mut hasher = HashingWriter::new(fh);
+        serde_cbor::to_writer(&mut hasher, &index)?;
+        let (id, _fh) = hasher.finalize();
+        */
+
+        let index = serde_cbor::to_vec(&index)?;
+        let id = ObjectId::hash(&index);
+
+        // ID remains stable
+        assert_eq!(
+            format!("{}", id),
+            "70ffb4e490b7ada4482d53e1eb141296fd9f1951a25f7330e80ac095"
+        );
+        // Contents remain stable
+        // (We could just use the ID and length,
+        // but having some example CBOR in the repo seems helpful.)
+        let from_example = fs::read("tests/references/index.stability")?;
+        assert_eq!(index, from_example);
+        Ok(())
+    }
+}

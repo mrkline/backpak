@@ -343,3 +343,44 @@ pub fn extract_blob<R: Read>(
 pub fn check_magic<R: Read>(r: &mut R) -> Result<()> {
     file_util::check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for packfile")
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    /// Pack manifest and ID remains stable from build to build.
+    fn stability() -> Result<()> {
+        let manifest = vec![
+            PackManifestEntry {
+                blob_type: BlobType::Chunk,
+                length: 42,
+                id: ObjectId::hash(b"first"),
+            },
+            PackManifestEntry {
+                blob_type: BlobType::Tree,
+                length: 22,
+                id: ObjectId::hash(b"second"),
+            },
+            PackManifestEntry {
+                blob_type: BlobType::Chunk,
+                length: 42,
+                id: ObjectId::hash(b"third"),
+            },
+        ];
+
+        let (manifest, id) = serialize_and_hash(&manifest)?;
+
+        // ID remains stable
+        assert_eq!(
+            format!("{}", id),
+            "3b070d0356a4b19eb65f68a5268263e1fc7661923fed5f4994ed840d"
+        );
+        // Contents remain stable
+        // (We could just use the ID and length,
+        // but having some example CBOR in the repo seems helpful.)
+        let from_example = fs::read("tests/references/pack.stability")?;
+        assert_eq!(manifest, from_example);
+        Ok(())
+    }
+}
