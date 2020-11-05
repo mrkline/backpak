@@ -1,6 +1,5 @@
 use super::*;
 
-use std::env::set_current_dir;
 use std::fs::*;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -12,31 +11,44 @@ pub struct FilesystemBackend {
 impl SeekableReader for File {}
 
 impl FilesystemBackend {
-    pub fn initialize(repository: &str) -> Result<()> {
-        ensure!(
-            !Path::new(repository).exists(),
-            "The directory {} already exists",
-            repository
-        );
-
-        create_dir(repository).with_context(|| format!("Couldn't create {}", repository))?;
-        set_current_dir(repository)?;
-        create_dir("packs")?;
-        for b in 0..=255 {
-            create_dir(format!("packs/{:02x}", b))?;
+    pub fn initialize(repository: &Path) -> Result<()> {
+        if repository.exists() {
+            ensure!(
+                read_dir(repository)
+                    .with_context(|| format!("Couldn't read {}", repository.display()))?
+                    .count()
+                    == 0,
+                "The directory {} already exists and isn't empty",
+                repository.display()
+            );
+        } else {
+            create_dir(repository)
+                .with_context(|| format!("Couldn't create {}", repository.display()))?;
         }
 
-        create_dir("indexes")?;
+        let packs_dir = repository.join("packs");
+        create_dir(&packs_dir)
+            .with_context(|| format!("Couldn't create {}", packs_dir.display()))?;
+
+        for b in 0..=255 {
+            let pack_bucket = repository.join(format!("packs/{:02x}", b));
+            create_dir(&pack_bucket)
+                .with_context(|| format!("Couldn't create {}", pack_bucket.display()))?;
+        }
+
+        let indexes_dir = repository.join("indexes");
+        create_dir(&indexes_dir)
+            .with_context(|| format!("Couldn't create {}", indexes_dir.display()))?;
 
         Ok(())
     }
 
-    pub fn open(repository: &str) -> Result<Self> {
+    pub fn open(repository: &Path) -> Result<Self> {
         let base_directory = PathBuf::from(repository);
         ensure!(
             base_directory.exists(),
             "The directory {} doesn't exist",
-            repository
+            repository.display()
         );
 
         for b in 0..=255 {

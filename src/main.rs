@@ -1,21 +1,10 @@
+use std::path::PathBuf;
+
 use anyhow::*;
 use simplelog::*;
 use structopt::StructOpt;
 
-mod backend;
-mod backup;
-mod cat;
-mod check;
-mod chunk;
-mod file_util;
-mod hashing;
-mod index;
-mod init;
-mod pack;
-mod prettify;
-mod tree;
-
-pub const DEFAULT_TARGET_SIZE: u64 = 1024 * 1024 * 100; // 100 MB
+use backup_test::*;
 
 #[derive(Debug, StructOpt)]
 #[structopt(verbatim_doc_comment)]
@@ -30,7 +19,7 @@ struct Args {
     timestamps: bool,
 
     #[structopt(short, long)]
-    repository: String,
+    repository: PathBuf,
 
     #[structopt(subcommand)]
     subcommand: Subcommand,

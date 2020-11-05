@@ -1,5 +1,6 @@
 use std::io;
 use std::io::prelude::*;
+use std::path::Path;
 
 use anyhow::*;
 use log::*;
@@ -24,7 +25,7 @@ pub enum Subcommand {
     Index { id: ObjectId },
 }
 
-pub fn run(repository: &str, args: Args) -> Result<()> {
+pub fn run(repository: &Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }

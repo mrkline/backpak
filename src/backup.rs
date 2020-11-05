@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
 use std::thread;
 
@@ -19,10 +19,10 @@ use crate::tree;
 /// Create a new mod directory here (or wherever -C gave)
 #[derive(Debug, StructOpt)]
 pub struct Args {
-    files: Vec<PathBuf>,
+    pub files: Vec<PathBuf>,
 }
 
-pub fn run(repository: &str, args: Args) -> Result<()> {
+pub fn run(repository: &Path, args: Args) -> Result<()> {
     let (mut chunk_tx, chunk_rx) = channel();
     let (mut tree_tx, tree_rx) = channel();
     let (chunk_pack_tx, pack_rx) = channel();
