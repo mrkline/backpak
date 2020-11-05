@@ -13,6 +13,7 @@ static mut PRETTIFY: bool = false;
 /// from there the relevant serializers will check `should_prettify()` when
 /// writing JSON output.
 ///
+/// # Safety
 /// We could make this atomic for thread safety, but there's no need for a bunch
 /// of load-acquires for something that's set once at program start before
 /// threads get spun up.

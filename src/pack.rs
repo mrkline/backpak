@@ -295,7 +295,7 @@ pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
 pub fn extract_blob<R: Read>(
     packfile: &mut R,
     blob_id: &ObjectId,
-    manifest_from_index: &PackManifest,
+    manifest_from_index: &[PackManifestEntry],
 ) -> Result<(PackManifestEntry, Vec<u8>)> {
     assert!(
         manifest_from_index.iter().any(|entry| entry.id == *blob_id),
