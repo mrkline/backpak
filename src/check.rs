@@ -40,7 +40,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 fn check_pack(
     backend: &dyn backend::Backend,
     pack_id: &ObjectId,
-    manifest: &pack::PackManifest,
+    manifest: &[pack::PackManifestEntry],
     check_packs: bool,
 ) -> Result<()> {
     let mut pack = backend.read_pack(pack_id)?;

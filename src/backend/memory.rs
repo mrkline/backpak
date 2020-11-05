@@ -33,7 +33,7 @@ impl Backend for MemoryBackend {
             .files
             .keys()
             .filter(|f| f.starts_with(prefix))
-            .map(|f| f.clone())
+            .cloned()
             .collect();
         Ok(paths)
     }
