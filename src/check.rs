@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::*;
@@ -16,7 +17,7 @@ pub struct Args {
     check_packs: bool,
 }
 
-pub fn run(repository: &str, args: Args) -> Result<()> {
+pub fn run(repository: &Path, args: Args) -> Result<()> {
     let backend = backend::open(repository)?;
     let index = index::build_master_index(&*backend)?;
 

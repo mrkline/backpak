@@ -15,7 +15,7 @@ pub enum BackendType {
 }
 
 /// Determine the repo type based on its name.
-pub fn determine_type(_repository: &str) -> Result<BackendType> {
+pub fn determine_type(_repository: &Path) -> Result<BackendType> {
     // We're just starting with filesystem
     Ok(BackendType::Filesystem)
 }
@@ -55,13 +55,13 @@ pub trait Backend {
     }
 }
 
-pub fn initialize(repository: &str) -> Result<()> {
+pub fn initialize(repository: &Path) -> Result<()> {
     match determine_type(repository)? {
         BackendType::Filesystem => fs::FilesystemBackend::initialize(repository),
     }
 }
 
-pub fn open(repository: &str) -> Result<Box<dyn Backend + Send + Sync>> {
+pub fn open(repository: &Path) -> Result<Box<dyn Backend + Send + Sync>> {
     let backend = match determine_type(repository)? {
         BackendType::Filesystem => Box::new(fs::FilesystemBackend::open(repository)?),
     };
