@@ -67,10 +67,12 @@ pub type ChunkedFile = Vec<Chunk>;
 /// ASAP.
 ///
 /// See https://crates.io/crates/fastcdc
-pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
+pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
     const MIN_SIZE: usize = 1024 * 512;
     const TARGET_SIZE: usize = 1024 * 1024;
     const MAX_SIZE: usize = 1024 * 1024 * 2;
+
+    let path: &Path = path.as_ref();
 
     debug!("Chunking {}...", path.display());
 
@@ -86,7 +88,10 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
             let start = chunk.offset;
             let end = chunk.offset + chunk.length;
             let id = ObjectId::hash(&file_bytes[start..end]);
+
+            trace!("{}: [{}..{}] {}", path.display(), start, end, id);
             chunk_count.fetch_add(1, Ordering::Relaxed);
+
             Chunk {
                 file,
                 start,
@@ -95,16 +100,6 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
             }
         })
         .collect();
-
-    for chunk in &chunks {
-        trace!(
-            "{}: [{}..{}] {}",
-            path.display(),
-            chunk.start,
-            chunk.end,
-            chunk.id
-        );
-    }
 
     debug!(
         "Chunked {} into {} chunks",
@@ -126,5 +121,24 @@ fn read_file(path: &Path) -> Result<Arc<dyn AsRef<[u8]> + Send + Sync>> {
         debug!("{} is > 10MB, memory mapping", path.display());
         let mapping = unsafe { memmap::Mmap::map(&fh)? };
         Ok(Arc::new(mapping))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn smoke() -> Result<()> {
+        let chunked = chunk_file("tests/references/sr71.txt")?;
+        assert_eq!(chunked.len(), 1);
+
+        let chunked = &chunked[0];
+        assert_eq!(chunked.len(), 6934);
+        assert_eq!(
+            format!("{}", chunked.id),
+            "1d2af0277f8ca293bbe100a38e12008e8ccd8960c1c96fc7b1ac8f8d"
+        );
+        Ok(())
     }
 }
