@@ -111,12 +111,16 @@ fn to_file(fh: &mut File, index: &Index) -> Result<(ObjectId, u64)> {
 }
 
 pub fn build_master_index(backend: &dyn Backend) -> Result<Index> {
+    debug!("Building master index...");
+
     let mut superseded_indexes = BTreeSet::new();
 
     // Don't combine the indexes until we know which ones to exclude.
     let mut loaded_indexes: BTreeMap<ObjectId, BTreeMap<ObjectId, PackManifest>> = BTreeMap::new();
 
     for index in backend.list_indexes()? {
+        trace!("Loading index {}...", index);
+
         let to_load_id = Path::new(&index)
             .file_stem()
             .ok_or_else(|| anyhow!("Couldn't determine index ID from {}", index))

@@ -55,12 +55,14 @@ pub trait Backend {
     }
 }
 
+/// Initializes the appropriate type of backend from the repository path
 pub fn initialize(repository: &Path) -> Result<()> {
     match determine_type(repository)? {
         BackendType::Filesystem => fs::FilesystemBackend::initialize(repository),
     }
 }
 
+/// Factory function to open the appropriate type of backend from the repository path
 pub fn open(repository: &Path) -> Result<Box<dyn Backend + Send + Sync>> {
     let backend = match determine_type(repository)? {
         BackendType::Filesystem => Box::new(fs::FilesystemBackend::open(repository)?),
