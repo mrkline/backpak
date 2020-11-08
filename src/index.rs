@@ -17,6 +17,8 @@ use crate::DEFAULT_TARGET_SIZE;
 
 const MAGIC_BYTES: &[u8] = b"MKBAKIDX";
 
+/// An index maps packs to the blobs they contain,
+/// and lists any previous indexes they supersede.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Index {
     pub supersedes: BTreeSet<ObjectId>,
@@ -52,7 +54,9 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
                 index_id, compressed_size
             );
             let id_name = format!("{}.index", index_id);
-            fs::rename(TEMP_INDEX_LOCATION, &id_name)?;
+            fs::rename(TEMP_INDEX_LOCATION, &id_name).with_context(|| {
+                format!("Couldn't rename {} to {}", TEMP_INDEX_LOCATION, id_name)
+            })?;
             to_upload
                 .send(id_name.clone())
                 .context("indexer -> uploader channel exited early")?;
@@ -65,7 +69,8 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
         info!("Index {} finished ({} bytes)", index_id, compressed_size);
 
         let id_name = format!("{}.index", index_id);
-        fs::rename(TEMP_INDEX_LOCATION, &id_name)?;
+        fs::rename(TEMP_INDEX_LOCATION, &id_name)
+            .with_context(|| format!("Couldn't rename {} to {}", TEMP_INDEX_LOCATION, id_name))?;
         to_upload
             .send(id_name)
             .context("indexer -> uploader channel exited early")?;
@@ -83,7 +88,8 @@ fn to_temp_file(index: &Index) -> Result<(ObjectId, u64)> {
     // Probably, but we'd have to seek back to the beginning each time,
     // _and_ we'd be assuming that the file grows larger each time.
     // (This might not be true since its contents are compressed...)
-    let mut fh = File::create(TEMP_INDEX_LOCATION)?;
+    let mut fh = File::create(TEMP_INDEX_LOCATION)
+        .with_context(|| format!("Couldn't create {}", TEMP_INDEX_LOCATION))?;
     to_file(&mut fh, index)
 }
 
