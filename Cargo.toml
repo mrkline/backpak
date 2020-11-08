@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Matt Kline"]
 edition = "2018"
 
+[profile.dev]
+opt-level = 2 # We want optimization even for debug builds for all the hashing.
+
 [dependencies]
 anyhow = "1.0"
 fastcdc = "1.0"

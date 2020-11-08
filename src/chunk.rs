@@ -1,7 +1,6 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use anyhow::*;
@@ -74,15 +73,15 @@ pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
 
     let path: &Path = path.as_ref();
 
-    debug!("Chunking {}...", path.display());
-
     let file = read_file(path).with_context(|| format!("Couldn't read {}", path.display()))?;
     let file_bytes: &[u8] = (*file).as_ref();
 
-    let chunk_count = AtomicUsize::new(0);
+    trace!("Finding cut points for {}", path.display());
+    let chunks: Vec<_> = FastCDC::new(file_bytes, MIN_SIZE, TARGET_SIZE, MAX_SIZE).collect();
+    debug!("Chunking {} into {} chunks", path.display(), chunks.len());
 
-    let chunks: Vec<Chunk> = FastCDC::new(file_bytes, MIN_SIZE, TARGET_SIZE, MAX_SIZE)
-        .par_bridge()
+    let chunks: Vec<Chunk> = chunks
+        .par_iter()
         .map(|chunk| {
             let file = file.clone();
             let start = chunk.offset;
@@ -90,7 +89,6 @@ pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
             let id = ObjectId::hash(&file_bytes[start..end]);
 
             trace!("{}: [{}..{}] {}", path.display(), start, end, id);
-            chunk_count.fetch_add(1, Ordering::Relaxed);
 
             Chunk {
                 file,
@@ -101,10 +99,11 @@ pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
         })
         .collect();
 
-    debug!(
-        "Chunked {} into {} chunks",
-        path.display(),
-        chunk_count.load(Ordering::SeqCst)
+    // `par_iter()` - as opposed to `iter_bridge()` - preserves order when
+    // you collect it back up.
+    debug_assert!(
+        chunks.windows(2).all(|w| w[0].start < w[1].start),
+        "Chunks are not in order!"
     );
     Ok(chunks)
 }
