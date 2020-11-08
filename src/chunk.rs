@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::*;
 use fastcdc::FastCDC;
 use log::*;
 use rayon::prelude::*;
@@ -72,7 +72,9 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
     const TARGET_SIZE: usize = 1024 * 1024;
     const MAX_SIZE: usize = 1024 * 1024 * 2;
 
-    let file = open_file(path)?;
+    debug!("Chunking {}...", path.display());
+
+    let file = read_file(path).with_context(|| format!("Couldn't read {}", path.display()))?;
     let file_bytes: &[u8] = (*file).as_ref();
 
     let chunk_count = AtomicUsize::new(0);
@@ -104,7 +106,7 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
         );
     }
 
-    trace!(
+    debug!(
         "Chunked {} into {} chunks",
         path.display(),
         chunk_count.load(Ordering::SeqCst)
@@ -112,7 +114,7 @@ pub fn chunk_file(path: &Path) -> Result<ChunkedFile> {
     Ok(chunks)
 }
 
-fn open_file(path: &Path) -> Result<Arc<dyn AsRef<[u8]> + Send + Sync>> {
+fn read_file(path: &Path) -> Result<Arc<dyn AsRef<[u8]> + Send + Sync>> {
     let mut fh = File::open(path)?;
     let file_length = fh.metadata()?.len();
     if file_length < 10 * MEGA {

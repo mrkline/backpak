@@ -30,8 +30,6 @@ pub enum Blob {
 #[serde(rename_all = "lowercase")]
 pub enum BlobType {
     /// A chunk of a file.
-    ///
-    /// **TODO:** Restic calls these "data". Should we follow suit?
     Chunk,
     /// File and directory metadata
     Tree,
@@ -70,8 +68,10 @@ pub fn pack<P: AsRef<Path>>(
     to_index: Sender<PackMetadata>,
     to_upload: SyncSender<String>,
 ) -> Result<()> {
-    let fh = File::create(temp_path.as_ref())
-        .with_context(|| format!("Couldn't create file {}", temp_path.as_ref().display()))?;
+    let temp_path: &Path = temp_path.as_ref();
+
+    let fh = File::create(temp_path)
+        .with_context(|| format!("Couldn't create file {}", temp_path.display()))?;
     let mut packfile = PackfileWriter::new(fh)?;
 
     let mut bytes_written: u64 = 0;
@@ -80,12 +80,7 @@ pub fn pack<P: AsRef<Path>>(
     // For each chunked file...
     while let Ok(blob) = rx.recv() {
         // Write a blob and check how many (uncompressed) bytes we've written to the file so far.
-        let (bytes, blob_type, id) = match &blob {
-            Blob::Chunk(chunk) => (chunk.bytes(), BlobType::Chunk, &chunk.id),
-            Blob::Tree { bytes, id } => (bytes.as_slice(), BlobType::Tree, id),
-        };
-        bytes_written += packfile.write_blob(bytes, blob_type, *id)?;
-        drop(blob);
+        bytes_written += packfile.write_blob(blob)?;
 
         // We've written as many bytes as we want the pack size to to be,
         // but we don't know how much they've compressed to.
@@ -107,7 +102,13 @@ pub fn pack<P: AsRef<Path>>(
                 );
                 let metadata = packfile.finalize()?;
                 let finalized_path = format!("{}.pack", metadata.id);
-                fs::rename(temp_path.as_ref(), &finalized_path)?;
+                fs::rename(temp_path, &finalized_path).with_context(|| {
+                    format!(
+                        "Couldn't rename {} to {}",
+                        temp_path.display(),
+                        finalized_path
+                    )
+                })?;
 
                 to_upload
                     .send(finalized_path)
@@ -116,9 +117,8 @@ pub fn pack<P: AsRef<Path>>(
                     .send(metadata)
                     .context("packer -> indexer channel exited early")?;
 
-                let fh = File::create(temp_path.as_ref()).with_context(|| {
-                    format!("Couldn't create file {}", temp_path.as_ref().display())
-                })?;
+                let fh = File::create(temp_path)
+                    .with_context(|| format!("Couldn't create file {}", temp_path.display()))?;
                 packfile = PackfileWriter::new(fh)?;
                 bytes_written = 0;
                 bytes_before_next_check = DEFAULT_TARGET_SIZE;
@@ -137,7 +137,13 @@ pub fn pack<P: AsRef<Path>>(
     if bytes_written > 0 {
         let metadata = packfile.finalize()?;
         let finalized_path = format!("{}.pack", metadata.id);
-        fs::rename(temp_path.as_ref(), &finalized_path)?;
+        fs::rename(temp_path, &finalized_path).with_context(|| {
+            format!(
+                "Couldn't rename {} to {}",
+                temp_path.display(),
+                finalized_path
+            )
+        })?;
         to_upload
             .send(finalized_path)
             .context("packer -> uploader channel exited early")?;
@@ -171,11 +177,16 @@ impl PackfileWriter {
     }
 
     /// Write the given file chunk or tree to the packfile and add it to the manifest.
-    fn write_blob(&mut self, blob: &[u8], blob_type: BlobType, id: ObjectId) -> io::Result<u64> {
-        let blob_length = blob.len();
+    fn write_blob(&mut self, blob: Blob) -> io::Result<u64> {
+        let (bytes, blob_type, id) = match &blob {
+            Blob::Chunk(chunk) => (chunk.bytes(), BlobType::Chunk, chunk.id),
+            Blob::Tree { bytes, id } => (bytes.as_slice(), BlobType::Tree, *id),
+        };
+
+        let blob_length = bytes.len();
         assert!(blob_length <= u32::MAX as usize);
 
-        self.writer.write_all(blob)?;
+        self.writer.write_all(bytes)?;
         self.manifest.push(PackManifestEntry {
             blob_type,
             length: blob_length as u32,
@@ -185,6 +196,7 @@ impl PackfileWriter {
     }
 
     /// Flush the compressor and check the size of the packfile so far.
+    ///
     /// **Warning:** Doing this too frequently hurts the compression ratio.
     fn flush_and_check_size(&mut self) -> Result<u64> {
         self.writer.flush()?;
@@ -269,6 +281,9 @@ pub fn verify<R: Read + Seek>(
     Ok(())
 }
 
+/// Reads the pack manifest from the back of the given reader.
+///
+/// _Does not_ check the pack's magic bytes or anything besides the manifest.
 pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
     r.seek(SeekFrom::End(-4))?;
     let mut manifest_length: [u8; 4] = [0; 4];

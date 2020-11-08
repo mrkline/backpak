@@ -21,12 +21,10 @@ fn backup_src() -> Result<()> {
     .context("backup failed")?;
 
     // To examine results
-    std::mem::forget(backup_dir);
+    // std::mem::forget(backup_dir);
 
-    /*
     backup_dir
         .close()
         .context("Couldn't delete test directory")?;
-    */
     Ok(())
 }
