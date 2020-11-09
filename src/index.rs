@@ -197,6 +197,10 @@ mod test {
 
     use crate::pack::*;
 
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     fn build_test_index() -> Index {
         let mut supersedes = BTreeSet::new();
         supersedes.insert(ObjectId::hash(b"Some previous index"));
@@ -244,6 +248,8 @@ mod test {
     #[test]
     /// Pack manifest and ID remains stable from build to build.
     fn stability() -> Result<()> {
+        init();
+
         let index = build_test_index();
 
         /*
@@ -271,6 +277,8 @@ mod test {
 
     #[test]
     fn round_trip() -> Result<()> {
+        init();
+
         let index = build_test_index();
         let mut fh = tempfile()?;
         to_file(&mut fh, &index)?;

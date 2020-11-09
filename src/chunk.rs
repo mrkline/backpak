@@ -127,8 +127,14 @@ fn read_file(path: &Path) -> Result<Arc<dyn AsRef<[u8]> + Send + Sync>> {
 mod test {
     use super::*;
 
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[test]
     fn smoke() -> Result<()> {
+        init();
+
         let chunked = chunk_file("tests/references/sr71.txt")?;
         assert_eq!(chunked.len(), 1);
 

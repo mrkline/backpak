@@ -357,9 +357,15 @@ mod test {
 
     use crate::chunk;
 
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[test]
     /// Pack manifest and ID remains stable from build to build.
     fn stability() -> Result<()> {
+        init();
+
         let manifest = vec![
             PackManifestEntry {
                 blob_type: BlobType::Chunk,
@@ -395,6 +401,8 @@ mod test {
 
     #[test]
     fn smoke() -> Result<()> {
+        init();
+
         let chunks = chunk::chunk_file("tests/references/sr71.txt")?;
         let (chunk_tx, chunk_rx) = channel();
         let (pack_tx, pack_rx) = channel();
