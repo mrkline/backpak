@@ -355,6 +355,8 @@ pub fn check_magic<R: Read>(r: &mut R) -> Result<()> {
 mod test {
     use super::*;
 
+    use crate::chunk;
+
     #[test]
     /// Pack manifest and ID remains stable from build to build.
     fn stability() -> Result<()> {
@@ -388,6 +390,47 @@ mod test {
         // but having some example CBOR in the repo seems helpful.)
         let from_example = fs::read("tests/references/pack.stability")?;
         assert_eq!(manifest, from_example);
+        Ok(())
+    }
+
+    #[test]
+    fn smoke() -> Result<()> {
+        let chunks = chunk::chunk_file("tests/references/sr71.txt")?;
+        let (chunk_tx, chunk_rx) = channel();
+        let (pack_tx, pack_rx) = channel();
+        let (upload_tx, upload_rx) = sync_channel(1);
+
+        let chunk_packer =
+            std::thread::spawn(move || pack("temp-chunks.pack", chunk_rx, pack_tx, upload_tx));
+
+        let upload_chucker = std::thread::spawn(move || -> Result<(), std::io::Error> {
+            // This test doesn't actually care about the files themselves,
+            // at least for now. Axe em!
+            while let Ok(to_upload) = upload_rx.recv() {
+                std::fs::remove_file(to_upload)?;
+            }
+            Ok(())
+        });
+
+        for chunk in &chunks {
+            chunk_tx.send(Blob::Chunk(chunk.clone()))?
+        }
+        drop(chunk_tx);
+
+        let mut merged_manifest: PackManifest = Vec::new();
+        while let Ok(mut metadata) = pack_rx.recv() {
+            merged_manifest.append(&mut metadata.manifest);
+        }
+
+        assert_eq!(chunks.len(), merged_manifest.len());
+        for (chunk, manifest_entry) in chunks.iter().zip(merged_manifest.iter()) {
+            assert_eq!(manifest_entry.blob_type, BlobType::Chunk);
+            assert_eq!(manifest_entry.id, chunk.id);
+            assert_eq!(manifest_entry.length as usize, chunk.len());
+        }
+
+        chunk_packer.join().unwrap()?;
+        upload_chucker.join().unwrap()?;
         Ok(())
     }
 }
