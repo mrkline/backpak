@@ -14,7 +14,7 @@ use crate::pack;
 #[derive(Debug, StructOpt)]
 pub struct Args {
     #[structopt(short, long)]
-    check_packs: bool,
+    pub check_packs: bool,
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {

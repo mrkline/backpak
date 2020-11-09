@@ -20,6 +20,8 @@ fn backup_src() -> Result<()> {
     )
     .context("backup failed")?;
 
+    check::run(backup_dir.path(), check::Args { check_packs: true }).context("check failed")?;
+
     // To examine results
     // std::mem::forget(backup_dir);
 
