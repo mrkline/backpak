@@ -119,9 +119,15 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
 mod test {
     use super::*;
 
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[test]
     /// Pack manifest and ID remains stable from build to build.
     fn stability() -> Result<()> {
+        init();
+
         let mut tree = BTreeMap::new();
         tree.insert(
             PathBuf::from("UnixFileNode"),
