@@ -1,12 +1,11 @@
-use std::fs::{self, File};
 use std::io::prelude::*;
-use std::io::{self, BufWriter, SeekFrom};
-use std::path::Path;
+use std::io::{self, SeekFrom};
 use std::sync::mpsc::*;
 
 use anyhow::*;
 use log::*;
 use serde_derive::*;
+use tempfile::NamedTempFile;
 
 use crate::file_util;
 use crate::hashing::{HashingReader, ObjectId};
@@ -62,17 +61,12 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
 }
 
 /// Packs chunked files received from the given channel.
-pub fn pack<P: AsRef<Path>>(
-    temp_path: P,
+pub fn pack(
     rx: Receiver<Blob>,
     to_index: Sender<PackMetadata>,
     to_upload: SyncSender<String>,
 ) -> Result<()> {
-    let temp_path: &Path = temp_path.as_ref();
-
-    let fh = File::create(temp_path)
-        .with_context(|| format!("Couldn't create file {}", temp_path.display()))?;
-    let mut packfile = PackfileWriter::new(fh)?;
+    let mut packfile = PackfileWriter::new()?;
 
     let mut bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
@@ -102,13 +96,6 @@ pub fn pack<P: AsRef<Path>>(
                 );
                 let metadata = packfile.finalize()?;
                 let finalized_path = format!("{}.pack", metadata.id);
-                fs::rename(temp_path, &finalized_path).with_context(|| {
-                    format!(
-                        "Couldn't rename {} to {}",
-                        temp_path.display(),
-                        finalized_path
-                    )
-                })?;
 
                 to_upload
                     .send(finalized_path)
@@ -117,9 +104,7 @@ pub fn pack<P: AsRef<Path>>(
                     .send(metadata)
                     .context("packer -> indexer channel exited early")?;
 
-                let fh = File::create(temp_path)
-                    .with_context(|| format!("Couldn't create file {}", temp_path.display()))?;
-                packfile = PackfileWriter::new(fh)?;
+                packfile = PackfileWriter::new()?;
                 bytes_written = 0;
                 bytes_before_next_check = DEFAULT_TARGET_SIZE;
             }
@@ -137,13 +122,6 @@ pub fn pack<P: AsRef<Path>>(
     if bytes_written > 0 {
         let metadata = packfile.finalize()?;
         let finalized_path = format!("{}.pack", metadata.id);
-        fs::rename(temp_path, &finalized_path).with_context(|| {
-            format!(
-                "Couldn't rename {} to {}",
-                temp_path.display(),
-                finalized_path
-            )
-        })?;
         to_upload
             .send(finalized_path)
             .context("packer -> uploader channel exited early")?;
@@ -158,14 +136,20 @@ type ZstdEncoder<W> = zstd::stream::write::Encoder<W>;
 type ZstdDecoder<R> = zstd::stream::read::Decoder<R>;
 
 struct PackfileWriter {
-    writer: ZstdEncoder<File>,
+    writer: ZstdEncoder<NamedTempFile>,
     manifest: PackManifest,
 }
 
 // TODO: Obviously this should all take place in a configurable temp directory
 
 impl PackfileWriter {
-    fn new(mut fh: File) -> io::Result<Self> {
+    fn new() -> Result<Self> {
+        let mut fh = tempfile::Builder::new()
+            .prefix("temp-backpak-")
+            .suffix(".pack")
+            .tempfile_in(&std::env::current_dir()?) // TODO: Configurable?
+            .context("Couldn't open temporary packfile for writing")?;
+
         fh.write_all(MAGIC_BYTES)?;
 
         let mut zstd = ZstdEncoder::new(fh, 0)?;
@@ -200,7 +184,7 @@ impl PackfileWriter {
     /// **Warning:** Doing this too frequently hurts the compression ratio.
     fn flush_and_check_size(&mut self) -> Result<u64> {
         self.writer.flush()?;
-        let fh: &File = self.writer.get_ref();
+        let fh = self.writer.get_ref().as_file();
         Ok(fh.metadata()?.len())
     }
 
@@ -211,27 +195,33 @@ impl PackfileWriter {
         // Finish the compression stream for blobs and trees.
         // We'll compress the manifest separately so we can decompress it
         // without reading everything before it.
-        let mut fh: BufWriter<File> = BufWriter::new(self.writer.finish()?);
+        let mut fh: NamedTempFile = self.writer.finish()?;
 
         // The manifest CBOR will have lots of redundant data - compress it down.
         // TODO: Is multithreading worth it here?
         // This shouldn't be much data compared to blobs and trees.
-        let manifest = zstd::block::compress(&manifest, 0)?;
-        let manifest_length = manifest.len() as u32;
-
-        fh.write_all(&manifest)?;
+        let mut manifest = zstd::block::compress(&manifest, 0)?;
 
         // Write the length of the (compressed) manifest to the end of the file,
         // making it simple and fast to examine the manifest:
         // read the last four bytes, seek to the start of the manifest,
         // and decompress it.
-        fh.write_all(&manifest_length.to_be_bytes())?;
+        let manifest_length = manifest.len() as u32;
+        manifest.extend_from_slice(&manifest_length.to_be_bytes());
+        fh.write_all(&manifest)?;
+
+        // All done! Sync, persist, and go home.
+        fh.as_file().sync_all()?;
+        let pack_name = format!("{}.pack", id);
+        let persisted = fh
+            .persist(&pack_name)
+            .with_context(|| format!("Couldn't persist finished pack to {}", pack_name))?;
+
         info!(
-            "Pack {} finished ({} bytes)",
+            "Pack {}.pack finished ({} bytes)",
             id,
-            fh.get_ref().metadata()?.len(),
+            persisted.metadata()?.len(),
         );
-        fh.into_inner()?.sync_all()?;
 
         Ok(PackMetadata {
             id,
@@ -394,7 +384,7 @@ mod test {
         // Contents remain stable
         // (We could just use the ID and length,
         // but having some example CBOR in the repo seems helpful.)
-        let from_example = fs::read("tests/references/pack.stability")?;
+        let from_example = std::fs::read("tests/references/pack.stability")?;
         assert_eq!(manifest, from_example);
         Ok(())
     }
@@ -403,19 +393,20 @@ mod test {
     fn smoke() -> Result<()> {
         init();
 
-        let chunks = chunk::chunk_file("tests/references/sr71.txt")?;
+        let chunks = chunk::chunk_file("tests/references/sr71.txt")
+            .context("Couldn't chunk reference file")?;
         let (chunk_tx, chunk_rx) = channel();
         let (pack_tx, pack_rx) = channel();
         let (upload_tx, upload_rx) = sync_channel(1);
 
-        let chunk_packer =
-            std::thread::spawn(move || pack("temp-chunks.pack", chunk_rx, pack_tx, upload_tx));
+        let chunk_packer = std::thread::spawn(move || pack(chunk_rx, pack_tx, upload_tx));
 
-        let upload_chucker = std::thread::spawn(move || -> Result<(), std::io::Error> {
+        let upload_chucker = std::thread::spawn(move || -> Result<()> {
             // This test doesn't actually care about the files themselves,
             // at least for now. Axe em!
             while let Ok(to_upload) = upload_rx.recv() {
-                std::fs::remove_file(to_upload)?;
+                std::fs::remove_file(&to_upload)
+                    .with_context(|| format!("Couldn't remove completed packfile {}", to_upload))?;
             }
             Ok(())
         });
@@ -430,15 +421,15 @@ mod test {
             merged_manifest.append(&mut metadata.manifest);
         }
 
+        chunk_packer.join().unwrap()?;
+        upload_chucker.join().unwrap()?;
+
         assert_eq!(chunks.len(), merged_manifest.len());
         for (chunk, manifest_entry) in chunks.iter().zip(merged_manifest.iter()) {
             assert_eq!(manifest_entry.blob_type, BlobType::Chunk);
             assert_eq!(manifest_entry.id, chunk.id);
             assert_eq!(manifest_entry.length as usize, chunk.len());
         }
-
-        chunk_packer.join().unwrap()?;
-        upload_chucker.join().unwrap()?;
         Ok(())
     }
 }
