@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File};
-use std::io;
+use std::io::prelude::*;
+use std::io::{self, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
 use std::thread;
@@ -121,10 +122,9 @@ fn pack_tree(
     Ok(id)
 }
 
-fn upload(backend: &mut dyn backend::Backend, rx: Receiver<String>) -> Result<()> {
-    while let Ok(path) = rx.recv() {
-        let mut fh =
-            File::open(&path).with_context(|| format!("Couldn't open {} for upload", path))?;
+fn upload(backend: &mut dyn backend::Backend, rx: Receiver<(String, File)>) -> Result<()> {
+    while let Ok((path, mut fh)) = rx.recv() {
+        fh.seek(SeekFrom::Start(0))?;
         let to = backend::destination(&path);
         backend.write(&mut fh, &to)?;
         debug!("Backed up {}. Removing temp copy", path);
