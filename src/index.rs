@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File};
+use std::fs;
 use std::io::prelude::*;
 use std::path::Path;
 use std::str::FromStr;
@@ -8,6 +8,7 @@ use std::sync::mpsc::{Receiver, SyncSender};
 use anyhow::*;
 use log::*;
 use serde_derive::*;
+use tempfile::NamedTempFile;
 
 use crate::backend::Backend;
 use crate::file_util::check_magic;
@@ -45,7 +46,8 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
         // That way the temp index should always contain a complete list of packs,
         // allowing us to resume a backup from the last finished pack.
 
-        let (index_id, compressed_size) = to_temp_file(&index)?;
+        let (index_id, temp_file) = to_temp_file(&index)?;
+        let compressed_size = temp_file.as_file().metadata()?.len();
 
         // If we're close enough to our target size, stop
         if compressed_size >= DEFAULT_TARGET_SIZE {
@@ -54,23 +56,31 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
                 index_id, compressed_size
             );
             let id_name = format!("{}.index", index_id);
-            fs::rename(TEMP_INDEX_LOCATION, &id_name).with_context(|| {
-                format!("Couldn't rename {} to {}", TEMP_INDEX_LOCATION, id_name)
-            })?;
+            temp_file
+                .persist(&id_name)
+                .with_context(|| format!("Couldn't persist finished index to {}.index", id))?;
             to_upload
                 .send(id_name.clone())
                 .context("indexer -> uploader channel exited early")?;
 
             index = Index::default();
+        } else {
+            // Persist WIP (but valid) indexes to disk so that an interrupted
+            // backup can read it in and know what we've already backed up.
+            temp_file
+                .persist("backpak-wip.index")
+                .context("Couldn't persist WIP index to backpak-wip.index")?;
         }
     }
     if !index.packs.is_empty() {
-        let (index_id, compressed_size) = to_temp_file(&index)?;
+        let (index_id, temp_file) = to_temp_file(&index)?;
+        let compressed_size = temp_file.as_file().metadata()?.len();
         info!("Index {} finished ({} bytes)", index_id, compressed_size);
 
         let id_name = format!("{}.index", index_id);
-        fs::rename(TEMP_INDEX_LOCATION, &id_name)
-            .with_context(|| format!("Couldn't rename {} to {}", TEMP_INDEX_LOCATION, id_name))?;
+        temp_file
+            .persist(&id_name)
+            .with_context(|| format!("Couldn't persist finished index to {}.index", index_id))?;
         to_upload
             .send(id_name)
             .context("indexer -> uploader channel exited early")?;
@@ -78,22 +88,22 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
     Ok(())
 }
 
-// TODO: Obviously this should all take place in a configurable temp directory
-//
-const TEMP_INDEX_LOCATION: &str = "temp.index";
-
-fn to_temp_file(index: &Index) -> Result<(ObjectId, u64)> {
+fn to_temp_file(index: &Index) -> Result<(ObjectId, NamedTempFile)> {
     // Could we speed things up by reusing the same file handle instead of
     // opening, writing, and closing each time we update the WIP index file?
     // Probably, but we'd have to seek back to the beginning each time,
     // _and_ we'd be assuming that the file grows larger each time.
-    // (This might not be true since its contents are compressed...)
-    let mut fh = File::create(TEMP_INDEX_LOCATION)
-        .with_context(|| format!("Couldn't create {}", TEMP_INDEX_LOCATION))?;
-    to_file(&mut fh, index)
+    // (This _might_ not be true since its contents are compressed...)
+    let mut fh = tempfile::Builder::new()
+        .prefix("temp-backpak-")
+        .suffix(".index")
+        .tempfile_in(&std::env::current_dir()?) // TODO: Configurable?
+        .context("Couldn't open temporary index for writing")?;
+
+    Ok((to_file(fh.as_file_mut(), index)?, fh))
 }
 
-fn to_file(fh: &mut File, index: &Index) -> Result<(ObjectId, u64)> {
+fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
     fh.write_all(MAGIC_BYTES)?;
 
     let mut zstd = zstd::stream::write::Encoder::new(fh, 0)?;
@@ -106,14 +116,8 @@ fn to_file(fh: &mut File, index: &Index) -> Result<(ObjectId, u64)> {
     let (id, zstd) = hasher.finalize();
     let fh = zstd.finish()?;
     fh.sync_all()?;
-    let length: u64 = fh.metadata()?.len();
 
-    // Because we rewrite the temp index file over and over, don't rename it here.
-    // Rename it in the loop above when it's large enough.
-    // (Otherwise we'd be leaving behind a set of index files as large
-    // as the pack list.)
-
-    Ok((id, length))
+    Ok(id)
 }
 
 pub fn build_master_index(backend: &dyn Backend) -> Result<Index> {

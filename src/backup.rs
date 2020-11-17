@@ -34,22 +34,9 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let mut backend = backend::open(repository)?;
 
     // TODO: Get these paths out of config? Some constants in a shared module?
-    let chunk_packer = thread::spawn(move || {
-        pack::pack(
-            "temp-chunks.pack",
-            chunk_rx,
-            chunk_pack_tx,
-            chunk_pack_upload_tx,
-        )
-    });
-    let tree_packer = thread::spawn(move || {
-        pack::pack(
-            "temp-trees.pack",
-            tree_rx,
-            tree_pack_tx,
-            tree_pack_upload_tx,
-        )
-    });
+    let chunk_packer =
+        thread::spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx));
+    let tree_packer = thread::spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx));
     let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
     let uploader = thread::spawn(move || upload(&mut *backend, upload_rx));
 
