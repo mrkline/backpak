@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::*;
 use tempfile::tempdir;
 
-use backup_test::*;
+use backpak::*;
 
 #[test]
 fn backup_src() -> Result<()> {
