@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
 use std::sync::mpsc::*;
@@ -64,7 +65,7 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
 pub fn pack(
     rx: Receiver<Blob>,
     to_index: Sender<PackMetadata>,
-    to_upload: SyncSender<String>,
+    to_upload: SyncSender<(String, File)>,
 ) -> Result<()> {
     let mut packfile = PackfileWriter::new()?;
 
@@ -94,11 +95,11 @@ pub fn pack(
                     compressed_size,
                     DEFAULT_TARGET_SIZE
                 );
-                let metadata = packfile.finalize()?;
+                let (metadata, persisted) = packfile.finalize()?;
                 let finalized_path = format!("{}.pack", metadata.id);
 
                 to_upload
-                    .send(finalized_path)
+                    .send((finalized_path, persisted))
                     .context("packer -> uploader channel exited early")?;
                 to_index
                     .send(metadata)
@@ -120,10 +121,10 @@ pub fn pack(
         }
     }
     if bytes_written > 0 {
-        let metadata = packfile.finalize()?;
+        let (metadata, persisted) = packfile.finalize()?;
         let finalized_path = format!("{}.pack", metadata.id);
         to_upload
-            .send(finalized_path)
+            .send((finalized_path, persisted))
             .context("packer -> uploader channel exited early")?;
         to_index
             .send(metadata)
@@ -188,8 +189,9 @@ impl PackfileWriter {
         Ok(fh.metadata()?.len())
     }
 
-    /// Finalize the packfile, returning the manifest and its ID.
-    fn finalize(self) -> Result<PackMetadata> {
+    /// Finalize the packfile, returning the manifest & ID with a handle to
+    /// the persisted file (so that the uploader doesn't have to reopen it).
+    fn finalize(self) -> Result<(PackMetadata, File)> {
         let (manifest, id) = serialize_and_hash(&self.manifest)?;
 
         // Finish the compression stream for blobs and trees.
@@ -223,10 +225,13 @@ impl PackfileWriter {
             persisted.metadata()?.len(),
         );
 
-        Ok(PackMetadata {
-            id,
-            manifest: self.manifest,
-        })
+        Ok((
+            PackMetadata {
+                id,
+                manifest: self.manifest,
+            },
+            persisted,
+        ))
     }
 }
 
@@ -345,6 +350,8 @@ pub fn check_magic<R: Read>(r: &mut R) -> Result<()> {
 mod test {
     use super::*;
 
+    use std::fs;
+
     use crate::chunk;
 
     fn init() {
@@ -384,7 +391,7 @@ mod test {
         // Contents remain stable
         // (We could just use the ID and length,
         // but having some example CBOR in the repo seems helpful.)
-        let from_example = std::fs::read("tests/references/pack.stability")?;
+        let from_example = fs::read("tests/references/pack.stability")?;
         assert_eq!(manifest, from_example);
         Ok(())
     }
@@ -404,8 +411,8 @@ mod test {
         let upload_chucker = std::thread::spawn(move || -> Result<()> {
             // This test doesn't actually care about the files themselves,
             // at least for now. Axe em!
-            while let Ok(to_upload) = upload_rx.recv() {
-                std::fs::remove_file(&to_upload)
+            while let Ok((to_upload, _)) = upload_rx.recv() {
+                fs::remove_file(&to_upload)
                     .with_context(|| format!("Couldn't remove completed packfile {}", to_upload))?;
             }
             Ok(())

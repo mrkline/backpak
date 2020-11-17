@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use std::fs::{self, File};
 use std::io::prelude::*;
 use std::path::Path;
 use std::str::FromStr;
@@ -26,7 +26,7 @@ pub struct Index {
     pub packs: BTreeMap<ObjectId, PackManifest>,
 }
 
-pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Result<()> {
+pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<(String, File)>) -> Result<()> {
     let mut index = Index::default();
 
     // For each pack...
@@ -56,11 +56,11 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
                 index_id, compressed_size
             );
             let id_name = format!("{}.index", index_id);
-            temp_file
+            let persisted = temp_file
                 .persist(&id_name)
                 .with_context(|| format!("Couldn't persist finished index to {}.index", id))?;
             to_upload
-                .send(id_name.clone())
+                .send((id_name, persisted))
                 .context("indexer -> uploader channel exited early")?;
 
             index = Index::default();
@@ -78,11 +78,11 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<String>) -> Resul
         info!("Index {} finished ({} bytes)", index_id, compressed_size);
 
         let id_name = format!("{}.index", index_id);
-        temp_file
+        let persisted = temp_file
             .persist(&id_name)
             .with_context(|| format!("Couldn't persist finished index to {}.index", index_id))?;
         to_upload
-            .send(id_name)
+            .send((id_name, persisted))
             .context("indexer -> uploader channel exited early")?;
     }
     Ok(())
