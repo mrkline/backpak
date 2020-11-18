@@ -59,6 +59,11 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<(String, File)>) 
             let persisted = temp_file
                 .persist(&id_name)
                 .with_context(|| format!("Couldn't persist finished index to {}.index", id))?;
+
+            // Let's axe any temp copies we had.
+            // If one doesn't exist or something, that's cool too.
+            let _ = fs::remove_file("backpak-wip.index");
+
             to_upload
                 .send((id_name, persisted))
                 .context("indexer -> uploader channel exited early")?;
@@ -81,6 +86,11 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<(String, File)>) 
         let persisted = temp_file
             .persist(&id_name)
             .with_context(|| format!("Couldn't persist finished index to {}.index", index_id))?;
+
+        // Let's axe any temp copies we had.
+        // If one doesn't exist or something, that's cool too.
+        let _ = fs::remove_file("backpak-wip.index");
+
         to_upload
             .send((id_name, persisted))
             .context("indexer -> uploader channel exited early")?;
