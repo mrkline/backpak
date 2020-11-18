@@ -54,7 +54,12 @@ fn backup_src() -> Result<()> {
     backup::run(
         backup_dir.path(),
         backup::Args {
-            files: ["src", "tests/references"]
+            author: Some(String::from("Nobody Important")),
+            tags: ["some", "test", "tags"]
+                .iter()
+                .map(|s| String::from(*s))
+                .collect(),
+            paths: ["src", "tests/references"]
                 .iter()
                 .map(PathBuf::from)
                 .collect(),

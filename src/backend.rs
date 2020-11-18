@@ -50,8 +50,18 @@ pub trait Backend {
             .with_context(|| format!("Couldn't open {}", index_path))
     }
 
+    fn read_snapshot<'a>(&'a self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send + 'a>> {
+        let snapshot_path = format!("snapshots/{}.snapshot", id);
+        self.read(&snapshot_path)
+            .with_context(|| format!("Couldn't open {}", snapshot_path))
+    }
+
     fn list_indexes(&self) -> Result<Vec<String>> {
         self.list("indexes/")
+    }
+
+    fn list_snapshots(&self) -> Result<Vec<String>> {
+        self.list("snapshots/")
     }
 }
 
@@ -75,6 +85,7 @@ pub fn destination(src: &str) -> String {
     match Path::new(src).extension().and_then(OsStr::to_str) {
         Some("pack") => format!("packs/{}/{}", &src[0..2], src),
         Some("index") => format!("indexes/{}", src),
+        Some("snapshot") => format!("snapshots/{}", src),
         _ => panic!("Unexpected extension on file to upload: {}", src),
     }
 }

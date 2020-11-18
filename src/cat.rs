@@ -10,6 +10,7 @@ use crate::backend;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
+use crate::snapshot;
 use crate::tree;
 
 #[derive(Debug, StructOpt)]
@@ -23,6 +24,7 @@ pub enum Subcommand {
     Blob { id: ObjectId },
     Pack { id: ObjectId },
     Index { id: ObjectId },
+    Snapshot { id: ObjectId },
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
@@ -66,6 +68,10 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         Subcommand::Index { id } => {
             let index = index::from_reader(&mut backend.read_index(&id)?)?;
             serde_json::to_writer(io::stdout(), &index)?;
+        }
+        Subcommand::Snapshot { id } => {
+            let snapshot = snapshot::from_reader(&mut backend.read_snapshot(&id)?)?;
+            serde_json::to_writer(io::stdout(), &snapshot)?;
         }
     }
     Ok(())
