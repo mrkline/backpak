@@ -21,6 +21,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let backend = backend::open(repository)?;
     let index = index::build_master_index(&*backend)?;
 
+    // TODO: Verify snapshots. Just ensure their tree is a valid one?
+
     let borked = AtomicUsize::new(0);
     index.packs.par_iter().for_each(|(pack_id, manifest)| {
         if let Err(e) = check_pack(&*backend, pack_id, manifest, args.check_packs) {

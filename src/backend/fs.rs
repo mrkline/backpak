@@ -1,6 +1,6 @@
 use super::*;
 
-use std::fs::*;
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -8,13 +8,18 @@ pub struct FilesystemBackend {
     base_directory: PathBuf,
 }
 
-impl SeekableReader for File {}
+impl SeekableReader for fs::File {}
+
+#[inline]
+fn create_dir(d: &Path) -> Result<()> {
+    fs::create_dir(d).with_context(|| format!("Couldn't create {}", d.display()))
+}
 
 impl FilesystemBackend {
     pub fn initialize(repository: &Path) -> Result<()> {
         if repository.exists() {
             ensure!(
-                read_dir(repository)
+                fs::read_dir(repository)
                     .with_context(|| format!("Couldn't read {}", repository.display()))?
                     .count()
                     == 0,
@@ -22,23 +27,18 @@ impl FilesystemBackend {
                 repository.display()
             );
         } else {
-            create_dir(repository)
-                .with_context(|| format!("Couldn't create {}", repository.display()))?;
+            create_dir(repository)?;
         }
 
-        let packs_dir = repository.join("packs");
-        create_dir(&packs_dir)
-            .with_context(|| format!("Couldn't create {}", packs_dir.display()))?;
+        create_dir(&repository.join("packs"))?;
 
         for b in 0..=255 {
             let pack_bucket = repository.join(format!("packs/{:02x}", b));
-            create_dir(&pack_bucket)
-                .with_context(|| format!("Couldn't create {}", pack_bucket.display()))?;
+            create_dir(&pack_bucket)?;
         }
 
-        let indexes_dir = repository.join("indexes");
-        create_dir(&indexes_dir)
-            .with_context(|| format!("Couldn't create {}", indexes_dir.display()))?;
+        create_dir(&repository.join("indexes"))?;
+        create_dir(&repository.join("snapshots"))?;
 
         Ok(())
     }
@@ -67,7 +67,7 @@ impl FilesystemBackend {
 impl Backend for FilesystemBackend {
     fn read<'a>(&'a self, from: &str) -> Result<Box<dyn SeekableReader + Send + 'a>> {
         let from = self.base_directory.join(from);
-        Ok(Box::new(File::open(&from).with_context(|| {
+        Ok(Box::new(fs::File::open(&from).with_context(|| {
             format!("Couldn't open {}", from.display())
         })?))
     }
@@ -75,7 +75,7 @@ impl Backend for FilesystemBackend {
     fn write(&mut self, from: &mut dyn Read, to: &str) -> Result<()> {
         let to = self.base_directory.join(to);
         let mut fh =
-            File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
+            fs::File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
         io::copy(from, &mut fh)?;
         Ok(())
     }

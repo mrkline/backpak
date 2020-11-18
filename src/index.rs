@@ -55,17 +55,17 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<(String, File)>) 
                 "Index {} finished ({} bytes). Starting another...",
                 index_id, compressed_size
             );
-            let id_name = format!("{}.index", index_id);
+            let index_name = format!("{}.index", index_id);
             let persisted = temp_file
-                .persist(&id_name)
-                .with_context(|| format!("Couldn't persist finished index to {}.index", id))?;
+                .persist(&index_name)
+                .with_context(|| format!("Couldn't persist finished index to {}", index_name))?;
 
             // Let's axe any temp copies we had.
             // If one doesn't exist or something, that's cool too.
             let _ = fs::remove_file("backpak-wip.index");
 
             to_upload
-                .send((id_name, persisted))
+                .send((index_name, persisted))
                 .context("indexer -> uploader channel exited early")?;
 
             index = Index::default();
@@ -82,17 +82,17 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<(String, File)>) 
         let compressed_size = temp_file.as_file().metadata()?.len();
         info!("Index {} finished ({} bytes)", index_id, compressed_size);
 
-        let id_name = format!("{}.index", index_id);
+        let index_name = format!("{}.index", index_id);
         let persisted = temp_file
-            .persist(&id_name)
-            .with_context(|| format!("Couldn't persist finished index to {}.index", index_id))?;
+            .persist(&index_name)
+            .with_context(|| format!("Couldn't persist finished index to {}", index_name))?;
 
         // Let's axe any temp copies we had.
         // If one doesn't exist or something, that's cool too.
         let _ = fs::remove_file("backpak-wip.index");
 
         to_upload
-            .send((id_name, persisted))
+            .send((index_name, persisted))
             .context("indexer -> uploader channel exited early")?;
     }
     Ok(())

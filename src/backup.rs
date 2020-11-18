@@ -7,6 +7,7 @@ use std::sync::mpsc::*;
 use std::thread;
 
 use anyhow::*;
+use chrono::prelude::*;
 use log::*;
 use structopt::StructOpt;
 
@@ -15,15 +16,34 @@ use crate::chunk;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
+use crate::snapshot;
 use crate::tree;
 
-/// Create a new mod directory here (or wherever -C gave)
+/// Create a snapshot of the given files and directories.
 #[derive(Debug, StructOpt)]
 pub struct Args {
-    pub files: Vec<PathBuf>,
+    #[structopt(short, long)]
+    pub author: Option<String>,
+
+    #[structopt(short = "t", long = "tag")]
+    pub tags: Vec<String>,
+
+    #[structopt(required = true)]
+    pub paths: Vec<PathBuf>,
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
+    // Let's canonicalize our paths (and make sure they're real!)
+    // before we spin up a bunch of supporting infrastructure.
+    let paths: BTreeSet<PathBuf> = args
+        .paths
+        .into_iter()
+        .map(|p| {
+            p.canonicalize()
+                .with_context(|| format!("Couldn't canonicalize {}", p.display()))
+        })
+        .collect::<Result<BTreeSet<PathBuf>>>()?;
+
     let (mut chunk_tx, chunk_rx) = channel();
     let (mut tree_tx, tree_rx) = channel();
     let (chunk_pack_tx, pack_rx) = channel();
@@ -31,6 +51,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let (chunk_pack_upload_tx, upload_rx) = sync_channel(1);
     let tree_pack_upload_tx = chunk_pack_upload_tx.clone();
     let index_upload_tx = chunk_pack_upload_tx.clone();
+    let snapshot_upload_tx = chunk_pack_upload_tx.clone();
 
     let mut backend = backend::open(repository)?;
 
@@ -41,10 +62,26 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
     let uploader = thread::spawn(move || upload(&mut *backend, upload_rx));
 
-    let args: BTreeSet<PathBuf> = args.files.into_iter().collect();
-
     // TODO: The ID of the tree root is what we reference in the snapshot.
-    let _root = pack_tree(&args, &mut chunk_tx, &mut tree_tx)?;
+    let root = pack_tree(&paths, &mut chunk_tx, &mut tree_tx)?;
+
+    let author = match args.author {
+        Some(a) => a,
+        None => hostname::get()
+            .context("Couldn't get hostname")?
+            .to_string_lossy()
+            .to_string(),
+    };
+
+    let snapshot = snapshot::Snapshot {
+        time: Local::now().into(),
+        author,
+        tags: args.tags.into_iter().collect(),
+        paths,
+        tree: root,
+    };
+
+    snapshot::upload(&snapshot, snapshot_upload_tx)?;
 
     drop(chunk_tx);
     drop(tree_tx);

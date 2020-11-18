@@ -11,6 +11,7 @@ opt-level = 2 # We want optimization even for debug builds for all the hashing.
 anyhow = "1.0"
 fastcdc = "1.0"
 hex = "0.4"
+hostname = "0.3"
 log = "0.4"
 memmap = "0.7"
 num_cpus = "1.0"
