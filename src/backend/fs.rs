@@ -15,6 +15,12 @@ fn create_dir(d: &Path) -> Result<()> {
     fs::create_dir(d).with_context(|| format!("Couldn't create {}", d.display()))
 }
 
+#[inline]
+fn ensure_exists(e: &Path) -> Result<()> {
+    ensure!(e.exists(), "{} doesn't exist", e.display());
+    Ok(())
+}
+
 impl FilesystemBackend {
     pub fn initialize(repository: &Path) -> Result<()> {
         if repository.exists() {
@@ -45,20 +51,14 @@ impl FilesystemBackend {
 
     pub fn open(repository: &Path) -> Result<Self> {
         let base_directory = PathBuf::from(repository);
-        ensure!(
-            base_directory.exists(),
-            "The directory {} doesn't exist",
-            repository.display()
-        );
+        ensure_exists(&base_directory)?;
 
         for b in 0..=255 {
-            let pack_bucket = base_directory.join(format!("packs/{:02x}", b));
-            ensure!(
-                pack_bucket.exists(),
-                "The directory {} doesn't exist",
-                pack_bucket.display()
-            );
+            ensure_exists(&base_directory.join(format!("packs/{:02x}", b)))?;
         }
+
+        ensure_exists(&base_directory.join("indexes"))?;
+        ensure_exists(&base_directory.join("snapshots"))?;
 
         Ok(Self { base_directory })
     }
