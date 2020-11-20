@@ -10,7 +10,7 @@ use log::*;
 use serde_derive::*;
 use tempfile::NamedTempFile;
 
-use crate::backend::Backend;
+use crate::backend::CachedBackend;
 use crate::file_util::check_magic;
 use crate::hashing::{HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
@@ -130,7 +130,7 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
     Ok(id)
 }
 
-pub fn build_master_index(backend: &dyn Backend) -> Result<Index> {
+pub fn build_master_index(cached_backend: &CachedBackend) -> Result<Index> {
     debug!("Building master index...");
 
     let mut superseded_indexes = BTreeSet::new();
@@ -138,7 +138,7 @@ pub fn build_master_index(backend: &dyn Backend) -> Result<Index> {
     // Don't combine the indexes until we know which ones to exclude.
     let mut loaded_indexes: BTreeMap<ObjectId, BTreeMap<ObjectId, PackManifest>> = BTreeMap::new();
 
-    for index in backend.list_indexes()? {
+    for index in cached_backend.backend.list_indexes()? {
         trace!("Loading index {}...", index);
 
         let to_load_id = Path::new(&index)
@@ -146,7 +146,7 @@ pub fn build_master_index(backend: &dyn Backend) -> Result<Index> {
             .ok_or_else(|| anyhow!("Couldn't determine index ID from {}", index))
             .and_then(|hex| ObjectId::from_str(hex.to_str().unwrap()))?;
 
-        let mut loaded_index = from_reader(&mut backend.read(&index)?)
+        let mut loaded_index = from_reader(&mut cached_backend.read(&index)?)
             .with_context(|| format!("Couldn't load index {}", index))?;
         superseded_indexes.append(&mut loaded_index.supersedes);
         ensure!(
