@@ -1,14 +1,22 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use anyhow::*;
 use chrono::{offset::Utc, DateTime, TimeZone};
 use serde_derive::*;
 
+use crate::backend;
 use crate::hashing::ObjectId;
+use crate::index;
+use crate::pack;
 use crate::prettify;
 
+/// The contents of a file or directory.
+///
+/// Files have chunks, and a directory has a subtree representing
+/// everything in that subdirectory.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
 pub enum NodeContents {
@@ -40,6 +48,7 @@ pub struct WindowsMetadata {
     write_time: Option<DateTime<Utc>>,
 }
 
+/// A file or directory's metadata - Windows or Posix.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
 pub enum NodeMetadata {
@@ -100,6 +109,7 @@ pub fn windows_timestamp(ts: u64) -> Option<DateTime<Utc>> {
     }
 }
 
+/// A single file or directory and its metadata
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Node {
     #[serde(flatten)]
@@ -107,12 +117,79 @@ pub struct Node {
     pub metadata: NodeMetadata,
 }
 
+/// A tree (representing a single directory) of files (with contents),
+/// directories (with subtree), and their metadata, addressed by name.
 pub type Tree = BTreeMap<PathBuf, Node>;
 
+/// Serialize the tree into its on-disk CBOR representation and return its
+/// ID (hash)
 pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
     let tree_cbor = serde_cbor::to_vec(tree)?;
     let id = ObjectId::hash(&tree_cbor);
     Ok((tree_cbor, id))
+}
+
+/// A collection of trees (which might reference each other as subtrees.)
+///
+/// We use a HashMap because we never serialize a whole forest to our backup,
+/// so we'll take constant-time lookup over deterministic order.
+/// We use an Rc<Tree> so that a Forest can be used as a tree cache,
+/// doling out references to its trees.
+pub type Forest = HashMap<ObjectId, Rc<Tree>>;
+
+/// A read-through cache of trees that extracts them from packs as-needed.
+pub struct Cache<'a> {
+    /// The master index, used to look up a pack's manifest from its ID
+    master_index: &'a index::Index,
+
+    /// Finds the pack that contains a given blob
+    blob_to_pack_map: &'a HashMap<ObjectId, ObjectId>,
+
+    /// Gets packs as-needed from the backend.
+    pack_cache: &'a backend::CachedBackend,
+
+    /// Our actual tree cache.
+    tree_cache: Forest,
+}
+
+impl<'a> Cache<'a> {
+    pub fn new(
+        master_index: &'a index::Index,
+        blob_to_pack_map: &'a HashMap<ObjectId, ObjectId>,
+        pack_cache: &'a backend::CachedBackend,
+    ) -> Self {
+        Self {
+            master_index,
+            blob_to_pack_map,
+            pack_cache,
+            tree_cache: Forest::new(),
+        }
+    }
+
+    fn read(&mut self, id: &ObjectId) -> Result<Rc<Tree>> {
+        if let Some(t) = self.tree_cache.get(id) {
+            return Ok(t.clone());
+        }
+
+        let pack_id = self
+            .blob_to_pack_map
+            .get(id)
+            .ok_or_else(|| anyhow!("No pack contains tree {}", id))?;
+
+        let mut pack_containing_tree = self.pack_cache.read_pack(&pack_id)?;
+        let manifest = self
+            .master_index
+            .packs
+            .get(&pack_id)
+            .expect("Pack ID in blob -> pack map but not the index");
+
+        pack::append_to_forest(&mut pack_containing_tree, &manifest, &mut self.tree_cache)?;
+
+        self.tree_cache
+            .get(id)
+            .ok_or_else(|| anyhow!("Tree {} missing from pack {}", id, pack_id))
+            .map(|entry| entry.clone())
+    }
 }
 
 #[cfg(test)]
