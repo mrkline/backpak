@@ -8,8 +8,6 @@ pub struct FilesystemBackend {
     base_directory: PathBuf,
 }
 
-impl SeekableReader for fs::File {}
-
 #[inline]
 fn create_dir(d: &Path) -> Result<()> {
     fs::create_dir(d).with_context(|| format!("Couldn't create {}", d.display()))
@@ -65,7 +63,7 @@ impl FilesystemBackend {
 }
 
 impl Backend for FilesystemBackend {
-    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn SeekableReader + Send + 'a>> {
+    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
         let from = self.base_directory.join(from);
         Ok(Box::new(fs::File::open(&from).with_context(|| {
             format!("Couldn't open {}", from.display())

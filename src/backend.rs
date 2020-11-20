@@ -1,6 +1,7 @@
 use std::ffi::OsStr;
+use std::fs::File;
 use std::io::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::*;
 
@@ -20,13 +21,11 @@ pub fn determine_type(_repository: &Path) -> Result<BackendType> {
     Ok(BackendType::Filesystem)
 }
 
-pub trait SeekableReader: Read + Seek {}
-
 // TODO: Should we make these async? Some backends (such as S3 via Rusoto)
 // are going to be async, but we could `block_on()` for each request...
 pub trait Backend {
     /// Read from the given key
-    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn SeekableReader + Send + 'a>>;
+    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>>;
 
     /// Write the given read stream to the given key
     fn write(&mut self, from: &mut dyn Read, to: &str) -> Result<()>;
@@ -37,31 +36,85 @@ pub trait Backend {
     // Let's put all the layout-specific stuff here so that we don't have paths
     // spread throughout the codebase.
 
-    fn read_pack<'a>(&'a self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send + 'a>> {
-        let hex = id.to_string();
-        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
-        self.read(&pack_path)
-            .with_context(|| format!("Couldn't open {}", pack_path))
-    }
-
-    fn read_index<'a>(&'a self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send + 'a>> {
-        let index_path = format!("indexes/{}.index", id);
-        self.read(&index_path)
-            .with_context(|| format!("Couldn't open {}", index_path))
-    }
-
-    fn read_snapshot<'a>(&'a self, id: &ObjectId) -> Result<Box<dyn SeekableReader + Send + 'a>> {
-        let snapshot_path = format!("snapshots/{}.snapshot", id);
-        self.read(&snapshot_path)
-            .with_context(|| format!("Couldn't open {}", snapshot_path))
-    }
-
     fn list_indexes(&self) -> Result<Vec<String>> {
         self.list("indexes/")
     }
 
     fn list_snapshots(&self) -> Result<Vec<String>> {
         self.list("snapshots/")
+    }
+}
+
+// Use an enum instead of trait objects because we don't forsee ever having
+// more than two types here (are the files local, or do we need to cache them?)
+enum WritethroughCache {
+    /// Since a filesystem backend is, well, on the file system,
+    /// we don't need to make and store copies, worry about eviction, ...
+    /// Just keep track of the base directory and pass file handles directly.
+    /// Nice.
+    Local { base_directory: PathBuf },
+    // Remote // TODO LOL
+}
+
+pub struct CachedBackend {
+    cache: WritethroughCache,
+    pub backend: Box<dyn Backend + Send + Sync>,
+}
+
+impl CachedBackend {
+    /// Read the object at the given key into a file and return a handle to that file.
+    pub fn read(&self, from: &str) -> Result<File> {
+        match &self.cache {
+            WritethroughCache::Local { base_directory } => {
+                let from = base_directory.join(from);
+                Ok(File::open(&from)
+                    .with_context(|| format!("Couldn't open {}", from.display()))?)
+            }
+        }
+    }
+
+    /// Take the completed file at the given path and store it to an object with the given key
+    pub fn write(&mut self, from: &str, mut from_fh: File) -> Result<()> {
+        match &self.cache {
+            WritethroughCache::Local { base_directory } => {
+                let to = base_directory.join(destination(from));
+                let to = to.to_str().unwrap();
+                // On Windows, we can't move an open file. Boo, Windows.
+                // Don't bother closing, moving, and reopening if moving fails.
+                if cfg!(target_family = "unix") && std::fs::rename(from, to).is_ok() {
+                    log::debug!("Renamed {} to {}", from, to);
+                    return Ok(());
+                }
+                // Otherwise, copy the file.
+                from_fh.seek(std::io::SeekFrom::Start(0))?;
+                self.backend.write(&mut from_fh, &to)?;
+                log::debug!("Backed up {}. Removing temp copy", from);
+                std::fs::remove_file(&from).with_context(|| format!("Couldn't remove {}", from))?;
+            }
+        }
+        Ok(())
+    }
+
+    // Let's put all the layout-specific stuff here so that we don't have paths
+    // spread throughout the codebase.
+
+    pub fn read_pack(&self, id: &ObjectId) -> Result<File> {
+        let hex = id.to_string();
+        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
+        self.read(&pack_path)
+            .with_context(|| format!("Couldn't open {}", pack_path))
+    }
+
+    pub fn read_index(&self, id: &ObjectId) -> Result<File> {
+        let index_path = format!("indexes/{}.index", id);
+        self.read(&index_path)
+            .with_context(|| format!("Couldn't open {}", index_path))
+    }
+
+    pub fn read_snapshot(&self, id: &ObjectId) -> Result<File> {
+        let snapshot_path = format!("snapshots/{}.snapshot", id);
+        self.read(&snapshot_path)
+            .with_context(|| format!("Couldn't open {}", snapshot_path))
     }
 }
 
@@ -73,11 +126,18 @@ pub fn initialize(repository: &Path) -> Result<()> {
 }
 
 /// Factory function to open the appropriate type of backend from the repository path
-pub fn open(repository: &Path) -> Result<Box<dyn Backend + Send + Sync>> {
-    let backend = match determine_type(repository)? {
-        BackendType::Filesystem => Box::new(fs::FilesystemBackend::open(repository)?),
+pub fn open(repository: &Path) -> Result<CachedBackend> {
+    let cached_backend = match determine_type(repository)? {
+        BackendType::Filesystem => {
+            let backend = Box::new(fs::FilesystemBackend::open(repository)?);
+            let base_directory = PathBuf::from(repository);
+            CachedBackend {
+                cache: WritethroughCache::Local { base_directory },
+                backend,
+            }
+        }
     };
-    Ok(backend)
+    Ok(cached_backend)
 }
 
 /// Returns the desitnation path for the given temp file based on its extension

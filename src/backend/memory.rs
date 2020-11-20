@@ -10,10 +10,8 @@ pub struct MemoryBackend {
     files: HashMap<String, Vec<u8>>,
 }
 
-impl SeekableReader for io::Cursor<&[u8]> {}
-
 impl Backend for MemoryBackend {
-    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn SeekableReader + Send + 'a>> {
+    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
         let buf = self
             .files
             .get(from)

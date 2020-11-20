@@ -1,14 +1,12 @@
 use std::collections::BTreeSet;
 use std::fs::{self, File};
-use std::io::prelude::*;
-use std::io::{self, SeekFrom};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
 use std::thread;
 
 use anyhow::*;
 use chrono::prelude::*;
-use log::*;
 use structopt::StructOpt;
 
 use crate::backend;
@@ -53,14 +51,14 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let index_upload_tx = chunk_pack_upload_tx.clone();
     let snapshot_upload_tx = chunk_pack_upload_tx.clone();
 
-    let mut backend = backend::open(repository)?;
+    let mut cached_backend = backend::open(repository)?;
 
     // TODO: Get these paths out of config? Some constants in a shared module?
     let chunk_packer =
         thread::spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx));
     let tree_packer = thread::spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx));
     let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
-    let uploader = thread::spawn(move || upload(&mut *backend, upload_rx));
+    let uploader = thread::spawn(move || upload(&mut cached_backend, upload_rx));
 
     // TODO: The ID of the tree root is what we reference in the snapshot.
     let root = pack_tree(&paths, &mut chunk_tx, &mut tree_tx)?;
@@ -159,13 +157,9 @@ fn pack_tree(
     Ok(id)
 }
 
-fn upload(backend: &mut dyn backend::Backend, rx: Receiver<(String, File)>) -> Result<()> {
-    while let Ok((path, mut fh)) = rx.recv() {
-        fh.seek(SeekFrom::Start(0))?;
-        let to = backend::destination(&path);
-        backend.write(&mut fh, &to)?;
-        debug!("Backed up {}. Removing temp copy", path);
-        fs::remove_file(&path).with_context(|| format!("Couldn't remove {}", path))?
+fn upload(cached_backend: &mut backend::CachedBackend, rx: Receiver<(String, File)>) -> Result<()> {
+    while let Ok((path, fh)) = rx.recv() {
+        cached_backend.write(&path, fh)?;
     }
     Ok(())
 }
