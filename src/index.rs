@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::path::Path;
@@ -177,8 +177,8 @@ pub fn build_master_index(cached_backend: &CachedBackend) -> Result<Index> {
 }
 
 /// Given an index, produce a mapping that relates blobs -> their packs
-pub fn blob_to_pack_map(index: &Index) -> Result<BTreeMap<ObjectId, ObjectId>> {
-    let mut mapping = BTreeMap::new();
+pub fn blob_to_pack_map(index: &Index) -> Result<HashMap<ObjectId, ObjectId>> {
+    let mut mapping = HashMap::new();
 
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {

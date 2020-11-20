@@ -10,6 +10,7 @@ use tempfile::NamedTempFile;
 
 use crate::file_util;
 use crate::hashing::{HashingReader, ObjectId};
+use crate::tree;
 use crate::DEFAULT_TARGET_SIZE;
 
 const MAGIC_BYTES: &[u8] = b"MKBAKPAK";
@@ -340,6 +341,48 @@ pub fn extract_blob<R: Read>(
     }
 
     unreachable!();
+}
+
+/// Reads in a packfile (presumably of all trees) and appends them to the given forest
+pub fn append_to_forest<R: Read + Seek>(
+    packfile: &mut R,
+    manifest_from_index: &[PackManifestEntry],
+    forest: &mut tree::Forest,
+) -> Result<()> {
+    check_magic(packfile)?;
+
+    let mut decoder = ZstdDecoder::new(packfile).context("Decompression of blob stream failed")?;
+
+    for entry in manifest_from_index {
+        if entry.blob_type != BlobType::Tree {
+            warn!(
+                "Chunk {} found in pack where we expected only trees",
+                entry.id
+            );
+            continue;
+        }
+
+        if forest.contains_key(&entry.id) {
+            trace!("Tree {} is already in the forest, skipping", entry.id);
+            continue;
+        }
+
+        let mut hashing_decoder = HashingReader::new((&mut decoder).take(entry.length as u64));
+
+        let to_add: tree::Tree = serde_cbor::from_reader(&mut hashing_decoder)
+            .with_context(|| format!("CBOR decoding of tree {} failed", entry.id))?;
+
+        let (hash, _) = hashing_decoder.finalize();
+        ensure!(
+            entry.id == hash,
+            "Calculated hash of tree ({}) doesn't match its ID ({})",
+            hash,
+            entry.id
+        );
+
+        assert!(forest.insert(entry.id, std::rc::Rc::new(to_add)).is_none());
+    }
+    Ok(())
 }
 
 pub fn check_magic<R: Read>(r: &mut R) -> Result<()> {

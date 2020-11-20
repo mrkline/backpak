@@ -6,7 +6,7 @@ use anyhow::*;
 use sha2::{digest::generic_array::GenericArray, Digest, Sha224};
 
 /// The hash (a SHA224) used to identify all objects in our system.
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ObjectId {
     digest: GenericArray<u8, <Sha224 as Digest>::OutputSize>,
 }
