@@ -20,12 +20,15 @@ use crate::tree;
 /// Create a snapshot of the given files and directories.
 #[derive(Debug, StructOpt)]
 pub struct Args {
-    #[structopt(short, long)]
+    /// The author of the snapshot (otherwise the hostname is used)
+    #[structopt(short, long, name = "name", verbatim_doc_comment)]
     pub author: Option<String>,
 
-    #[structopt(short = "t", long = "tag")]
+    /// Add a metadata tag to the snapshot (can be specified multiple times)
+    #[structopt(short = "t", long = "tag", name = "tag")]
     pub tags: Vec<String>,
 
+    /// The paths to back up
     #[structopt(required = true)]
     pub paths: Vec<PathBuf>,
 }

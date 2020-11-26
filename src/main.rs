@@ -27,6 +27,7 @@ struct Args {
 
 #[derive(Debug, StructOpt)]
 enum Subcommand {
+    /// Initialize a backup repository
     Init,
     Backup(backup::Args),
     Cat(cat::Args),
