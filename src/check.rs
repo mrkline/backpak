@@ -11,8 +11,16 @@ use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
 
+/// Check the repository for errors
+///
+/// By default this assumes file integrity of the backup,
+/// and only ensure that needed files can be found and downloaded.
+/// If --check-packs is specified, ensure that each pack has the expected blobs,
+/// that those blobs match its manifest, and that those blobs match the index.
 #[derive(Debug, StructOpt)]
+#[structopt(verbatim_doc_comment)]
 pub struct Args {
+    /// Check all blobs in all packs
     #[structopt(short, long)]
     pub check_packs: bool,
 }

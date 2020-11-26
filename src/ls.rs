@@ -10,6 +10,7 @@ use crate::index;
 use crate::snapshot;
 use crate::tree;
 
+/// List the files in a snapshot
 #[derive(Debug, StructOpt)]
 pub struct Args {
     snapshot_id: ObjectId,

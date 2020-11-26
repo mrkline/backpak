@@ -13,6 +13,7 @@ use crate::pack;
 use crate::snapshot;
 use crate::tree;
 
+/// Print objects (as JSON) to stdout
 #[derive(Debug, StructOpt)]
 pub struct Args {
     #[structopt(subcommand)]
@@ -21,9 +22,32 @@ pub struct Args {
 
 #[derive(Debug, StructOpt)]
 pub enum Subcommand {
+    /// Print the blob with the given ID
+    ///
+    /// A blob is either a chunk (of a file) or a tree (representing a directory).
+    #[structopt(verbatim_doc_comment)]
     Blob { id: ObjectId },
+
+    /// Print the pack with the given ID
+    ///
+    /// A pack is a compressed collection of blobs,
+    /// with a manifest at the end for reassembling the index (if needed).
+    #[structopt(verbatim_doc_comment)]
     Pack { id: ObjectId },
+
+    /// Print the index with the given ID
+    ///
+    /// An index tells us which packs contain which blobs.
+    /// Indexes can be split into several files if they get too big.
+    #[structopt(verbatim_doc_comment)]
     Index { id: ObjectId },
+
+    /// Print the snapshot with the given ID
+    ///
+    /// A snapshot records the time of the backup,
+    /// the contents of all files and folders at that time,
+    /// and (optionally) an author and tags for later lookup.
+    #[structopt(verbatim_doc_comment)]
     Snapshot { id: ObjectId },
 }
 

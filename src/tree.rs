@@ -167,6 +167,8 @@ impl<'a> Cache<'a> {
         }
     }
 
+    /// Reads the given tree from the cache,
+    /// fishing it out of its packfile if required.
     fn read(&mut self, id: &ObjectId) -> Result<Rc<Tree>> {
         if let Some(t) = self.tree_cache.get(id) {
             trace!("Tree {} is in-cache", id);
@@ -195,6 +197,7 @@ impl<'a> Cache<'a> {
     }
 }
 
+/// Reads the given tree and all its subtrees from the given tree cache.
 pub fn forest_from_root(root: &ObjectId, cache: &mut Cache) -> Result<Forest> {
     debug!("Assembling tree from root {}", root);
     let mut forest = Forest::new();
