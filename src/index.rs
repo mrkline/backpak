@@ -182,12 +182,14 @@ pub fn blob_to_pack_map(index: &Index) -> Result<HashMap<ObjectId, ObjectId>> {
 
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {
-            ensure!(
-                mapping.insert(blob.id, *pack_id).is_none(),
-                "Duplicate blob {} in pack {}",
-                blob.id,
-                pack_id
-            );
+            if let Some(other_pack) = mapping.insert(blob.id, *pack_id) {
+                bail!(
+                    "Duplicate blob {} in pack {}, previously seen in pack {}",
+                    blob.id,
+                    pack_id,
+                    other_pack
+                );
+            }
         }
     }
 

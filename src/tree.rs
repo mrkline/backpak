@@ -1,10 +1,11 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use anyhow::*;
-use chrono::{offset::Utc, DateTime, TimeZone};
+use chrono::prelude::*;
+use log::*;
 use serde_derive::*;
 
 use crate::backend;
@@ -140,7 +141,7 @@ pub type Forest = HashMap<ObjectId, Rc<Tree>>;
 /// A read-through cache of trees that extracts them from packs as-needed.
 pub struct Cache<'a> {
     /// The master index, used to look up a pack's manifest from its ID
-    master_index: &'a index::Index,
+    index: &'a index::Index,
 
     /// Finds the pack that contains a given blob
     blob_to_pack_map: &'a HashMap<ObjectId, ObjectId>,
@@ -154,12 +155,12 @@ pub struct Cache<'a> {
 
 impl<'a> Cache<'a> {
     pub fn new(
-        master_index: &'a index::Index,
+        index: &'a index::Index,
         blob_to_pack_map: &'a HashMap<ObjectId, ObjectId>,
         pack_cache: &'a backend::CachedBackend,
     ) -> Self {
         Self {
-            master_index,
+            index,
             blob_to_pack_map,
             pack_cache,
             tree_cache: Forest::new(),
@@ -168,6 +169,7 @@ impl<'a> Cache<'a> {
 
     fn read(&mut self, id: &ObjectId) -> Result<Rc<Tree>> {
         if let Some(t) = self.tree_cache.get(id) {
+            trace!("Tree {} is in-cache", id);
             return Ok(t.clone());
         }
 
@@ -176,9 +178,10 @@ impl<'a> Cache<'a> {
             .get(id)
             .ok_or_else(|| anyhow!("No pack contains tree {}", id))?;
 
+        trace!("Reading pack {} to get tree {}", pack_id, id);
         let mut pack_containing_tree = self.pack_cache.read_pack(&pack_id)?;
         let manifest = self
-            .master_index
+            .index
             .packs
             .get(&pack_id)
             .expect("Pack ID in blob -> pack map but not the index");
@@ -190,6 +193,41 @@ impl<'a> Cache<'a> {
             .ok_or_else(|| anyhow!("Tree {} missing from pack {}", id, pack_id))
             .map(|entry| entry.clone())
     }
+}
+
+pub fn forest_from_root(root: &ObjectId, cache: &mut Cache) -> Result<Forest> {
+    debug!("Assembling tree from root {}", root);
+    let mut forest = Forest::new();
+    let mut stack_set = HashSet::new();
+    append_tree(root, &mut forest, cache, &mut stack_set)?;
+    Ok(forest)
+}
+
+fn append_tree(
+    tree_id: &ObjectId,
+    forest: &mut Forest,
+    cache: &mut Cache,
+    stack_set: &mut HashSet<ObjectId>,
+) -> Result<()> {
+    ensure!(
+        stack_set.insert(*tree_id),
+        "Cycle detected! Tree {} loops up",
+        tree_id
+    );
+
+    let tree = cache.read(tree_id)?;
+    forest.insert(*tree_id, tree.clone());
+    for val in tree.values().map(|v| &v.contents) {
+        match val {
+            NodeContents::Directory { subtree } => {
+                append_tree(subtree, forest, cache, stack_set)?;
+            }
+            NodeContents::File { .. } => {}
+        };
+    }
+
+    assert!(stack_set.remove(tree_id));
+    Ok(())
 }
 
 #[cfg(test)]

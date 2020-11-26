@@ -31,6 +31,7 @@ enum Subcommand {
     Backup(backup::Args),
     Cat(cat::Args),
     Check(check::Args),
+    Ls(ls::Args),
 }
 
 fn main() -> Result<()> {
@@ -42,6 +43,7 @@ fn main() -> Result<()> {
         Subcommand::Backup(b) => backup::run(&args.repository, b),
         Subcommand::Cat(c) => cat::run(&args.repository, c),
         Subcommand::Check(c) => check::run(&args.repository, c),
+        Subcommand::Ls(l) => ls::run(&args.repository, l),
     }
 }
 
