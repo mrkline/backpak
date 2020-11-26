@@ -68,7 +68,7 @@ pub fn pack(
     to_index: Sender<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
 ) -> Result<()> {
-    let mut packfile = PackfileWriter::new()?;
+    let mut writer = PackfileWriter::new()?;
 
     let mut bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
@@ -76,7 +76,7 @@ pub fn pack(
     // For each chunked file...
     while let Ok(blob) = rx.recv() {
         // Write a blob and check how many (uncompressed) bytes we've written to the file so far.
-        bytes_written += packfile.write_blob(blob)?;
+        bytes_written += writer.write_blob(blob)?;
 
         // We've written as many bytes as we want the pack size to to be,
         // but we don't know how much they've compressed to.
@@ -87,7 +87,7 @@ pub fn pack(
                 bytes_written
             );
 
-            let compressed_size = packfile.flush_and_check_size()?;
+            let compressed_size = writer.flush_and_check_size()?;
 
             // If we're close enough to our target size, stop
             if compressed_size >= DEFAULT_TARGET_SIZE * 9 / 10 {
@@ -96,7 +96,7 @@ pub fn pack(
                     compressed_size,
                     DEFAULT_TARGET_SIZE
                 );
-                let (metadata, persisted) = packfile.finalize()?;
+                let (metadata, persisted) = writer.finalize()?;
                 let finalized_path = format!("{}.pack", metadata.id);
 
                 to_upload
@@ -106,7 +106,7 @@ pub fn pack(
                     .send(metadata)
                     .context("packer -> indexer channel exited early")?;
 
-                packfile = PackfileWriter::new()?;
+                writer = PackfileWriter::new()?;
                 bytes_written = 0;
                 bytes_before_next_check = DEFAULT_TARGET_SIZE;
             }
@@ -122,7 +122,7 @@ pub fn pack(
         }
     }
     if bytes_written > 0 {
-        let (metadata, persisted) = packfile.finalize()?;
+        let (metadata, persisted) = writer.finalize()?;
         let finalized_path = format!("{}.pack", metadata.id);
         to_upload
             .send((finalized_path, persisted))
@@ -289,15 +289,15 @@ pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
     let manifest_location = -(manifest_length as i64) - 4;
     r.seek(SeekFrom::End(manifest_location)).with_context(|| {
         format!(
-            "Couldn't seek {} bytes from the end of packfile to find manifest",
+            "Couldn't seek {} bytes from the end of the pack to find the manifest",
             manifest_location
         )
     })?;
     let decoder = ZstdDecoder::new(r.take(manifest_length as u64))
-        .context("Decompression of packfile manifest failed")?;
+        .context("Decompression of pack manifest failed")?;
 
     let manifest: PackManifest =
-        serde_cbor::from_reader(decoder).context("CBOR decoding of packfile manifest failed")?;
+        serde_cbor::from_reader(decoder).context("CBOR decoding of the pack manifest failed")?;
     Ok(manifest)
 }
 
