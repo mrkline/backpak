@@ -1,11 +1,10 @@
 use std::io::prelude::*;
 use std::io::SeekFrom;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::*;
+use assert_cmd::Command;
 use tempfile::tempdir;
-
-use backpak::*;
 
 // If we don't already have a big file at "tests/references",
 // put one there.
@@ -42,33 +41,30 @@ fn setup_bigfile() {
     }
 }
 
+fn cli_run(backup_path: &Path) -> Result<assert_cmd::Command> {
+    let bin_name = env!("CARGO_PKG_NAME");
+    let mut cmd = Command::cargo_bin(bin_name)?;
+    cmd.arg("--repository").arg(backup_path);
+    cmd.arg("-vvv");
+    Ok(cmd)
+}
+
 #[test]
 fn backup_src() -> Result<()> {
-    let _ = env_logger::builder().is_test(true).try_init();
-
     setup_bigfile();
 
     let backup_dir = tempdir().expect("Failed to create temp test directory");
     let backup_path = backup_dir.path();
-    init::run(backup_path).expect("init failed");
 
-    backup::run(
-        backup_path,
-        backup::Args {
-            author: Some(String::from("Nobody Important")),
-            tags: ["some", "test", "tags"]
-                .iter()
-                .map(|s| String::from(*s))
-                .collect(),
-            paths: ["src", "tests/references"]
-                .iter()
-                .map(PathBuf::from)
-                .collect(),
-        },
-    )
-    .expect("backup failed");
+    cli_run(backup_path)?.arg("init").assert().success();
 
-    check::run(backup_path, check::Args { check_packs: true }).expect("check failed");
+    cli_run(backup_path)?
+        .args(&["backup", "--tag", "test-tag", "--tag", "another-tag"])
+        .args(&["--", "src", "tests/references"])
+        .assert()
+        .success();
+
+    cli_run(backup_path)?.arg("check").assert().success();
 
     // To examine results
     // std::mem::forget(backup_dir);

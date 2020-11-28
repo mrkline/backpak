@@ -35,5 +35,6 @@ version = "0.5"
 features = ["zstdmt"]
 
 [dev-dependencies]
+assert_cmd = "1.0"
 env_logger = "0.8"
 nix = "0.19"
