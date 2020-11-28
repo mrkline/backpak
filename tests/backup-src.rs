@@ -49,10 +49,11 @@ fn backup_src() -> Result<()> {
     setup_bigfile();
 
     let backup_dir = tempdir().expect("Failed to create temp test directory");
-    init::run(backup_dir.path()).expect("init failed");
+    let backup_path = backup_dir.path();
+    init::run(backup_path).expect("init failed");
 
     backup::run(
-        backup_dir.path(),
+        backup_path,
         backup::Args {
             author: Some(String::from("Nobody Important")),
             tags: ["some", "test", "tags"]
@@ -67,7 +68,7 @@ fn backup_src() -> Result<()> {
     )
     .expect("backup failed");
 
-    check::run(backup_dir.path(), check::Args { check_packs: true }).expect("check failed");
+    check::run(backup_path, check::Args { check_packs: true }).expect("check failed");
 
     // To examine results
     // std::mem::forget(backup_dir);
