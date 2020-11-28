@@ -43,6 +43,23 @@ pub trait Backend {
     fn list_snapshots(&self) -> Result<Vec<String>> {
         self.list("snapshots/")
     }
+
+    fn probe_pack(&self, id: &ObjectId) -> Result<()> {
+        let hex = id.to_string();
+        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
+        let found_packs = self
+            .list(&pack_path)
+            .with_context(|| format!("Couldn't find {}", pack_path))?;
+        match found_packs.len() {
+            0 => bail!("Couldn't find pack {}", hex),
+            1 => Ok(()),
+            multiple => bail!(
+                "Expected one pack at {}, found several! {:?}",
+                pack_path,
+                multiple
+            ),
+        }
+    }
 }
 
 // Use an enum instead of trait objects because we don't forsee ever having
