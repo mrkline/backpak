@@ -60,11 +60,14 @@ fn backup_src() -> Result<()> {
 
     cli_run(backup_path)?
         .args(&["backup", "--tag", "test-tag", "--tag", "another-tag"])
-        .args(&["--", "src", "tests/references"])
+        .args(&["--", "src" /*, "tests/references" */])
         .assert()
         .success();
 
-    cli_run(backup_path)?.arg("check").assert().success();
+    cli_run(backup_path)?
+        .args(&["check", "--read-packs"])
+        .assert()
+        .success();
 
     // To examine results
     // std::mem::forget(backup_dir);
