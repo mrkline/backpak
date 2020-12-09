@@ -3,10 +3,12 @@ use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use anyhow::*;
 use chrono::prelude::*;
+use log::*;
 use structopt::StructOpt;
 
 use crate::backend;
@@ -45,6 +47,17 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         })
         .collect::<Result<BTreeSet<PathBuf>>>()?;
 
+    info!("Opening {}", repository.display());
+    let cached_backend = backend::open(repository)?;
+
+    info!("Building index of backed-up blobs");
+    let index = index::build_master_index(&cached_backend)?;
+
+    // TODO: Load WIP index and upload any existing packs
+    // before we start new ones.
+
+    let blob_set = Arc::new(Mutex::new(index::blob_set(&index)?));
+
     let (mut chunk_tx, chunk_rx) = channel();
     let (mut tree_tx, tree_rx) = channel();
     let (chunk_pack_tx, pack_rx) = channel();
@@ -56,14 +69,15 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let mut cached_backend = backend::open(repository)?;
 
-    // TODO: Get these paths out of config? Some constants in a shared module?
+    let tree_set = blob_set.clone(); // We need an Arc clone for the tree packer
+
     let chunk_packer =
-        thread::spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx));
-    let tree_packer = thread::spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx));
+        thread::spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx, blob_set));
+    let tree_packer =
+        thread::spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx, tree_set));
     let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
     let uploader = thread::spawn(move || upload(&mut cached_backend, upload_rx));
 
-    // TODO: The ID of the tree root is what we reference in the snapshot.
     let root = pack_tree(&paths, &mut chunk_tx, &mut tree_tx)?;
 
     let author = match args.author {
@@ -87,8 +101,6 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     drop(chunk_tx);
     drop(tree_tx);
 
-    // TODO: Join errors together so that we don't just get errors from
-    // the first one of these to fail.
     uploader.join().unwrap()?;
     chunk_packer.join().unwrap()?;
     tree_packer.join().unwrap()?;

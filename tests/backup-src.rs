@@ -60,7 +60,7 @@ fn backup_src() -> Result<()> {
 
     cli_run(backup_path)?
         .args(&["backup", "--tag", "test-tag", "--tag", "another-tag"])
-        .args(&["--", "src" /*, "tests/references" */])
+        .args(&["--", "src", "tests/references"])
         .assert()
         .success();
 
