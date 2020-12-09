@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::path::Path;
@@ -194,6 +194,21 @@ pub fn blob_to_pack_map(index: &Index) -> Result<HashMap<ObjectId, ObjectId>> {
     }
 
     Ok(mapping)
+}
+
+/// Given an index, produce a mapping that relates blobs -> their packs
+pub fn blob_set(index: &Index) -> Result<HashSet<ObjectId>> {
+    let mut blobs = HashSet::new();
+
+    for (pack_id, manifest) in &index.packs {
+        for blob in manifest {
+            if !blobs.insert(blob.id) {
+                bail!("Duplicate blob {} in pack {}", blob.id, pack_id);
+            }
+        }
+    }
+
+    Ok(blobs)
 }
 
 pub fn from_reader<R: Read>(r: &mut R) -> Result<Index> {

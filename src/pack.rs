@@ -1,7 +1,9 @@
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
 use std::sync::mpsc::*;
+use std::sync::{Arc, Mutex};
 
 use anyhow::*;
 use log::*;
@@ -25,6 +27,15 @@ pub enum Blob {
         bytes: Vec<u8>,
         id: ObjectId,
     },
+}
+
+impl Blob {
+    fn id(&self) -> &ObjectId {
+        match self {
+            Blob::Chunk(chunk) => &chunk.id,
+            Blob::Tree { id, .. } => &id,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -62,19 +73,32 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
     Ok((manifest, id))
 }
 
-/// Packs chunked files received from the given channel.
+/// Packs blobs received from the given channel.
 pub fn pack(
     rx: Receiver<Blob>,
     to_index: Sender<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
+    packed_blobs: Arc<Mutex<HashSet<ObjectId>>>,
 ) -> Result<()> {
     let mut writer = PackfileWriter::new()?;
 
     let mut bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
 
-    // For each chunked file...
+    // For each blob...
     while let Ok(blob) = rx.recv() {
+        // See if we've already recorded it. If so, skip it.
+        // If not, note that we're backing it up.
+        // (Adding it to this set doesn't put us at risk of missing it
+        // if everything below fails.
+        // If the backup process dies, it will pick back up at the WIP index,
+        // regardless of what's in this set.)
+        if !packed_blobs.lock().unwrap().insert(*blob.id()) {
+            // If the blob has already been packed, skip it!
+            debug!("Skipping blob {}; already packed", blob.id());
+            continue;
+        }
+
         // Write a blob and check how many (uncompressed) bytes we've written to the file so far.
         bytes_written += writer.write_blob(blob)?;
 
@@ -449,7 +473,9 @@ mod test {
         let (pack_tx, pack_rx) = channel();
         let (upload_tx, upload_rx) = sync_channel(1);
 
-        let chunk_packer = std::thread::spawn(move || pack(chunk_rx, pack_tx, upload_tx));
+        let blobs = Arc::new(Mutex::new(HashSet::new()));
+
+        let chunk_packer = std::thread::spawn(move || pack(chunk_rx, pack_tx, upload_tx, blobs));
 
         let upload_chucker = std::thread::spawn(move || -> Result<()> {
             // This test doesn't actually care about the files themselves,
