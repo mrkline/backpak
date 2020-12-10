@@ -101,11 +101,25 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     drop(chunk_tx);
     drop(tree_tx);
 
-    uploader.join().unwrap()?;
-    chunk_packer.join().unwrap()?;
-    tree_packer.join().unwrap()?;
-    indexer.join().unwrap()?;
-    Ok(())
+    let mut errors: Vec<anyhow::Error> = Vec::new();
+    let mut append_error = |result: Option<anyhow::Error>| match result {
+        Some(e) => errors.push(e),
+        None => (),
+    };
+
+    append_error(uploader.join().unwrap().err());
+    append_error(chunk_packer.join().unwrap().err());
+    append_error(tree_packer.join().unwrap().err());
+    append_error(indexer.join().unwrap().err());
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        for e in errors {
+            error!("{:?}", e);
+        }
+        bail!("backup failed");
+    }
 }
 
 fn pack_tree(
