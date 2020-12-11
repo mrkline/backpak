@@ -112,12 +112,12 @@ fn read_file(path: &Path) -> Result<Arc<dyn AsRef<[u8]> + Send + Sync>> {
     let mut fh = File::open(path)?;
     let file_length = fh.metadata()?.len();
     if file_length < 10 * MEGA {
-        debug!("{} is < 10MB, reading to buffer", path.display());
+        trace!("{} is < 10MB, reading to buffer", path.display());
         let mut buffer = Vec::new();
         fh.read_to_end(&mut buffer)?;
         Ok(Arc::new(buffer))
     } else {
-        debug!("{} is > 10MB, memory mapping", path.display());
+        trace!("{} is > 10MB, memory mapping", path.display());
         let mapping = unsafe { memmap::Mmap::map(&fh)? };
         Ok(Arc::new(mapping))
     }

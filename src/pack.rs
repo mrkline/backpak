@@ -95,7 +95,10 @@ pub fn pack(
         // regardless of what's in this set.)
         if !packed_blobs.lock().unwrap().insert(*blob.id()) {
             // If the blob has already been packed, skip it!
-            debug!("Skipping blob {}; already packed", blob.id());
+            match blob {
+                Blob::Chunk(_) => trace!("Skipping chunk {}; already packed", blob.id()),
+                Blob::Tree { .. } => trace!("Skipping tree {}; already packed", blob.id()),
+            };
             continue;
         }
 
@@ -189,8 +192,14 @@ impl PackfileWriter {
     /// Write the given file chunk or tree to the packfile and add it to the manifest.
     fn write_blob(&mut self, blob: Blob) -> io::Result<u64> {
         let (bytes, blob_type, id) = match &blob {
-            Blob::Chunk(chunk) => (chunk.bytes(), BlobType::Chunk, chunk.id),
-            Blob::Tree { bytes, id } => (bytes.as_slice(), BlobType::Tree, *id),
+            Blob::Chunk(chunk) => {
+                trace!("Writing chunk {}", chunk.id);
+                (chunk.bytes(), BlobType::Chunk, chunk.id)
+            }
+            Blob::Tree { bytes, id } => {
+                trace!("Writing tree {}", id);
+                (bytes.as_slice(), BlobType::Tree, *id)
+            }
         };
 
         let blob_length = bytes.len();

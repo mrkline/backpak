@@ -8,6 +8,7 @@ use anyhow::*;
 use chrono::prelude::*;
 use serde_derive::*;
 
+use crate::backend;
 use crate::file_util::check_magic;
 use crate::hashing::{HashingWriter, ObjectId};
 
@@ -61,6 +62,25 @@ pub fn from_reader<R: Read>(r: &mut R) -> Result<Snapshot> {
     check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for snapshot file")?;
     let snapshot = serde_cbor::from_reader(r).context("CBOR decoding of snapshot file failed")?;
     Ok(snapshot)
+}
+
+/// Load all snapshots from the given backend and sort them by date taken.
+pub fn load_chronologically(
+    cached_backend: &crate::backend::CachedBackend,
+) -> Result<Vec<(Snapshot, ObjectId)>> {
+    let mut snapshots = cached_backend
+        .backend
+        .list_snapshots()?
+        .iter()
+        .map(|file| {
+            let mut fh = cached_backend.read(file)?;
+            let snap = from_reader(&mut fh)?;
+            let id = backend::id_from_path(file).unwrap();
+            Ok((snap, id))
+        })
+        .collect::<Result<Vec<(Snapshot, ObjectId)>>>()?;
+    snapshots.sort_by_key(|(snap, _)| snap.time);
+    Ok(snapshots)
 }
 
 #[cfg(test)]

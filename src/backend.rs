@@ -166,3 +166,13 @@ pub fn destination(src: &str) -> String {
         _ => panic!("Unexpected extension on file to upload: {}", src),
     }
 }
+
+/// Returns the ID of the object given its name
+/// (assumed to be its `some/compontents/<Object ID>.<extension>`)
+pub fn id_from_path<P: AsRef<Path>>(path: P) -> Result<ObjectId> {
+    use std::str::FromStr;
+    path.as_ref()
+        .file_stem()
+        .ok_or(Error::msg("No file stem"))
+        .and_then(|stem| ObjectId::from_str(stem.to_str().unwrap()))
+}
