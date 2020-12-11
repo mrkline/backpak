@@ -10,7 +10,7 @@ use log::*;
 use serde_derive::*;
 use tempfile::NamedTempFile;
 
-use crate::backend::CachedBackend;
+use crate::backend;
 use crate::file_util::check_magic;
 use crate::hashing::{HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
@@ -130,8 +130,8 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
     Ok(id)
 }
 
-pub fn build_master_index(cached_backend: &CachedBackend) -> Result<Index> {
-    debug!("Building master index...");
+pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
+    debug!("Building a master index");
 
     let mut superseded_indexes = BTreeSet::new();
 
@@ -139,7 +139,7 @@ pub fn build_master_index(cached_backend: &CachedBackend) -> Result<Index> {
     let mut loaded_indexes: BTreeMap<ObjectId, BTreeMap<ObjectId, PackManifest>> = BTreeMap::new();
 
     for index in cached_backend.backend.list_indexes()? {
-        trace!("Loading index {}...", index);
+        trace!("Loading index {}", backend::id_from_path(&index).unwrap());
 
         let to_load_id = Path::new(&index)
             .file_stem()
@@ -178,6 +178,7 @@ pub fn build_master_index(cached_backend: &CachedBackend) -> Result<Index> {
 
 /// Given an index, produce a mapping that relates blobs -> their packs
 pub fn blob_to_pack_map(index: &Index) -> Result<HashMap<ObjectId, ObjectId>> {
+    debug!("Building a blob -> pack map");
     let mut mapping = HashMap::new();
 
     for (pack_id, manifest) in &index.packs {
@@ -198,6 +199,7 @@ pub fn blob_to_pack_map(index: &Index) -> Result<HashMap<ObjectId, ObjectId>> {
 
 /// Given an index, produce a mapping that relates blobs -> their packs
 pub fn blob_set(index: &Index) -> Result<HashSet<ObjectId>> {
+    debug!("Building a set of all blobs");
     let mut blobs = HashSet::new();
 
     for (pack_id, manifest) in &index.packs {

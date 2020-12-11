@@ -18,16 +18,17 @@ use crate::prettify;
 ///
 /// Files have chunks, and a directory has a subtree representing
 /// everything in that subdirectory.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
 pub enum NodeContents {
-    File { chunks: Vec<ObjectId>, length: u64 },
+    File { chunks: Vec<ObjectId> },
     Directory { subtree: ObjectId },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PosixMetadata {
     mode: u32,
+    size: u64,
     user_id: u32,
     group_id: u32,
     #[serde(with = "prettify::date_time")]
@@ -41,6 +42,7 @@ pub struct PosixMetadata {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowsMetadata {
     attributes: u32,
+    size: u64,
     #[serde(with = "prettify::date_time_option")]
     creation_time: Option<DateTime<Utc>>,
     #[serde(with = "prettify::date_time_option")]
@@ -57,12 +59,42 @@ pub enum NodeMetadata {
     Windows(WindowsMetadata),
 }
 
+impl NodeMetadata {
+    pub fn is_directory(&self) -> bool {
+        match self {
+            NodeMetadata::Posix(p) => {
+                // man inode
+                (p.mode & 0o170000) == 0o0040000
+            }
+            NodeMetadata::Windows(w) => {
+                // https://docs.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
+                (w.attributes & 0x10) != 0
+            }
+        }
+    }
+
+    pub fn size(&self) -> u64 {
+        match self {
+            NodeMetadata::Posix(p) => p.size,
+            NodeMetadata::Windows(w) => w.size,
+        }
+    }
+
+    pub fn modification_time(&self) -> Option<DateTime<Utc>> {
+        match self {
+            NodeMetadata::Posix(p) => Some(p.modify_time),
+            NodeMetadata::Windows(w) => w.write_time,
+        }
+    }
+}
+
 #[cfg(target_family = "unix")]
 pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
     use std::os::unix::fs::MetadataExt;
 
     let meta = fs::metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
     let mode = meta.mode();
+    let size = meta.size();
     let user_id = meta.uid();
     let group_id = meta.gid();
     let access_time = chrono::Utc.timestamp(meta.atime(), meta.atime_nsec() as u32);
@@ -71,6 +103,7 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
 
     Ok(NodeMetadata::Posix(PosixMetadata {
         mode,
+        size,
         user_id,
         group_id,
         change_time,
@@ -85,6 +118,7 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
 
     let meta = fs::metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
     let attributes = meta.file_attributes();
+    let size = meta.file_size();
 
     let creation_time = windows_timestamp(meta.creation_time());
     let access_time = windows_timestamp(meta.last_access_time());
@@ -92,6 +126,7 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
 
     Ok(NodeMetadata::Windows(WindowsMetadata {
         attributes,
+        size,
         creation_time,
         access_time,
         write_time,
@@ -169,7 +204,7 @@ impl<'a> Cache<'a> {
 
     /// Reads the given tree from the cache,
     /// fishing it out of its packfile if required.
-    fn read(&mut self, id: &ObjectId) -> Result<Rc<Tree>> {
+    pub fn read(&mut self, id: &ObjectId) -> Result<Rc<Tree>> {
         if let Some(t) = self.tree_cache.get(id) {
             trace!("Tree {} is in-cache", id);
             return Ok(t.clone());
@@ -256,10 +291,10 @@ mod test {
                         ObjectId::hash(b"second chunk"),
                         ObjectId::hash(b"third chunk"),
                     ],
-                    length: 42,
                 },
                 metadata: NodeMetadata::Posix(PosixMetadata {
                     mode: 0o644,
+                    size: 42,
                     user_id: 1234,
                     group_id: 5678,
                     access_time: DateTime::parse_from_rfc3339("2020-10-30T06:30:25.157873535Z")
@@ -282,6 +317,7 @@ mod test {
                 },
                 metadata: NodeMetadata::Windows(WindowsMetadata {
                     attributes: 0xdeadbeef,
+                    size: 42,
                     creation_time: None,
                     access_time: Some(
                         DateTime::parse_from_rfc3339("2020-10-29T09:11:05.701157660Z")
@@ -297,18 +333,24 @@ mod test {
             },
         );
 
-        let (manifest, id) = serialize_and_hash(&tree)?;
+        let (serialized_tree, id) = serialize_and_hash(&tree)?;
+
+        /*
+        use std::io::Write;
+        let mut fh = std::fs::File::create("tests/references/tree.stability")?;
+        fh.write_all(&serialized_tree)?;
+        */
 
         // ID remains stable
         assert_eq!(
             format!("{}", id),
-            "74ed1b2734d1699fda7a9e08963faff7e069bd66387aa5edac1af203"
+            "1efa18d04cdee3c537e2f06715765079e7f9083ab5ef7d46a8fc4645"
         );
         // Contents remain stable
         // (We could just use the ID and length,
         // but having some example CBOR in the repo seems helpful.)
         let from_example = fs::read("tests/references/tree.stability")?;
-        assert_eq!(manifest, from_example);
+        assert_eq!(serialized_tree, from_example);
         Ok(())
     }
 }
