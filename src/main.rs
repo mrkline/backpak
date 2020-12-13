@@ -4,7 +4,7 @@ use anyhow::*;
 use simplelog::*;
 use structopt::StructOpt;
 
-use backpak::*;
+use backpak::ui::*;
 
 #[derive(Debug, StructOpt)]
 #[structopt(verbatim_doc_comment)]
