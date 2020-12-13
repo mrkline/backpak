@@ -33,6 +33,7 @@ enum Subcommand {
     Cat(cat::Args),
     Check(check::Args),
     Ls(ls::Args),
+    Snapshots,
 }
 
 fn main() -> Result<()> {
@@ -45,6 +46,7 @@ fn main() -> Result<()> {
         Subcommand::Cat(c) => cat::run(&args.repository, c),
         Subcommand::Check(c) => check::run(&args.repository, c),
         Subcommand::Ls(l) => ls::run(&args.repository, l),
+        Subcommand::Snapshots => snapshots::run(&args.repository),
     }
 }
 

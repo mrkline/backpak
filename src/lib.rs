@@ -14,5 +14,6 @@ pub mod cat;
 pub mod check;
 pub mod init;
 pub mod ls;
+pub mod snapshots;
 
 pub const DEFAULT_TARGET_SIZE: u64 = 1024 * 1024 * 100; // 100 MB
