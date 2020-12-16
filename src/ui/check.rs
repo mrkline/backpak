@@ -28,21 +28,19 @@ pub struct Args {
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
-    info!("Checking {}", repository.display());
     let cached_backend = backend::open(repository)?;
 
-    info!("Checking indexes");
     let index = index::build_master_index(&cached_backend)?;
 
     info!("Checking packs listed in indexes");
-    let borked = AtomicUsize::new(0);
+    let borked_packs = AtomicUsize::new(0);
     index.packs.par_iter().for_each(|(pack_id, manifest)| {
         if let Err(e) = check_pack(&cached_backend, pack_id, manifest, args.read_packs) {
             error!("Problem with pack {}: {:?}", pack_id, e);
-            borked.fetch_add(1, Ordering::Relaxed);
+            borked_packs.fetch_add(1, Ordering::Relaxed);
         }
     });
-    let borked = borked.load(Ordering::SeqCst);
+    let borked_packs = borked_packs.load(Ordering::SeqCst);
 
     info!("Checking snapshots");
     let blob_map = index::blob_to_pack_map(&index)?;
@@ -90,10 +88,11 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             Ok(())
         })?;
 
-    if borked == 0 {
+    if borked_packs == 0 {
         Ok(())
     } else {
-        bail!("{} broken packs", borked);
+        error!("{} broken packs", borked_packs);
+        bail!("Check failed!");
     }
 }
 
@@ -107,10 +106,10 @@ fn check_pack(
     if read_packs {
         let mut pack = cached_backend.read_pack(pack_id)?;
         pack::verify(&mut pack, manifest)?;
-        trace!("Pack {} verified", pack_id);
+        debug!("Pack {} verified", pack_id);
     } else {
         cached_backend.backend.probe_pack(pack_id)?;
-        trace!("Pack {} found", pack_id);
+        debug!("Pack {} found", pack_id);
     }
     Ok(())
 }

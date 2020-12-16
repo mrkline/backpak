@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::path::Path;
-use std::str::FromStr;
 use std::sync::mpsc::{Receiver, SyncSender};
 
 use anyhow::*;
@@ -12,7 +10,7 @@ use tempfile::NamedTempFile;
 
 use crate::backend;
 use crate::file_util::check_magic;
-use crate::hashing::{HashingWriter, ObjectId};
+use crate::hashing::{HashingReader, HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
 use crate::DEFAULT_TARGET_SIZE;
 
@@ -138,23 +136,14 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
     // Don't combine the indexes until we know which ones to exclude.
     let mut loaded_indexes: BTreeMap<ObjectId, BTreeMap<ObjectId, PackManifest>> = BTreeMap::new();
 
-    for index in cached_backend.backend.list_indexes()? {
-        trace!("Loading index {}", backend::id_from_path(&index).unwrap());
-
-        let to_load_id = Path::new(&index)
-            .file_stem()
-            .ok_or_else(|| anyhow!("Couldn't determine index ID from {}", index))
-            .and_then(|hex| ObjectId::from_str(hex.to_str().unwrap()))?;
-
-        let mut loaded_index = from_reader(&mut cached_backend.read(&index)?)
-            .with_context(|| format!("Couldn't load index {}", index))?;
+    for index_file in cached_backend.backend.list_indexes()? {
+        let index = backend::id_from_path(&index_file)?;
+        let mut loaded_index = load(&index, cached_backend)?;
         superseded_indexes.append(&mut loaded_index.supersedes);
         ensure!(
-            loaded_indexes
-                .insert(to_load_id, loaded_index.packs)
-                .is_none(),
+            loaded_indexes.insert(index, loaded_index.packs).is_none(),
             "Duplicate index file {} read from backend!",
-            index
+            index_file
         );
     }
 
@@ -213,12 +202,32 @@ pub fn blob_set(index: &Index) -> Result<HashSet<ObjectId>> {
     Ok(blobs)
 }
 
-pub fn from_reader<R: Read>(r: &mut R) -> Result<Index> {
+/// Loads the index from the given reader,
+/// also returning its calculated ID.
+fn from_reader<R: Read>(r: &mut R) -> Result<(Index, ObjectId)> {
     check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for index file")?;
 
     let decoder =
         zstd::stream::read::Decoder::new(r).context("Decompression of index file failed")?;
-    let index = serde_cbor::from_reader(decoder).context("CBOR decoding of index file failed")?;
+    let mut hasher = HashingReader::new(decoder);
+    let index =
+        serde_cbor::from_reader(&mut hasher).context("CBOR decoding of index file failed")?;
+    let (id, _) = hasher.finalize();
+    Ok((index, id))
+}
+
+/// Loads the index with the given ID from the backend,
+/// verifying its contents match its ID.
+pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Index> {
+    debug!("Loading index {}", id);
+    let (index, calculated_id) = from_reader(&mut cached_backend.read_index(id)?)
+        .with_context(|| format!("Couldn't load index {}", id))?;
+    ensure!(
+        *id == calculated_id,
+        "Index {} hashed to {}",
+        id,
+        calculated_id
+    );
     Ok(index)
 }
 
@@ -314,12 +323,13 @@ mod test {
 
         let index = build_test_index();
         let mut fh = tempfile()?;
-        to_file(&mut fh, &index)?;
+        let written_id = to_file(&mut fh, &index)?;
 
         fh.seek(std::io::SeekFrom::Start(0))?;
-        let read_index = from_reader(&mut fh)?;
+        let (read_index, read_id) = from_reader(&mut fh)?;
 
         assert_eq!(index, read_index);
+        assert_eq!(written_id, read_id);
         Ok(())
     }
 }
