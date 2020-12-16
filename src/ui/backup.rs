@@ -47,10 +47,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         })
         .collect::<Result<BTreeSet<PathBuf>>>()?;
 
-    info!("Opening repository '{}'", repository.display());
     let cached_backend = backend::open(repository)?;
 
-    info!("Building index of backed-up blobs");
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
 

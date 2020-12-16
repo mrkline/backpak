@@ -6,6 +6,7 @@ use std::sync::mpsc::SyncSender;
 
 use anyhow::*;
 use chrono::prelude::*;
+use log::*;
 use serde_derive::*;
 
 use crate::backend;
@@ -68,6 +69,7 @@ pub fn from_reader<R: Read>(r: &mut R) -> Result<Snapshot> {
 pub fn load_chronologically(
     cached_backend: &crate::backend::CachedBackend,
 ) -> Result<Vec<(Snapshot, ObjectId)>> {
+    info!("Reading snapshots");
     let mut snapshots = cached_backend
         .backend
         .list_snapshots()?

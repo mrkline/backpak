@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use anyhow::*;
-use log::*;
 
 use crate::backend;
 use crate::snapshot;
@@ -11,9 +10,7 @@ pub fn run(repository: &Path) -> Result<()> {
         crate::prettify::prettify_serialize();
     }
 
-    info!("Opening repository '{}'", repository.display());
     let cached_backend = backend::open(repository)?;
-    info!("Reading snapshots");
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
 
     for (snapshot, id) in snapshots {

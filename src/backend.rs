@@ -4,6 +4,7 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use anyhow::*;
+use log::*;
 
 use crate::hashing::ObjectId;
 
@@ -144,6 +145,7 @@ pub fn initialize(repository: &Path) -> Result<()> {
 
 /// Factory function to open the appropriate type of backend from the repository path
 pub fn open(repository: &Path) -> Result<CachedBackend> {
+    info!("Opening repository '{}'", repository.display());
     let cached_backend = match determine_type(repository)? {
         BackendType::Filesystem => {
             let backend = Box::new(fs::FilesystemBackend::open(repository)?);
