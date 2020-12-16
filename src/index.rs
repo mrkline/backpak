@@ -24,6 +24,8 @@ pub struct Index {
     pub packs: BTreeMap<ObjectId, PackManifest>,
 }
 
+/// Gathers metadata for completed packs from `rx` into an index file,
+/// and uploads the index files when they reach a sufficient size.
 pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<(String, File)>) -> Result<()> {
     let mut index = Index::default();
 
@@ -128,8 +130,12 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
     Ok(id)
 }
 
+/// Loads all indexes from the provided backend and combines them into a master
+/// index, removing any superseded ones.
 pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
     info!("Building a master index of backed-up blobs");
+
+    let mut bad_indexes = BTreeSet::new();
 
     let mut superseded_indexes = BTreeSet::new();
 
@@ -138,12 +144,26 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
 
     for index_file in cached_backend.backend.list_indexes()? {
         let index = backend::id_from_path(&index_file)?;
-        let mut loaded_index = load(&index, cached_backend)?;
+        let mut loaded_index = match load(&index, cached_backend) {
+            Ok(l) => l,
+            Err(e) => {
+                error!("{:?}", e);
+                bad_indexes.insert(index);
+                continue;
+            }
+        };
         superseded_indexes.append(&mut loaded_index.supersedes);
         ensure!(
             loaded_indexes.insert(index, loaded_index.packs).is_none(),
             "Duplicate index file {} read from backend!",
             index_file
+        );
+    }
+
+    if !bad_indexes.is_empty() {
+        bail!(
+            "Errors loading indexes {:?}. Consider running backpack rebuild-index.",
+            bad_indexes
         );
     }
 
@@ -224,7 +244,7 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<In
         .with_context(|| format!("Couldn't load index {}", id))?;
     ensure!(
         *id == calculated_id,
-        "Index {} hashed to {}",
+        "Index {}'s contents changed! Now hashes to {}",
         id,
         calculated_id
     );
