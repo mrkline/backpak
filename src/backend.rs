@@ -175,6 +175,6 @@ pub fn id_from_path<P: AsRef<Path>>(path: P) -> Result<ObjectId> {
     use std::str::FromStr;
     path.as_ref()
         .file_stem()
-        .ok_or(Error::msg("No file stem"))
+        .ok_or_else(|| anyhow!("Couldn't determine ID from {}", path.as_ref().display()))
         .and_then(|stem| ObjectId::from_str(stem.to_str().unwrap()))
 }

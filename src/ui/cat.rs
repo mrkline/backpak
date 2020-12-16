@@ -90,7 +90,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             serde_json::to_writer(io::stdout(), &manifest)?;
         }
         Subcommand::Index { id } => {
-            let index = index::from_reader(&mut cached_backend.read_index(&id)?)?;
+            let index = index::load(&id, &cached_backend)?;
             serde_json::to_writer(io::stdout(), &index)?;
         }
         Subcommand::Snapshot { id } => {

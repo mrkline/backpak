@@ -18,7 +18,10 @@ pub fn run(repository: &Path) -> Result<()> {
         if snapshot.tags.is_empty() {
             println!();
         } else {
-            println!("({})", snapshot.tags.into_iter().collect::<Vec<String>>().join(" "));
+            println!(
+                "({})",
+                snapshot.tags.into_iter().collect::<Vec<String>>().join(" ")
+            );
         }
         println!("Author: {}", snapshot.author);
         println!("Date:   {}", snapshot.time.format("%a %F %H:%M:%S %z"));
