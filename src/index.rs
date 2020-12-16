@@ -131,7 +131,7 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
 }
 
 pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
-    debug!("Building a master index");
+    info!("Building a master index of backed-up blobs");
 
     let mut superseded_indexes = BTreeSet::new();
 
