@@ -21,6 +21,12 @@ impl ObjectId {
     fn from_digest(digest: GenericArray<u8, <Sha224 as Digest>::OutputSize>) -> Self {
         Self { digest }
     }
+
+    pub fn short_name(&self) -> String {
+        let mut full = format!("{}", self);
+        let _rest = full.split_off(8);
+        full
+    }
 }
 
 impl fmt::Debug for ObjectId {

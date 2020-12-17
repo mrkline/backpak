@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -32,7 +33,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let index = index::build_master_index(&cached_backend)?;
 
-    info!("Checking packs listed in indexes");
+    info!("Checking all packs listed in indexes");
     let borked_packs = AtomicUsize::new(0);
     index.packs.par_iter().for_each(|(pack_id, manifest)| {
         if let Err(e) = check_pack(&cached_backend, pack_id, manifest, args.read_packs) {
@@ -42,57 +43,77 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     });
     let borked_packs = borked_packs.load(Ordering::SeqCst);
 
-    info!("Checking snapshots");
+    info!("Checking that all chunks in snapshots are reachable");
     let blob_map = index::blob_to_pack_map(&index)?;
-    cached_backend
-        .backend
-        .list_snapshots()?
-        .par_iter()
-        .try_for_each::<_, Result<()>>(|snapshot_path| {
-            debug!("Checking {}", snapshot_path);
-            let mut snapshot_file = cached_backend
-                .read(snapshot_path)
-                .with_context(|| format!("Couldn't read snapshot {}", snapshot_path))?;
-            let snapshot = snapshot::from_reader(&mut snapshot_file)?;
+    let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
-            // Give each thread its own tree cache.
-            // There will probably be plenty of overlap,
-            // but it beats reading all the snapshots serially.
-            let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
-            let snapshot_tree = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
+    // Map the chunks that belong in each snapshot.
+    let mut chunks_to_snapshots: HashMap<ObjectId, HashSet<ObjectId>> = HashMap::new();
 
-            debug!("Checking all file chunks in tree {}", snapshot.tree);
-            // Cool, we've assembled all the trees.
-            // Let's check that all the chunks are reachable.
-            // TODO: Holy nesting, Batman. Refactor? Parallelize some more?
-            for tree in snapshot_tree.values() {
-                for (path, node) in tree.iter() {
-                    match &node.contents {
-                        tree::NodeContents::Directory { .. } => {}
-                        tree::NodeContents::File { chunks, .. } => {
-                            for chunk in chunks {
-                                if !blob_map.contains_key(chunk) {
-                                    error!(
-                                        "File chunk {} (of {}) isn't reachable",
-                                        chunk,
-                                        path.display()
-                                    );
-                                } else {
-                                    trace!("Chunk {} (of {}) is reachable", chunk, path.display());
-                                }
-                            }
-                        }
-                    };
-                }
+    for snapshot_path in cached_backend.backend.list_snapshots()? {
+        let mut snapshot_file = cached_backend
+            .read(&snapshot_path)
+            .with_context(|| format!("Couldn't read snapshot {}", snapshot_path))?;
+        let snapshot = snapshot::from_reader(&mut snapshot_file)?;
+        let snapshot_id = backend::id_from_path(&snapshot_path)?;
+
+        let snapshot_tree = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
+
+        for chunks in snapshot_tree.values().map(|tree| chunks_in_tree(&*tree)) {
+            for chunk in chunks {
+                let needed_by = chunks_to_snapshots.entry(chunk).or_insert(HashSet::new());
+                needed_by.insert(snapshot_id);
             }
-            Ok(())
-        })?;
+        }
+    }
+
+    for (chunk, snapshots) in &chunks_to_snapshots {
+        if blob_map.contains_key(chunk) {
+            trace!(
+                "Chunk {} is reachable (used by {} snapshots)",
+                chunk,
+                snapshots.len()
+            );
+        } else {
+            error!(
+                "Chunk {} is unreachable! (Used by snapshots {})",
+                chunk,
+                snapshots
+                    .iter()
+                    .map(|id| id.short_name())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            );
+        }
+    }
 
     if borked_packs == 0 {
         Ok(())
     } else {
         error!("{} broken packs", borked_packs);
         bail!("Check failed!");
+    }
+}
+
+fn chunks_in_tree(tree: &tree::Tree) -> HashSet<ObjectId> {
+    tree.par_iter()
+        .map(|(_, node)| chunks_in_node(node))
+        .fold_with(HashSet::new(), |mut set, node_chunks| {
+            if let Some(chunks) = node_chunks {
+                for chunk in chunks {
+                    set.insert(*chunk);
+                }
+            }
+            set
+        })
+        .reduce_with(|a, b| a.union(&b).cloned().collect())
+        .unwrap_or(HashSet::new())
+}
+
+fn chunks_in_node(node: &tree::Node) -> Option<&[ObjectId]> {
+    match &node.contents {
+        tree::NodeContents::Directory { .. } => None,
+        tree::NodeContents::File { chunks, .. } => Some(chunks),
     }
 }
 
