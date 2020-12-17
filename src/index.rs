@@ -2,9 +2,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::Mutex;
 
 use anyhow::*;
 use log::*;
+use rayon::prelude::*;
 use serde_derive::*;
 use tempfile::NamedTempFile;
 
@@ -135,52 +137,67 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
 pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
     info!("Building a master index of backed-up blobs");
 
-    let mut bad_indexes = BTreeSet::new();
-
-    let mut superseded_indexes = BTreeSet::new();
-
-    // Don't combine the indexes until we know which ones to exclude.
-    let mut loaded_indexes: BTreeMap<ObjectId, BTreeMap<ObjectId, PackManifest>> = BTreeMap::new();
-
-    for index_file in cached_backend.backend.list_indexes()? {
-        let index = backend::id_from_path(&index_file)?;
-        let mut loaded_index = match load(&index, cached_backend) {
-            Ok(l) => l,
-            Err(e) => {
-                error!("{:?}", e);
-                bad_indexes.insert(index);
-                continue;
-            }
-        };
-        superseded_indexes.append(&mut loaded_index.supersedes);
-        ensure!(
-            loaded_indexes.insert(index, loaded_index.packs).is_none(),
-            "Duplicate index file {} read from backend!",
-            index_file
-        );
+    #[derive(Debug, Default)]
+    struct Results {
+        bad_indexes: BTreeSet<ObjectId>,
+        superseded_indexes: BTreeSet<ObjectId>,
+        loaded_indexes: BTreeMap<ObjectId, BTreeMap<ObjectId, PackManifest>>,
     }
 
-    if !bad_indexes.is_empty() {
+    let shared = Mutex::new(Results::default());
+
+    cached_backend
+        .backend
+        .list_indexes()?
+        .par_iter()
+        .try_for_each_with(&shared, |shared, index_file| {
+            let index = backend::id_from_path(&index_file)?;
+            let mut loaded_index = match load(&index, cached_backend) {
+                Ok(l) => l,
+                Err(e) => {
+                    error!("{:?}", e);
+                    shared.lock().unwrap().bad_indexes.insert(index);
+                    return Ok(());
+                }
+            };
+            let mut guard = shared.lock().unwrap();
+            guard
+                .superseded_indexes
+                .append(&mut loaded_index.supersedes);
+            ensure!(
+                guard
+                    .loaded_indexes
+                    .insert(index, loaded_index.packs)
+                    .is_none(),
+                "Duplicate index file {} read from backend!",
+                index_file
+            );
+            Ok(())
+        })?;
+
+    let mut shared = shared.into_inner().unwrap();
+
+    if !shared.bad_indexes.is_empty() {
         bail!(
             "Errors loading indexes {:?}. Consider running backpack rebuild-index.",
-            bad_indexes
+            shared.bad_indexes
         );
     }
 
     // Strip out superseded indexes.
-    for superseded in &superseded_indexes {
-        if loaded_indexes.remove(&superseded).is_some() {
+    for superseded in &shared.superseded_indexes {
+        if shared.loaded_indexes.remove(&superseded).is_some() {
             info!("Index {} is superseded and can be deleted.", superseded);
         }
     }
 
     let mut master_pack_map = BTreeMap::new();
-    for index in loaded_indexes.values_mut() {
+    for index in shared.loaded_indexes.values_mut() {
         master_pack_map.append(index);
     }
 
     Ok(Index {
-        supersedes: superseded_indexes,
+        supersedes: shared.superseded_indexes,
         packs: master_pack_map,
     })
 }
