@@ -202,8 +202,10 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
     })
 }
 
+pub type BlobMap = HashMap<ObjectId, ObjectId>;
+
 /// Given an index, produce a mapping that relates blobs -> their packs
-pub fn blob_to_pack_map(index: &Index) -> Result<HashMap<ObjectId, ObjectId>> {
+pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap> {
     debug!("Building a blob -> pack map");
     let mut mapping = HashMap::new();
 
