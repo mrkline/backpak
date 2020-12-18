@@ -11,7 +11,7 @@ use serde_derive::*;
 
 use crate::backend;
 use crate::file_util::check_magic;
-use crate::hashing::{HashingWriter, ObjectId};
+use crate::hashing::{HashingReader, HashingWriter, ObjectId};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
@@ -59,9 +59,29 @@ pub fn upload(snapshot: &Snapshot, to_upload: SyncSender<(String, fs::File)>) ->
     Ok(())
 }
 
-pub fn from_reader<R: Read>(r: &mut R) -> Result<Snapshot> {
+/// Loads the snapshot from the given reader,
+/// also returning its calculated ID.
+fn from_reader<R: Read>(r: &mut R) -> Result<(Snapshot, ObjectId)> {
     check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for snapshot file")?;
-    let snapshot = serde_cbor::from_reader(r).context("CBOR decoding of snapshot file failed")?;
+    let mut hasher = HashingReader::new(r);
+    let snapshot =
+        serde_cbor::from_reader(&mut hasher).context("CBOR decoding of snapshot file failed")?;
+    let (id, _) = hasher.finalize();
+    Ok((snapshot, id))
+}
+
+/// Loads the snapshot with the given ID from the backend,
+/// verifying its contents match its ID.
+pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Snapshot> {
+    debug!("Loading snapshot {}", id);
+    let (snapshot, calculated_id) = from_reader(&mut cached_backend.read_snapshot(id)?)
+        .with_context(|| format!("Couldn't load snapshot {}", id))?;
+    ensure!(
+        *id == calculated_id,
+        "Snapshot {}'s contents changed! Now hashes to {}",
+        id,
+        calculated_id
+    );
     Ok(snapshot)
 }
 
@@ -75,10 +95,9 @@ pub fn load_chronologically(
         .list_snapshots()?
         .iter()
         .map(|file| {
-            let mut fh = cached_backend.read(file)?;
-            let snap = from_reader(&mut fh)?;
-            let id = backend::id_from_path(file).unwrap();
-            Ok((snap, id))
+            let snapshot_id = backend::id_from_path(&file)?;
+            let snap = load(&snapshot_id, cached_backend)?;
+            Ok((snap, snapshot_id))
         })
         .collect::<Result<Vec<(Snapshot, ObjectId)>>>()?;
     snapshots.sort_by_key(|(snap, _)| snap.time);
@@ -147,12 +166,13 @@ mod test {
 
         let snapshot = build_test_snapshot();
         let mut fh = tempfile()?;
-        to_file(&mut fh, &snapshot)?;
+        let written_id = to_file(&mut fh, &snapshot)?;
 
         fh.seek(std::io::SeekFrom::Start(0))?;
-        let read_snapshot = from_reader(&mut fh)?;
+        let (read_snapshot, read_id) = from_reader(&mut fh)?;
 
         assert_eq!(snapshot, read_snapshot);
+        assert_eq!(written_id, read_id);
         Ok(())
     }
 }

@@ -151,12 +151,12 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
         .list_indexes()?
         .par_iter()
         .try_for_each_with(&shared, |shared, index_file| {
-            let index = backend::id_from_path(&index_file)?;
-            let mut loaded_index = match load(&index, cached_backend) {
+            let index_id = backend::id_from_path(&index_file)?;
+            let mut loaded_index = match load(&index_id, cached_backend) {
                 Ok(l) => l,
                 Err(e) => {
                     error!("{:?}", e);
-                    shared.lock().unwrap().bad_indexes.insert(index);
+                    shared.lock().unwrap().bad_indexes.insert(index_id);
                     return Ok(());
                 }
             };
@@ -167,7 +167,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
             ensure!(
                 guard
                     .loaded_indexes
-                    .insert(index, loaded_index.packs)
+                    .insert(index_id, loaded_index.packs)
                     .is_none(),
                 "Duplicate index file {} read from backend!",
                 index_file

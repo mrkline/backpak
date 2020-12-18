@@ -22,7 +22,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     }
 
     let cached_backend = backend::open(repository)?;
-    let snapshot = snapshot::from_reader(&mut cached_backend.read_snapshot(&args.snapshot_id)?)?;
+    let snapshot = snapshot::load(&args.snapshot_id, &cached_backend)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
