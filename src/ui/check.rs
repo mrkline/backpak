@@ -99,10 +99,8 @@ fn chunks_in_tree(tree: &tree::Tree) -> HashSet<ObjectId> {
     tree.par_iter()
         .map(|(_, node)| chunks_in_node(node))
         .fold_with(HashSet::new(), |mut set, node_chunks| {
-            if let Some(chunks) = node_chunks {
-                for chunk in chunks {
-                    set.insert(*chunk);
-                }
+            for chunk in node_chunks {
+                set.insert(*chunk);
             }
             set
         })
@@ -110,10 +108,10 @@ fn chunks_in_tree(tree: &tree::Tree) -> HashSet<ObjectId> {
         .unwrap_or(HashSet::new())
 }
 
-fn chunks_in_node(node: &tree::Node) -> Option<&[ObjectId]> {
+fn chunks_in_node(node: &tree::Node) -> &[ObjectId] {
     match &node.contents {
-        tree::NodeContents::Directory { .. } => None,
-        tree::NodeContents::File { chunks, .. } => Some(chunks),
+        tree::NodeContents::Directory { .. } => &[],
+        tree::NodeContents::File { chunks, .. } => chunks,
     }
 }
 
