@@ -234,7 +234,7 @@ impl<'a> Cache<'a> {
 
 /// Reads the given tree and all its subtrees from the given tree cache.
 pub fn forest_from_root(root: &ObjectId, cache: &mut Cache) -> Result<Forest> {
-    debug!("Assembling tree from root {}", root);
+    trace!("Assembling tree from root {}", root);
     let mut forest = Forest::new();
     let mut stack_set = HashSet::new();
     append_tree(root, &mut forest, cache, &mut stack_set)?;
