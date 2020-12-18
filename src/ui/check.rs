@@ -51,11 +51,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let mut chunks_to_snapshots: HashMap<ObjectId, HashSet<ObjectId>> = HashMap::new();
 
     for snapshot_path in cached_backend.backend.list_snapshots()? {
-        let mut snapshot_file = cached_backend
-            .read(&snapshot_path)
-            .with_context(|| format!("Couldn't read snapshot {}", snapshot_path))?;
-        let snapshot = snapshot::from_reader(&mut snapshot_file)?;
         let snapshot_id = backend::id_from_path(&snapshot_path)?;
+        let snapshot = snapshot::load(&snapshot_id, &cached_backend)?;
 
         let snapshot_tree = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
 

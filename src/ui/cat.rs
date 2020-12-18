@@ -94,7 +94,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             serde_json::to_writer(io::stdout(), &index)?;
         }
         Subcommand::Snapshot { id } => {
-            let snapshot = snapshot::from_reader(&mut cached_backend.read_snapshot(&id)?)?;
+            let snapshot = snapshot::load(&id, &cached_backend)?;
             serde_json::to_writer(io::stdout(), &snapshot)?;
         }
     }
