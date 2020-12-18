@@ -10,6 +10,7 @@ use log::*;
 use serde_derive::*;
 use tempfile::NamedTempFile;
 
+use crate::backend;
 use crate::file_util;
 use crate::hashing::{HashingReader, ObjectId};
 use crate::tree;
@@ -300,7 +301,7 @@ pub fn verify<R: Read + Seek>(
     // Or is that fine, since verification isn't as performance critical
     // as other interactions?
     let mut packfile = decoder.finish();
-    let manifest_from_file = manifest_from_reader(&mut packfile)?;
+    let (manifest_from_file, _id) = manifest_from_reader(&mut packfile)?;
 
     ensure!(
         manifest_from_index == manifest_from_file,
@@ -310,10 +311,11 @@ pub fn verify<R: Read + Seek>(
     Ok(())
 }
 
-/// Reads the pack manifest from the back of the given reader.
+/// Reads the pack manifest from the back of the given reader,
+/// also returning its calculated ID.
 ///
 /// _Does not_ check the pack's magic bytes or anything besides the manifest.
-pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
+fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<(PackManifest, ObjectId)> {
     r.seek(SeekFrom::End(-4))?;
     let mut manifest_length: [u8; 4] = [0; 4];
     r.read_exact(&mut manifest_length)?;
@@ -328,9 +330,32 @@ pub fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<PackManifest> {
     })?;
     let decoder = ZstdDecoder::new(r.take(manifest_length as u64))
         .context("Decompression of pack manifest failed")?;
+    let mut hasher = HashingReader::new(decoder);
 
-    let manifest: PackManifest =
-        serde_cbor::from_reader(decoder).context("CBOR decoding of the pack manifest failed")?;
+    let manifest: PackManifest = serde_cbor::from_reader(&mut hasher)
+        .context("CBOR decoding of the pack manifest failed")?;
+    let (id, _) = hasher.finalize();
+    Ok((manifest, id))
+}
+
+/// Loads the manifest of the pack with the given ID from the backend,
+/// verifying its contents match its ID.
+pub fn load_manifest(
+    id: &ObjectId,
+    cached_backend: &backend::CachedBackend,
+) -> Result<PackManifest> {
+    debug!("Loading pack manifest {}", id);
+    let mut fh = cached_backend.read_pack(id)?;
+    check_magic(&mut fh)?;
+
+    let (manifest, calculated_id) =
+        manifest_from_reader(&mut fh).with_context(|| format!("Couldn't load pack {}", id))?;
+    ensure!(
+        *id == calculated_id,
+        "Pack {}'s manifest changed! Now hashes to {}",
+        id,
+        calculated_id
+    );
     Ok(manifest)
 }
 
