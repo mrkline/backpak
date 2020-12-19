@@ -169,7 +169,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
                     .loaded_indexes
                     .insert(index_id, loaded_index.packs)
                     .is_none(),
-                "Duplicate index file {} read from backend!",
+                "Duplicate index {} read from backend!",
                 index_file
             );
             Ok(())
