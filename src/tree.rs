@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::*;
 use chrono::prelude::*;
 use log::*;
+use rayon::prelude::*;
 use serde_derive::*;
 
 use crate::backend;
@@ -169,9 +170,9 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
 ///
 /// We use a HashMap because we never serialize a whole forest to our backup,
 /// so we'll take constant-time lookup over deterministic order.
-/// We use an Rc<Tree> so that a Forest can be used as a tree cache,
+/// We use an Arc<Tree> so that a Forest can be used as a tree cache,
 /// doling out references to its trees.
-pub type Forest = HashMap<ObjectId, Rc<Tree>>;
+pub type Forest = HashMap<ObjectId, Arc<Tree>>;
 
 /// A read-through cache of trees that extracts them from packs as-needed.
 pub struct Cache<'a> {
@@ -185,7 +186,7 @@ pub struct Cache<'a> {
     pack_cache: &'a backend::CachedBackend,
 
     /// Our actual tree cache.
-    tree_cache: Forest,
+    tree_cache: Mutex<Forest>,
 }
 
 impl<'a> Cache<'a> {
@@ -198,14 +199,14 @@ impl<'a> Cache<'a> {
             index,
             blob_to_pack_map,
             pack_cache,
-            tree_cache: Forest::new(),
+            tree_cache: Mutex::new(Forest::new()),
         }
     }
 
     /// Reads the given tree from the cache,
     /// fishing it out of its packfile if required.
-    pub fn read(&mut self, id: &ObjectId) -> Result<Rc<Tree>> {
-        if let Some(t) = self.tree_cache.get(id) {
+    pub fn read(&self, id: &ObjectId) -> Result<Arc<Tree>> {
+        if let Some(t) = self.tree_cache.lock().unwrap().get(id) {
             trace!("Tree {} is in-cache", id);
             return Ok(t.clone());
         }
@@ -223,9 +224,14 @@ impl<'a> Cache<'a> {
             .get(&pack_id)
             .expect("Pack ID in blob -> pack map but not the index");
 
-        pack::append_to_forest(&mut pack_containing_tree, &manifest, &mut self.tree_cache)?;
+        // Is this safe? Helpful? What if two threads load the same packfile?
+        // How does extend() merge that?
+        let new_forest = pack::load_to_forest(&mut pack_containing_tree, &manifest)?;
+        self.tree_cache.lock().unwrap().extend(new_forest);
 
         self.tree_cache
+            .lock()
+            .unwrap()
             .get(id)
             .ok_or_else(|| anyhow!("Tree {} missing from pack {}", id, pack_id))
             .map(|entry| entry.clone())
@@ -233,20 +239,17 @@ impl<'a> Cache<'a> {
 }
 
 /// Reads the given tree and all its subtrees from the given tree cache.
-pub fn forest_from_root(root: &ObjectId, cache: &mut Cache) -> Result<Forest> {
+pub fn forest_from_root(root: &ObjectId, cache: &Cache) -> Result<Forest> {
     trace!("Assembling tree from root {}", root);
-    let mut forest = Forest::new();
-    let mut stack_set = HashSet::new();
-    append_tree(root, &mut forest, cache, &mut stack_set)?;
+    let forest = append_tree(root, cache, HashSet::new())?;
     Ok(forest)
 }
 
 fn append_tree(
     tree_id: &ObjectId,
-    forest: &mut Forest,
-    cache: &mut Cache,
-    stack_set: &mut HashSet<ObjectId>,
-) -> Result<()> {
+    cache: &Cache,
+    mut stack_set: HashSet<ObjectId>,
+) -> Result<Forest> {
     ensure!(
         stack_set.insert(*tree_id),
         "Cycle detected! Tree {} loops up",
@@ -254,18 +257,27 @@ fn append_tree(
     );
 
     let tree = cache.read(tree_id)?;
-    forest.insert(*tree_id, tree.clone());
-    for val in tree.values().map(|v| &v.contents) {
-        match val {
-            NodeContents::Directory { subtree } => {
-                append_tree(subtree, forest, cache, stack_set)?;
-            }
-            NodeContents::File { .. } => {}
-        };
-    }
 
-    assert!(stack_set.remove(tree_id));
-    Ok(())
+    let mut forest = Forest::new();
+    forest.insert(*tree_id, tree.clone());
+
+    let children_forest = tree
+        .par_iter()
+        .filter_map(|(_, v)| match &v.contents {
+            NodeContents::Directory { subtree } => Some(subtree),
+            NodeContents::File { .. } => None,
+        })
+        .map(|subtree| append_tree(subtree, cache, stack_set.clone()))
+        .reduce_with(|a, b| {
+            let mut a = a?;
+            a.extend(b?);
+            Ok(a)
+        })
+        .unwrap_or(Ok(Forest::new()))?;
+
+    forest.extend(children_forest);
+
+    Ok(forest)
 }
 
 #[cfg(test)]

@@ -402,14 +402,15 @@ pub fn extract_blob<R: Read>(
 }
 
 /// Reads in a packfile (presumably of all trees) and appends them to the given forest
-pub fn append_to_forest<R: Read + Seek>(
+pub fn load_to_forest<R: Read + Seek>(
     packfile: &mut R,
     manifest_from_index: &[PackManifestEntry],
-    forest: &mut tree::Forest,
-) -> Result<()> {
+) -> Result<tree::Forest> {
     check_magic(packfile)?;
 
     let mut decoder = ZstdDecoder::new(packfile).context("Decompression of blob stream failed")?;
+
+    let mut forest = tree::Forest::new();
 
     for entry in manifest_from_index {
         if entry.blob_type != BlobType::Tree {
@@ -438,9 +439,11 @@ pub fn append_to_forest<R: Read + Seek>(
             entry.id
         );
 
-        assert!(forest.insert(entry.id, std::rc::Rc::new(to_add)).is_none());
+        assert!(forest
+            .insert(entry.id, std::sync::Arc::new(to_add))
+            .is_none());
     }
-    Ok(())
+    Ok(forest)
 }
 
 pub fn check_magic<R: Read>(r: &mut R) -> Result<()> {
