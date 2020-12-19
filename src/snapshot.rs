@@ -7,6 +7,7 @@ use std::sync::mpsc::SyncSender;
 use anyhow::*;
 use chrono::prelude::*;
 use log::*;
+use rayon::prelude::*;
 use serde_derive::*;
 
 use crate::backend;
@@ -93,7 +94,7 @@ pub fn load_chronologically(
     let mut snapshots = cached_backend
         .backend
         .list_snapshots()?
-        .iter()
+        .par_iter()
         .map(|file| {
             let snapshot_id = backend::id_from_path(&file)?;
             let snap = load(&snapshot_id, cached_backend)?;
