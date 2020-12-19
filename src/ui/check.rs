@@ -29,6 +29,8 @@ pub struct Args {
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
+    let mut trouble = false;
+
     let cached_backend = backend::open(repository)?;
 
     let index = index::build_master_index(&cached_backend)?;
@@ -42,6 +44,10 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         }
     });
     let borked_packs = borked_packs.load(Ordering::SeqCst);
+    if borked_packs != 0 {
+        error!("{} broken packs", borked_packs);
+        trouble = true;
+    }
 
     info!("Checking that all chunks in snapshots are reachable");
     let blob_map = index::blob_to_pack_map(&index)?;
@@ -64,6 +70,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         }
     }
 
+    let mut missing_chunks = 0;
     for (chunk, snapshots) in &chunks_to_snapshots {
         if blob_map.contains_key(chunk) {
             trace!(
@@ -81,14 +88,18 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
                     .collect::<Vec<String>>()
                     .join(", ")
             );
+            missing_chunks += 1;
         }
     }
+    if missing_chunks != 0 {
+        error!("{} missing chunks", missing_chunks);
+        trouble = true;
+    }
 
-    if borked_packs == 0 {
-        Ok(())
-    } else {
-        error!("{} broken packs", borked_packs);
+    if trouble {
         bail!("Check failed!");
+    } else {
+        Ok(())
     }
 }
 
