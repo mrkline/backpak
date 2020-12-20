@@ -95,6 +95,8 @@ pub fn index(
         to_upload
             .send((index_name, persisted))
             .context("indexer -> uploader channel exited early")?;
+    } else {
+        info!("No new indexes created - nothing changed");
     }
     Ok(())
 }
