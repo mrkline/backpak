@@ -14,9 +14,12 @@ use crate::backend;
 use crate::file_util::check_magic;
 use crate::hashing::{HashingReader, HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
-use crate::DEFAULT_TARGET_SIZE;
 
 const MAGIC_BYTES: &[u8] = b"MKBAKIDX";
+
+// Persist WIP (but valid) indexes to a known name so that an interrupted
+// backup can read it in and know what we've already backed up.
+const WIP_NAME: &str = "backpak-wip.index";
 
 /// An index maps packs to the blobs they contain,
 /// and lists any previous indexes they supersede.
@@ -30,6 +33,8 @@ pub struct Index {
 /// and uploads the index files when they reach a sufficient size.
 pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<(String, File)>) -> Result<()> {
     let mut index = Index::default();
+    let mut index_id = None;
+    let mut persisted = None;
 
     // For each pack...
     while let Ok(PackMetadata { id, manifest }) = rx.recv() {
@@ -39,59 +44,46 @@ pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<(String, File)>) 
             id
         );
 
-        trace!(
-            "Wrote {} packs into index, checking compressed size...",
-            index.packs.len()
-        );
+        trace!("Wrote {} packs into index", index.packs.len());
 
         // Rewrite the index every time we get a pack.
         // That way the temp index should always contain a complete list of packs,
         // allowing us to resume a backup from the last finished pack.
 
-        let (index_id, temp_file) = to_temp_file(&index)?;
-        let compressed_size = temp_file.as_file().metadata()?.len();
+        let (id, temp_file) = to_temp_file(&index)?;
+        index_id = Some(id);
 
-        // If we're close enough to our target size, stop
-        if compressed_size >= DEFAULT_TARGET_SIZE {
-            info!(
-                "Index {} finished ({} bytes). Starting another...",
-                index_id, compressed_size
-            );
-            let index_name = format!("{}.index", index_id);
-            let persisted = temp_file
-                .persist(&index_name)
-                .with_context(|| format!("Couldn't persist finished index to {}", index_name))?;
-
-            // Let's axe any temp copies we had.
-            // If one doesn't exist or something, that's cool too.
-            let _ = fs::remove_file("backpak-wip.index");
-
-            to_upload
-                .send((index_name, persisted))
-                .context("indexer -> uploader channel exited early")?;
-
-            index = Index::default();
-        } else {
-            // Persist WIP (but valid) indexes to disk so that an interrupted
-            // backup can read it in and know what we've already backed up.
+        persisted = Some(
             temp_file
-                .persist("backpak-wip.index")
-                .context("Couldn't persist WIP index to backpak-wip.index")?;
-        }
+                .persist(WIP_NAME)
+                .with_context(|| format!("Couldn't persist WIP index to {}", WIP_NAME))?,
+        );
     }
+
     if !index.packs.is_empty() {
-        let (index_id, temp_file) = to_temp_file(&index)?;
-        let compressed_size = temp_file.as_file().metadata()?.len();
-        info!("Index {} finished ({} bytes)", index_id, compressed_size);
-
+        let index_id = index_id.unwrap();
         let index_name = format!("{}.index", index_id);
-        let persisted = temp_file
-            .persist(&index_name)
-            .with_context(|| format!("Couldn't persist finished index to {}", index_name))?;
+        let mut persisted = persisted.unwrap();
 
-        // Let's axe any temp copies we had.
-        // If one doesn't exist or something, that's cool too.
-        let _ = fs::remove_file("backpak-wip.index");
+        // On Windows, we can't move an open file. Boo, Windows.
+        if cfg!(target_family = "windows") {
+            persisted
+                .sync_all()
+                .with_context(|| format!("Couldn't close {} to rename it", WIP_NAME))?;
+            drop(persisted);
+            fs::rename(WIP_NAME, &index_name)
+                .with_context(|| format!("Couldn't rename {} to {}", WIP_NAME, index_name))?;
+            persisted =
+                File::open(&index_name).with_context(|| "Couldn't reopen {} after renaming it.")?;
+        } else {
+            fs::rename(WIP_NAME, &index_name)
+                .with_context(|| format!("Couldn't rename {} to {}", WIP_NAME, index_name))?;
+        }
+        info!(
+            "Index {} finished ({} bytes)",
+            index_id,
+            persisted.metadata()?.len()
+        );
 
         to_upload
             .send((index_name, persisted))

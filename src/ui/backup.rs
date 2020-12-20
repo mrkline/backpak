@@ -80,7 +80,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         thread::spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx, blob_set));
     let tree_packer =
         thread::spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx, tree_set));
-    let indexer = thread::spawn(move || index::index(HashSet::new(), pack_rx, index_upload_tx));
+    let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
     let uploader = thread::spawn(move || upload(&mut cached_backend, upload_rx));
 
     let root = walk::pack_tree(
