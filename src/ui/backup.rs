@@ -80,7 +80,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         thread::spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx, blob_set));
     let tree_packer =
         thread::spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx, tree_set));
-    let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
+    let indexer = thread::spawn(move || index::index(HashSet::new(), pack_rx, index_upload_tx));
     let uploader = thread::spawn(move || upload(&mut cached_backend, upload_rx));
 
     let root = walk::pack_tree(
@@ -114,9 +114,10 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     drop(tree_tx);
 
     let mut errors: Vec<anyhow::Error> = Vec::new();
-    let mut append_error = |result: Option<anyhow::Error>| match result {
-        Some(e) => errors.push(e),
-        None => (),
+    let mut append_error = |result: Option<anyhow::Error>| {
+        if let Some(e) = result {
+            errors.push(e);
+        }
     };
 
     append_error(uploader.join().unwrap().err());

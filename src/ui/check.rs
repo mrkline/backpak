@@ -64,7 +64,9 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
         for chunks in snapshot_tree.values().map(|tree| chunks_in_tree(&*tree)) {
             for chunk in chunks {
-                let needed_by = chunks_to_snapshots.entry(chunk).or_insert(HashSet::new());
+                let needed_by = chunks_to_snapshots
+                    .entry(chunk)
+                    .or_insert_with(HashSet::new);
                 needed_by.insert(snapshot_id);
             }
         }
@@ -113,7 +115,7 @@ fn chunks_in_tree(tree: &tree::Tree) -> HashSet<ObjectId> {
             set
         })
         .reduce_with(|a, b| a.union(&b).cloned().collect())
-        .unwrap_or(HashSet::new())
+        .unwrap_or_else(HashSet::new)
 }
 
 fn chunks_in_node(node: &tree::Node) -> &[ObjectId] {
