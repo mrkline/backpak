@@ -81,7 +81,7 @@ pub struct CachedBackend {
 
 impl CachedBackend {
     /// Read the object at the given key into a file and return a handle to that file.
-    pub fn read(&self, from: &str) -> Result<File> {
+    fn read(&self, from: &str) -> Result<File> {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let from = base_directory.join(from);
@@ -91,7 +91,9 @@ impl CachedBackend {
         }
     }
 
-    /// Take the completed file at the given path and store it to an object with the given key
+    /// Take the completed file and its `<id>.<type>` name and
+    /// store it to an object with the appropriate key per
+    /// [`destination()`](destination)
     pub fn write(&mut self, from: &str, mut from_fh: File) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
