@@ -49,6 +49,16 @@ fn cli_run(backup_path: &Path) -> Result<assert_cmd::Command> {
     Ok(cmd)
 }
 
+fn count_directory_entries<P: AsRef<Path>>(dir: P) -> usize {
+    std::fs::read_dir(dir)
+        .expect("Couldn't read dir")
+        .map(|de| {
+            let de = de.expect("Couldn't read dir entry");
+            eprintln!("{}", de.path().display());
+        })
+        .count()
+}
+
 #[test]
 fn backup_src() -> Result<()> {
     setup_bigfile();
@@ -68,6 +78,26 @@ fn backup_src() -> Result<()> {
         .args(&["check", "--read-packs"])
         .assert()
         .success();
+
+    // Test consolidating indexes
+    let indexes_dir = backup_path.join("indexes");
+    assert_eq!(count_directory_entries(&indexes_dir), 1);
+
+    // Make a second index with another backup.
+    // Use a different set to generate a different index!
+    cli_run(backup_path)?
+        .args(&["backup", "src"])
+        .assert()
+        .success();
+
+    assert_eq!(count_directory_entries(&indexes_dir), 2);
+
+    cli_run(backup_path)?
+        .arg("rebuild-index")
+        .assert()
+        .success();
+
+    assert_eq!(count_directory_entries(&indexes_dir), 1);
 
     // To examine results
     // std::mem::forget(backup_dir);

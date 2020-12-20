@@ -78,6 +78,12 @@ impl Backend for FilesystemBackend {
         Ok(())
     }
 
+    fn remove(&mut self, which: &str) -> Result<()> {
+        let which = self.base_directory.join(which);
+        fs::remove_file(&which).with_context(|| format!("Couldn't remove {}", which.display()))?;
+        Ok(())
+    }
+
     fn list(&self, prefix: &str) -> Result<Vec<String>> {
         let prefix = self.base_directory.join(prefix);
 

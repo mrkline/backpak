@@ -31,6 +31,8 @@ pub trait Backend {
     /// Write the given read stream to the given key
     fn write(&mut self, from: &mut dyn Read, to: &str) -> Result<()>;
 
+    fn remove(&mut self, which: &str) -> Result<()>;
+
     /// Lists all keys with the given prefix
     fn list(&self, prefix: &str) -> Result<Vec<String>>;
 
@@ -43,6 +45,10 @@ pub trait Backend {
 
     fn list_snapshots(&self) -> Result<Vec<String>> {
         self.list("snapshots/")
+    }
+
+    fn list_packs(&self) -> Result<Vec<String>> {
+        self.list("packs/")
     }
 
     fn probe_pack(&self, id: &ObjectId) -> Result<()> {
@@ -135,6 +141,11 @@ impl CachedBackend {
         let snapshot_path = format!("snapshots/{}.snapshot", id);
         self.read(&snapshot_path)
             .with_context(|| format!("Couldn't open {}", snapshot_path))
+    }
+
+    pub fn remove_index(&mut self, id: &ObjectId) -> Result<()> {
+        let index_path = format!("indexes/{}.index", id);
+        self.backend.remove(&index_path)
     }
 }
 

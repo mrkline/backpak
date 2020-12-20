@@ -26,6 +26,11 @@ impl Backend for MemoryBackend {
         Ok(())
     }
 
+    fn remove(&mut self, which: &str) -> Result<()> {
+        self.files.remove(which);
+        Ok(())
+    }
+
     fn list(&self, prefix: &str) -> Result<Vec<String>> {
         let paths: Vec<String> = self
             .files

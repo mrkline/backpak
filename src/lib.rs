@@ -7,6 +7,7 @@ pub mod pack;
 pub mod prettify;
 pub mod snapshot;
 pub mod tree;
+pub mod upload;
 
 // CLI stuff:
 pub mod ui;

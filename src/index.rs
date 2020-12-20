@@ -31,8 +31,15 @@ pub struct Index {
 
 /// Gathers metadata for completed packs from `rx` into an index file,
 /// and uploads the index files when they reach a sufficient size.
-pub fn index(rx: Receiver<PackMetadata>, to_upload: SyncSender<(String, File)>) -> Result<()> {
-    let mut index = Index::default();
+pub fn index(
+    supersedes: BTreeSet<ObjectId>,
+    rx: Receiver<PackMetadata>,
+    to_upload: SyncSender<(String, File)>,
+) -> Result<()> {
+    let mut index = Index {
+        supersedes,
+        ..Default::default()
+    };
     let mut index_id = None;
     let mut persisted = None;
 

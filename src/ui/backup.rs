@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::fs::{self, File};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
 use std::sync::{Arc, Mutex};
@@ -16,6 +16,7 @@ use crate::index;
 use crate::pack;
 use crate::snapshot::{self, Snapshot};
 use crate::tree;
+use crate::upload;
 
 mod walk;
 
@@ -80,8 +81,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         thread::spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx, blob_set));
     let tree_packer =
         thread::spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx, tree_set));
-    let indexer = thread::spawn(move || index::index(pack_rx, index_upload_tx));
-    let uploader = thread::spawn(move || upload(&mut cached_backend, upload_rx));
+    let indexer = thread::spawn(move || index::index(BTreeSet::new(), pack_rx, index_upload_tx));
+    let uploader = thread::spawn(move || upload::upload(&mut cached_backend, upload_rx));
 
     let root = walk::pack_tree(
         &paths,
@@ -145,11 +146,4 @@ fn parent_snapshot<'a>(
         None => debug!("No parent snapshot found based on absolute paths"),
     };
     parent.map(|(snap, _)| snap)
-}
-
-fn upload(cached_backend: &mut backend::CachedBackend, rx: Receiver<(String, File)>) -> Result<()> {
-    while let Ok((path, fh)) = rx.recv() {
-        cached_backend.write(&path, fh)?;
-    }
-    Ok(())
 }
