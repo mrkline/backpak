@@ -75,5 +75,13 @@ fn init_logger(verbosity: u8, timestamps: bool) -> Result<()> {
         _ => LevelFilter::Trace,
     };
 
-    TermLogger::init(level, builder.build(), TerminalMode::Stderr).context("Couldn't init logger")
+    let config = builder.build();
+
+    if cfg!(test) {
+        TestLogger::init(level, config).context("Couldn't init test logger")
+    } else {
+        TermLogger::init(level, config.clone(), TerminalMode::Stderr)
+            .or_else(|_| SimpleLogger::init(level, config))
+            .context("Couldn't init logger")
+    }
 }
