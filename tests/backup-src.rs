@@ -68,18 +68,20 @@ fn backup_src() -> Result<()> {
 
     cli_run(backup_path)?.arg("init").assert().success();
 
+    // Let's backup our own code, and the test references.
     cli_run(backup_path)?
         .args(&["backup", "--tag", "test-tag", "--tag", "another-tag"])
         .args(&["--", "src", "tests/references"])
         .assert()
         .success();
 
+    // Check that everything backed up alright.
     cli_run(backup_path)?
         .args(&["check", "--read-packs"])
         .assert()
         .success();
 
-    // Test consolidating indexes
+    // One backup = one index
     let indexes_dir = backup_path.join("indexes");
     assert_eq!(count_directory_entries(&indexes_dir), 1);
 
@@ -92,12 +94,19 @@ fn backup_src() -> Result<()> {
 
     assert_eq!(count_directory_entries(&indexes_dir), 2);
 
+    // Consolodate indexes
     cli_run(backup_path)?
         .arg("rebuild-index")
         .assert()
         .success();
 
     assert_eq!(count_directory_entries(&indexes_dir), 1);
+
+    // Everything should be nice and reachable from the new index.
+    cli_run(backup_path)?
+        .args(&["check", "--read-packs"])
+        .assert()
+        .success();
 
     // To examine results
     // std::mem::forget(backup_dir);
