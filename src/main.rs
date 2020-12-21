@@ -41,7 +41,7 @@ enum Subcommand {
 
 fn main() -> Result<()> {
     let args = Args::from_args();
-    init_logger(args.verbose, args.timestamps);
+    init_logger(args.verbose, args.timestamps)?;
 
     match args.subcommand {
         Subcommand::Init => init::run(&args.repository),
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
 }
 
 /// Set up simplelog to spit messages to stderr.
-fn init_logger(verbosity: u8, timestamps: bool) {
+fn init_logger(verbosity: u8, timestamps: bool) -> Result<()> {
     let mut builder = ConfigBuilder::new();
     // Shut a bunch of stuff off - we're just spitting to stderr.
     builder.set_location_level(LevelFilter::Trace);
@@ -75,5 +75,5 @@ fn init_logger(verbosity: u8, timestamps: bool) {
         _ => LevelFilter::Trace,
     };
 
-    TermLogger::init(level, builder.build(), TerminalMode::Stderr).expect("Couldn't init logger");
+    TermLogger::init(level, builder.build(), TerminalMode::Stderr).context("Couldn't init logger")
 }
