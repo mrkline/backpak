@@ -6,6 +6,7 @@ use std::rc::Rc;
 use anyhow::*;
 use chrono::prelude::*;
 use log::*;
+use rayon::prelude::*;
 use serde_derive::*;
 
 use crate::backend;
@@ -25,6 +26,7 @@ pub enum NodeContents {
     Directory { subtree: ObjectId },
 }
 
+/// Backup-relevant metadata taken from a `stat()` call on a Posix system.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PosixMetadata {
     mode: u32,
@@ -39,6 +41,8 @@ pub struct PosixMetadata {
     change_time: DateTime<Utc>,
 }
 
+/// Backup-relevant metadata taken from a `GetFileInformationByHandle` call
+/// on Windows.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowsMetadata {
     attributes: u32,
@@ -73,6 +77,7 @@ impl NodeMetadata {
         }
     }
 
+    /// File size (value isn't meaningful for directories)
     pub fn size(&self) -> u64 {
         match self {
             NodeMetadata::Posix(p) => p.size,
@@ -134,7 +139,7 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
 }
 
 #[cfg(target_family = "windows")]
-pub fn windows_timestamp(ts: u64) -> Option<DateTime<Utc>> {
+fn windows_timestamp(ts: u64) -> Option<DateTime<Utc>> {
     // Windows returns 100ns intervals since January 1, 1601
     match ts {
         0 => None,
@@ -153,8 +158,8 @@ pub struct Node {
     pub metadata: NodeMetadata,
 }
 
-/// A tree (representing a single directory) of files (with contents),
-/// directories (with subtree), and their metadata, addressed by name.
+/// A tree represents a single directory of files (with contents),
+/// directories (with subtrees), and their metadata, addressed by name.
 pub type Tree = BTreeMap<PathBuf, Node>;
 
 /// Serialize the tree into its on-disk CBOR representation and return its
@@ -165,7 +170,8 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
     Ok((tree_cbor, id))
 }
 
-/// A collection of trees (which might reference each other as subtrees.)
+/// A collection of trees (which can reference each other as subtrees),
+/// used to represent a directory hierarchy.
 ///
 /// We use a HashMap because we never serialize a whole forest to our backup,
 /// so we'll take constant-time lookup over deterministic order.
@@ -266,6 +272,40 @@ fn append_tree(
 
     assert!(stack_set.remove(tree_id));
     Ok(())
+}
+
+/// Collect the set of chunks for the files in the given forest
+pub fn chunks_in_forest(forest: &Forest) -> HashSet<ObjectId> {
+    forest
+        .values() // Can't paralellize while values are Rc<_>. Arc?
+        .map(|tree| chunks_in_tree(&*tree))
+        .fold(HashSet::new(), |mut a, b| {
+            a.extend(b);
+            a
+        })
+}
+
+/// Collect the set of chunks for the files the given tree
+pub fn chunks_in_tree(tree: &Tree) -> HashSet<ObjectId> {
+    tree.par_iter()
+        .map(|(_, node)| chunks_in_node(node))
+        .fold_with(HashSet::new(), |mut set, node_chunks| {
+            for chunk in node_chunks {
+                set.insert(*chunk);
+            }
+            set
+        })
+        .reduce_with(|a, b| a.union(&b).cloned().collect())
+        .unwrap_or_else(HashSet::new)
+}
+
+/// Return the slice of chunks in a file node,
+/// or an empty slice if `node` is a directory
+pub fn chunks_in_node(node: &Node) -> &[ObjectId] {
+    match &node.contents {
+        NodeContents::Directory { .. } => &[],
+        NodeContents::File { chunks, .. } => chunks,
+    }
 }
 
 #[cfg(test)]

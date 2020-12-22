@@ -54,23 +54,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
     // Map the chunks that belong in each snapshot.
-    let mut chunks_to_snapshots: HashMap<ObjectId, HashSet<ObjectId>> = HashMap::new();
-
-    for snapshot_path in cached_backend.backend.list_snapshots()? {
-        let snapshot_id = backend::id_from_path(&snapshot_path)?;
-        let snapshot = snapshot::load(&snapshot_id, &cached_backend)?;
-
-        let snapshot_tree = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
-
-        for chunks in snapshot_tree.values().map(|tree| chunks_in_tree(&*tree)) {
-            for chunk in chunks {
-                let needed_by = chunks_to_snapshots
-                    .entry(chunk)
-                    .or_insert_with(HashSet::new);
-                needed_by.insert(snapshot_id);
-            }
-        }
-    }
+    let chunks_to_snapshots = map_chunks_to_snapshots(&cached_backend, &mut tree_cache)?;
 
     let mut missing_chunks = 0;
     for (chunk, snapshots) in &chunks_to_snapshots {
@@ -105,26 +89,6 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     }
 }
 
-fn chunks_in_tree(tree: &tree::Tree) -> HashSet<ObjectId> {
-    tree.par_iter()
-        .map(|(_, node)| chunks_in_node(node))
-        .fold_with(HashSet::new(), |mut set, node_chunks| {
-            for chunk in node_chunks {
-                set.insert(*chunk);
-            }
-            set
-        })
-        .reduce_with(|a, b| a.union(&b).cloned().collect())
-        .unwrap_or_else(HashSet::new)
-}
-
-fn chunks_in_node(node: &tree::Node) -> &[ObjectId] {
-    match &node.contents {
-        tree::NodeContents::Directory { .. } => &[],
-        tree::NodeContents::File { chunks, .. } => chunks,
-    }
-}
-
 #[inline]
 fn check_pack(
     cached_backend: &backend::CachedBackend,
@@ -141,4 +105,33 @@ fn check_pack(
         debug!("Pack {} found", pack_id);
     }
     Ok(())
+}
+
+/// Maps all reachable chunks to the set of snapshots that use them
+fn map_chunks_to_snapshots(
+    cached_backend: &backend::CachedBackend,
+    tree_cache: &mut tree::Cache,
+) -> Result<HashMap<ObjectId, HashSet<ObjectId>>> {
+    let mut chunks_to_snapshots = HashMap::new();
+
+    for snapshot_path in cached_backend.backend.list_snapshots()? {
+        let snapshot_id = backend::id_from_path(&snapshot_path)?;
+        let snapshot = snapshot::load(&snapshot_id, &cached_backend)?;
+
+        let snapshot_tree = tree::forest_from_root(&snapshot.tree, tree_cache)?;
+
+        for chunks in snapshot_tree
+            .values()
+            .map(|tree| tree::chunks_in_tree(&*tree))
+        {
+            for chunk in chunks {
+                let needed_by = chunks_to_snapshots
+                    .entry(chunk)
+                    .or_insert_with(HashSet::new);
+                needed_by.insert(snapshot_id);
+            }
+        }
+    }
+
+    Ok(chunks_to_snapshots)
 }
