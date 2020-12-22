@@ -50,6 +50,7 @@ fn cli_run(backup_path: &Path) -> Result<assert_cmd::Command> {
 }
 
 fn count_directory_entries<P: AsRef<Path>>(dir: P) -> usize {
+    #[allow(clippy::suspicious_map)]
     std::fs::read_dir(dir)
         .expect("Couldn't read dir")
         .map(|de| {

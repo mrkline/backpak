@@ -20,7 +20,7 @@ pub fn run(repository: &Path) -> Result<()> {
         .backend
         .list_indexes()?
         .iter()
-        .map(|index_file| backend::id_from_path(index_file))
+        .map(backend::id_from_path)
         .collect::<Result<BTreeSet<ObjectId>>>()?;
 
     let (pack_tx, pack_rx) = channel();
