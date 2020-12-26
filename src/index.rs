@@ -21,12 +21,14 @@ const MAGIC_BYTES: &[u8] = b"MKBAKIDX";
 // backup can read it in and know what we've already backed up.
 const WIP_NAME: &str = "backpak-wip.index";
 
+pub type PackMap = BTreeMap<ObjectId, PackManifest>;
+
 /// An index maps packs to the blobs they contain,
 /// and lists any previous indexes they supersede.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Index {
     pub supersedes: BTreeSet<ObjectId>,
-    pub packs: BTreeMap<ObjectId, PackManifest>,
+    pub packs: PackMap,
 }
 
 /// Gathers metadata for completed packs from `rx` into an index file,
@@ -142,7 +144,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
     struct Results {
         bad_indexes: BTreeSet<ObjectId>,
         superseded_indexes: BTreeSet<ObjectId>,
-        loaded_indexes: BTreeMap<ObjectId, BTreeMap<ObjectId, PackManifest>>,
+        loaded_indexes: BTreeMap<ObjectId, PackMap>,
     }
 
     let shared = Mutex::new(Results::default());
