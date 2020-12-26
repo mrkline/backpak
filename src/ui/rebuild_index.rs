@@ -39,12 +39,15 @@ pub fn run(repository: &Path) -> Result<()> {
             Ok(())
         })?;
 
-    let replacing = superseded.clone();
+    let replacing = index::Index {
+        supersedes: superseded.clone(),
+        ..Default::default()
+    };
     let indexer = thread::spawn(move || index::index(replacing, pack_rx, upload_tx));
 
     upload::upload(&mut cached_backend, upload_rx)?;
 
-    indexer.join().unwrap()?;
+    ensure!(indexer.join().unwrap()?, "No new index built");
 
     info!("Uploaded a new index; removing previous ones");
     for old_index in superseded {

@@ -34,14 +34,11 @@ pub struct Index {
 /// Gathers metadata for completed packs from `rx` into an index file,
 /// and uploads the index files when they reach a sufficient size.
 pub fn index(
-    supersedes: BTreeSet<ObjectId>,
+    starting_index: Index,
     rx: Receiver<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
-) -> Result<()> {
-    let mut index = Index {
-        supersedes,
-        ..Default::default()
-    };
+) -> Result<bool> {
+    let mut index = starting_index;
     let mut index_id = None;
     let mut persisted = None;
 
@@ -69,10 +66,9 @@ pub fn index(
         );
     }
 
-    if !index.packs.is_empty() {
+    if let Some(mut persisted) = persisted {
         let index_id = index_id.unwrap();
         let index_name = format!("{}.index", index_id);
-        let mut persisted = persisted.unwrap();
 
         // On Windows, we can't move an open file. Boo, Windows.
         if cfg!(target_family = "windows") {
@@ -97,10 +93,11 @@ pub fn index(
         to_upload
             .send((index_name, persisted))
             .context("indexer -> uploader channel exited early")?;
+        Ok(true)
     } else {
         info!("No new indexes created - nothing changed");
+        Ok(false)
     }
-    Ok(())
 }
 
 fn to_temp_file(index: &Index) -> Result<(ObjectId, NamedTempFile)> {
