@@ -121,6 +121,17 @@ impl CachedBackend {
         Ok(())
     }
 
+    pub fn remove(&mut self, to_remove: &str) -> Result<()> {
+        match &self.cache {
+            WritethroughCache::Local { base_directory } => {
+                // Just unlink the file!
+                self.backend.remove(to_remove)
+            }
+            // On a remote backend, we'd have to unlink any cached file,
+            // _then_ remove it from the remote side.
+        }
+    }
+
     // Let's put all the layout-specific stuff here so that we don't have paths
     // spread throughout the codebase.
 
@@ -145,7 +156,7 @@ impl CachedBackend {
 
     pub fn remove_index(&mut self, id: &ObjectId) -> Result<()> {
         let index_path = format!("indexes/{}.index", id);
-        self.backend.remove(&index_path)
+        self.remove(&index_path)
     }
 }
 
