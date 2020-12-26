@@ -1,5 +1,3 @@
-use std::fs::File;
-use std::io::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -8,38 +6,32 @@ use fastcdc::FastCDC;
 use log::*;
 use rayon::prelude::*;
 
+use crate::file_util;
 use crate::hashing::ObjectId;
+use crate::pack::{Blob, BlobContents, BlobType};
 
-const MEGA: u64 = 1024 * 1024;
-
-/// A chunk of a file.
+/// A span of a file.
 ///
 /// All chunks from a file share the same underlying buffer via a refcount to
 /// avoid reallocating the whole file, bit by bit, as we pass its chunks to the packer.
-#[derive(Clone)]
-pub struct Chunk {
-    file: Arc<dyn AsRef<[u8]> + Send + Sync>,
+///
+/// It probably be nicer to just have the Arc and a slice into it,
+/// but self-referential structures in Rust are a bit of a PITA...
+#[derive(Debug, Clone)]
+pub struct FileSpan {
+    file: Arc<file_util::LoadedFile>,
     start: usize,
     end: usize,
-    pub id: ObjectId,
 }
 
-impl Chunk {
-    pub fn bytes(&self) -> &[u8] {
-        let bytes: &[u8] = (*self.file).as_ref();
+impl AsRef<[u8]> for FileSpan {
+    fn as_ref(&self) -> &[u8] {
+        let bytes: &[u8] = self.file.bytes();
         &bytes[self.start..self.end]
     }
-
-    pub fn len(&self) -> usize {
-        self.end - self.start
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
-pub type ChunkedFile = Vec<Chunk>;
+pub type ChunkedFile = Vec<Blob>;
 
 /// Chunks a file into content-based chunks between 512kB and 2MB, aiming for 1MB.
 ///
@@ -73,14 +65,15 @@ pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
 
     let path: &Path = path.as_ref();
 
-    let file = read_file(path).with_context(|| format!("Couldn't read {}", path.display()))?;
-    let file_bytes: &[u8] = (*file).as_ref();
+    let file =
+        file_util::read_file(path).with_context(|| format!("Couldn't read {}", path.display()))?;
+    let file_bytes: &[u8] = file.bytes();
 
     trace!("Finding cut points for {}", path.display());
     let chunks: Vec<_> = FastCDC::new(file_bytes, MIN_SIZE, TARGET_SIZE, MAX_SIZE).collect();
     debug!("Chunking {} into {} chunks", path.display(), chunks.len());
 
-    let chunks: Vec<Chunk> = chunks
+    let chunks: Vec<Blob> = chunks
         .par_iter()
         .map(|chunk| {
             let file = file.clone();
@@ -90,37 +83,17 @@ pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
 
             trace!("{}: [{}..{}] {}", path.display(), start, end, id);
 
-            Chunk {
-                file,
-                start,
-                end,
+            let span = FileSpan { file, start, end };
+
+            Blob {
+                contents: BlobContents::Span(span),
                 id,
+                kind: BlobType::Chunk,
             }
         })
         .collect();
 
-    // `par_iter()` - as opposed to `iter_bridge()` - preserves order when
-    // you collect it back up.
-    debug_assert!(
-        chunks.windows(2).all(|w| w[0].start < w[1].start),
-        "Chunks are not in order!"
-    );
     Ok(chunks)
-}
-
-fn read_file(path: &Path) -> Result<Arc<dyn AsRef<[u8]> + Send + Sync>> {
-    let mut fh = File::open(path)?;
-    let file_length = fh.metadata()?.len();
-    if file_length < 10 * MEGA {
-        trace!("{} is < 10MB, reading to buffer", path.display());
-        let mut buffer = Vec::new();
-        fh.read_to_end(&mut buffer)?;
-        Ok(Arc::new(buffer))
-    } else {
-        trace!("{} is > 10MB, memory mapping", path.display());
-        let mapping = unsafe { memmap::Mmap::map(&fh)? };
-        Ok(Arc::new(mapping))
-    }
 }
 
 #[cfg(test)]
@@ -139,7 +112,7 @@ mod test {
         assert_eq!(chunked.len(), 1);
 
         let chunked = &chunked[0];
-        assert_eq!(chunked.len(), 6934);
+        assert_eq!(chunked.bytes().len(), 6934);
         assert_eq!(
             format!("{}", chunked.id),
             "1d2af0277f8ca293bbe100a38e12008e8ccd8960c1c96fc7b1ac8f8d"

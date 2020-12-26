@@ -4,14 +4,15 @@ use std::io;
 
 use crate::chunk;
 use crate::hashing::ObjectId;
+use crate::pack::{Blob, BlobContents, BlobType};
 use crate::tree;
 
 pub fn pack_tree(
     paths: &BTreeSet<PathBuf>,
     previous_tree: Option<ObjectId>,
     tree_cache: &mut tree::Cache,
-    chunk_tx: &mut Sender<pack::Blob>,
-    tree_tx: &mut Sender<pack::Blob>,
+    chunk_tx: &mut Sender<Blob>,
+    tree_tx: &mut Sender<Blob>,
 ) -> Result<ObjectId> {
     let mut nodes = tree::Tree::new();
 
@@ -62,7 +63,7 @@ pub fn pack_tree(
             for chunk in chunks {
                 chunk_ids.push(chunk.id);
                 chunk_tx
-                    .send(pack::Blob::Chunk(chunk))
+                    .send(chunk)
                     .context("backup -> chunk packer channel exited early")?;
             }
             tree::Node {
@@ -77,7 +78,11 @@ pub fn pack_tree(
     }
     let (bytes, id) = tree::serialize_and_hash(&nodes)?;
     tree_tx
-        .send(pack::Blob::Tree { bytes, id })
+        .send(Blob {
+            contents: BlobContents::Buffer(bytes),
+            id,
+            kind: BlobType::Tree,
+        })
         .context("backup -> tree packer channel exited early")?;
     Ok(id)
 }
