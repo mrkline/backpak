@@ -2,9 +2,9 @@ use super::*;
 
 use std::io;
 
+use crate::blob::{self, Blob};
 use crate::chunk;
 use crate::hashing::ObjectId;
-use crate::pack::{Blob, BlobContents, BlobType};
 use crate::tree;
 
 pub fn pack_tree(
@@ -79,9 +79,9 @@ pub fn pack_tree(
     let (bytes, id) = tree::serialize_and_hash(&nodes)?;
     tree_tx
         .send(Blob {
-            contents: BlobContents::Buffer(bytes),
+            contents: blob::Contents::Buffer(bytes),
             id,
-            kind: BlobType::Tree,
+            kind: blob::Type::Tree,
         })
         .context("backup -> tree packer channel exited early")?;
     Ok(id)

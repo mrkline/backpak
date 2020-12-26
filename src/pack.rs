@@ -11,7 +11,7 @@ use serde_derive::*;
 use tempfile::NamedTempFile;
 
 use crate::backend;
-use crate::chunk;
+use crate::blob::{self, Blob};
 use crate::file_util;
 use crate::hashing::{HashingReader, ObjectId};
 use crate::tree;
@@ -19,52 +19,10 @@ use crate::DEFAULT_TARGET_SIZE;
 
 const MAGIC_BYTES: &[u8] = b"MKBAKPAK";
 
-/// The contents of a blob - either part of a loaded file
-/// or a buffer directly.
-///
-/// Formerly this was some Box<AsRef<u8> + Send + Sync>,
-/// but let's cut down on the indirection where there's only a few choices.
-#[derive(Debug, Clone)]
-pub enum BlobContents {
-    Buffer(Vec<u8>),
-    Span(chunk::FileSpan),
-}
-
-/// A chunk of a file or a tree to place in a pack.
-///
-/// Our fundamental unit of backup.
-#[derive(Debug, Clone)]
-pub struct Blob {
-    /// The bytes to back up
-    pub contents: BlobContents,
-    /// The ID of said bytes
-    pub id: ObjectId,
-    /// Is the blob a chunk or a tree?
-    pub kind: BlobType,
-}
-
-impl Blob {
-    pub fn bytes(&self) -> &[u8] {
-        match &self.contents {
-            BlobContents::Buffer(v) => &v,
-            BlobContents::Span(s) => s.as_ref(),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BlobType {
-    /// A chunk of a file.
-    Chunk,
-    /// File and directory metadata
-    Tree,
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PackManifestEntry {
     #[serde(rename = "type")]
-    pub blob_type: BlobType,
+    pub blob_type: blob::Type,
     pub length: u32,
     pub id: ObjectId,
 }
@@ -110,8 +68,8 @@ pub fn pack(
         if !packed_blobs.lock().unwrap().insert(blob.id) {
             // If the blob has already been packed, skip it!
             match blob.kind {
-                BlobType::Chunk => trace!("Skipping chunk {}; already packed", blob.id),
-                BlobType::Tree => trace!("Skipping tree {}; already packed", blob.id),
+                blob::Type::Chunk => trace!("Skipping chunk {}; already packed", blob.id),
+                blob::Type::Tree => trace!("Skipping tree {}; already packed", blob.id),
             };
             continue;
         }
@@ -206,10 +164,10 @@ impl PackfileWriter {
     /// Write the given file chunk or tree to the packfile and add it to the manifest.
     fn write_blob(&mut self, blob: Blob) -> io::Result<u64> {
         match blob.kind {
-            BlobType::Chunk => {
+            blob::Type::Chunk => {
                 trace!("Writing chunk {}", blob.id);
             }
-            BlobType::Tree => {
+            blob::Type::Tree => {
                 trace!("Writing tree {}", blob.id);
             }
         };
@@ -425,7 +383,7 @@ pub fn append_to_forest<R: Read + Seek>(
     let mut decoder = ZstdDecoder::new(packfile).context("Decompression of blob stream failed")?;
 
     for entry in manifest_from_index {
-        if entry.blob_type != BlobType::Tree {
+        if entry.blob_type != blob::Type::Tree {
             warn!(
                 "Chunk {} found in pack where we expected only trees",
                 entry.id
@@ -479,17 +437,17 @@ mod test {
 
         let manifest = vec![
             PackManifestEntry {
-                blob_type: BlobType::Chunk,
+                blob_type: blob::Type::Chunk,
                 length: 42,
                 id: ObjectId::hash(b"first"),
             },
             PackManifestEntry {
-                blob_type: BlobType::Tree,
+                blob_type: blob::Type::Tree,
                 length: 22,
                 id: ObjectId::hash(b"second"),
             },
             PackManifestEntry {
-                blob_type: BlobType::Chunk,
+                blob_type: blob::Type::Chunk,
                 length: 42,
                 id: ObjectId::hash(b"third"),
             },
@@ -549,7 +507,7 @@ mod test {
 
         assert_eq!(chunks.len(), merged_manifest.len());
         for (chunk, manifest_entry) in chunks.iter().zip(merged_manifest.iter()) {
-            assert_eq!(manifest_entry.blob_type, BlobType::Chunk);
+            assert_eq!(manifest_entry.blob_type, blob::Type::Chunk);
             assert_eq!(manifest_entry.id, chunk.id);
             assert_eq!(manifest_entry.length as usize, chunk.bytes().len());
         }

@@ -277,6 +277,7 @@ mod test {
 
     use tempfile::tempfile;
 
+    use crate::blob;
     use crate::pack::*;
 
     fn init() {
@@ -293,12 +294,12 @@ mod test {
             ObjectId::hash(b"pack o' chunks"),
             vec![
                 PackManifestEntry {
-                    blob_type: BlobType::Chunk,
+                    blob_type: blob::Type::Chunk,
                     length: 42,
                     id: ObjectId::hash(b"a chunk"),
                 },
                 PackManifestEntry {
-                    blob_type: BlobType::Chunk,
+                    blob_type: blob::Type::Chunk,
                     length: 9001,
                     id: ObjectId::hash(b"another chunk"),
                 },
@@ -308,17 +309,17 @@ mod test {
             ObjectId::hash(b"pack o'trees"),
             vec![
                 PackManifestEntry {
-                    blob_type: BlobType::Tree,
+                    blob_type: blob::Type::Tree,
                     length: 182,
                     id: ObjectId::hash(b"first tree"),
                 },
                 PackManifestEntry {
-                    blob_type: BlobType::Tree,
+                    blob_type: blob::Type::Tree,
                     length: 22,
                     id: ObjectId::hash(b"second tree"),
                 },
                 PackManifestEntry {
-                    blob_type: BlobType::Tree,
+                    blob_type: blob::Type::Tree,
                     length: 11,
                     id: ObjectId::hash(b"third tree"),
                 },

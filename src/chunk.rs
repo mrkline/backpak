@@ -6,16 +6,16 @@ use fastcdc::FastCDC;
 use log::*;
 use rayon::prelude::*;
 
+use crate::blob::{self, Blob};
 use crate::file_util;
 use crate::hashing::ObjectId;
-use crate::pack::{Blob, BlobContents, BlobType};
 
 /// A span of a file.
 ///
 /// All chunks from a file share the same underlying buffer via a refcount to
 /// avoid reallocating the whole file, bit by bit, as we pass its chunks to the packer.
 ///
-/// It probably be nicer to just have the Arc and a slice into it,
+/// It would probably be nicer to just have the Arc and a slice into it,
 /// but self-referential structures in Rust are a bit of a PITA...
 #[derive(Debug, Clone)]
 pub struct FileSpan {
@@ -79,16 +79,16 @@ pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
             let file = file.clone();
             let start = chunk.offset;
             let end = chunk.offset + chunk.length;
-            let id = ObjectId::hash(&file_bytes[start..end]);
+            let span = FileSpan { file, start, end };
+
+            let id = ObjectId::hash(span.as_ref());
 
             trace!("{}: [{}..{}] {}", path.display(), start, end, id);
 
-            let span = FileSpan { file, start, end };
-
             Blob {
-                contents: BlobContents::Span(span),
+                contents: blob::Contents::Span(span),
                 id,
-                kind: BlobType::Chunk,
+                kind: blob::Type::Chunk,
             }
         })
         .collect();

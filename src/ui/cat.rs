@@ -7,6 +7,7 @@ use log::*;
 use structopt::StructOpt;
 
 use crate::backend;
+use crate::blob;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
@@ -75,8 +76,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             debug_assert!(manifest_entry.id == id);
             assert!(!blob.is_empty());
             match manifest_entry.blob_type {
-                pack::BlobType::Chunk => io::stdout().write_all(&blob)?,
-                pack::BlobType::Tree => {
+                blob::Type::Chunk => io::stdout().write_all(&blob)?,
+                blob::Type::Tree => {
                     let tree: tree::Tree = serde_cbor::from_slice(&blob)
                         .with_context(|| format!("CBOR decoding of tree {} failed", id))?;
                     serde_json::to_writer(io::stdout(), &tree)?;
