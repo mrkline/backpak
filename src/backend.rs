@@ -11,20 +11,20 @@ use crate::hashing::ObjectId;
 mod fs;
 mod memory;
 
-pub enum BackendType {
+enum BackendType {
     Filesystem,
     // TODO: S3, B2, etc...
 }
 
 /// Determine the repo type based on its name.
-pub fn determine_type(_repository: &Path) -> Result<BackendType> {
+fn determine_type(_repository: &Path) -> Result<BackendType> {
     // We're just starting with filesystem
     Ok(BackendType::Filesystem)
 }
 
 // TODO: Should we make these async? Some backends (such as S3 via Rusoto)
 // are going to be async, but we could `block_on()` for each request...
-pub trait Backend {
+trait Backend {
     /// Read from the given key
     fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>>;
 
@@ -35,38 +35,6 @@ pub trait Backend {
 
     /// Lists all keys with the given prefix
     fn list(&self, prefix: &str) -> Result<Vec<String>>;
-
-    // Let's put all the layout-specific stuff here so that we don't have paths
-    // spread throughout the codebase.
-
-    fn list_indexes(&self) -> Result<Vec<String>> {
-        self.list("indexes/")
-    }
-
-    fn list_snapshots(&self) -> Result<Vec<String>> {
-        self.list("snapshots/")
-    }
-
-    fn list_packs(&self) -> Result<Vec<String>> {
-        self.list("packs/")
-    }
-
-    fn probe_pack(&self, id: &ObjectId) -> Result<()> {
-        let hex = id.to_string();
-        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
-        let found_packs = self
-            .list(&pack_path)
-            .with_context(|| format!("Couldn't find {}", pack_path))?;
-        match found_packs.len() {
-            0 => bail!("Couldn't find pack {}", hex),
-            1 => Ok(()),
-            multiple => bail!(
-                "Expected one pack at {}, found several! {:?}",
-                pack_path,
-                multiple
-            ),
-        }
-    }
 }
 
 // Use an enum instead of trait objects because we don't forsee ever having
@@ -82,7 +50,7 @@ enum WritethroughCache {
 
 pub struct CachedBackend {
     cache: WritethroughCache,
-    pub backend: Box<dyn Backend + Send + Sync>,
+    backend: Box<dyn Backend + Send + Sync>,
 }
 
 impl CachedBackend {
@@ -123,17 +91,46 @@ impl CachedBackend {
 
     pub fn remove(&mut self, to_remove: &str) -> Result<()> {
         match &self.cache {
-            WritethroughCache::Local { base_directory } => {
+            WritethroughCache::Local { .. } => {
                 // Just unlink the file!
                 self.backend.remove(to_remove)
-            }
-            // On a remote backend, we'd have to unlink any cached file,
-            // _then_ remove it from the remote side.
+            } // On a remote backend, we'd have to unlink any cached file,
+              // _then_ remove it from the remote side.
         }
     }
 
     // Let's put all the layout-specific stuff here so that we don't have paths
     // spread throughout the codebase.
+
+    pub fn list_indexes(&self) -> Result<Vec<String>> {
+        self.backend.list("indexes/")
+    }
+
+    pub fn list_snapshots(&self) -> Result<Vec<String>> {
+        self.backend.list("snapshots/")
+    }
+
+    pub fn list_packs(&self) -> Result<Vec<String>> {
+        self.backend.list("packs/")
+    }
+
+    pub fn probe_pack(&self, id: &ObjectId) -> Result<()> {
+        let hex = id.to_string();
+        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
+        let found_packs = self
+            .backend
+            .list(&pack_path)
+            .with_context(|| format!("Couldn't find {}", pack_path))?;
+        match found_packs.len() {
+            0 => bail!("Couldn't find pack {}", hex),
+            1 => Ok(()),
+            multiple => bail!(
+                "Expected one pack at {}, found several! {:?}",
+                pack_path,
+                multiple
+            ),
+        }
+    }
 
     pub fn read_pack(&self, id: &ObjectId) -> Result<File> {
         let hex = id.to_string();

@@ -17,7 +17,6 @@ pub fn run(repository: &Path) -> Result<()> {
     let mut cached_backend = backend::open(repository)?;
 
     let superseded = cached_backend
-        .backend
         .list_indexes()?
         .iter()
         .map(backend::id_from_path)
@@ -28,7 +27,6 @@ pub fn run(repository: &Path) -> Result<()> {
 
     info!("Reading all packs to build a new index");
     cached_backend
-        .backend
         .list_packs()?
         .par_iter()
         .try_for_each_with::<_, _, Result<()>>(pack_tx, |pack_tx, pack_file| {

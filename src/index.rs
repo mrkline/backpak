@@ -148,7 +148,6 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
     let shared = Mutex::new(Results::default());
 
     cached_backend
-        .backend
         .list_indexes()?
         .par_iter()
         .try_for_each_with(&shared, |shared, index_file| {

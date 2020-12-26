@@ -92,7 +92,6 @@ pub fn load_chronologically(
 ) -> Result<Vec<(Snapshot, ObjectId)>> {
     info!("Reading snapshots");
     let mut snapshots = cached_backend
-        .backend
         .list_snapshots()?
         .par_iter()
         .map(|file| {

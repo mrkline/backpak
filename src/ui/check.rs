@@ -101,7 +101,7 @@ fn check_pack(
         pack::verify(&mut pack, manifest)?;
         debug!("Pack {} verified", pack_id);
     } else {
-        cached_backend.backend.probe_pack(pack_id)?;
+        cached_backend.probe_pack(pack_id)?;
         debug!("Pack {} found", pack_id);
     }
     Ok(())
@@ -114,7 +114,7 @@ fn map_chunks_to_snapshots(
 ) -> Result<HashMap<ObjectId, HashSet<ObjectId>>> {
     let mut chunks_to_snapshots = HashMap::new();
 
-    for snapshot_path in cached_backend.backend.list_snapshots()? {
+    for snapshot_path in cached_backend.list_snapshots()? {
         let snapshot_id = backend::id_from_path(&snapshot_path)?;
         let snapshot = snapshot::load(&snapshot_id, &cached_backend)?;
 
