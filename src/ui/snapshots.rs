@@ -13,7 +13,7 @@ pub fn run(repository: &Path) -> Result<()> {
     let cached_backend = backend::open(repository)?;
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
 
-    for (snapshot, id) in snapshots {
+    for (snapshot, id) in snapshots.into_iter().rev() {
         print!("snapshot {}", id);
         if snapshot.tags.is_empty() {
             println!();
