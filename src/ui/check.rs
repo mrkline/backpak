@@ -126,7 +126,7 @@ fn map_chunks_to_snapshots(
         {
             for chunk in chunks {
                 let needed_by = chunks_to_snapshots
-                    .entry(chunk)
+                    .entry(*chunk)
                     .or_insert_with(HashSet::new);
                 needed_by.insert(snapshot_id);
             }

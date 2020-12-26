@@ -275,7 +275,7 @@ fn append_tree(
 }
 
 /// Collect the set of chunks for the files in the given forest
-pub fn chunks_in_forest(forest: &Forest) -> HashSet<ObjectId> {
+pub fn chunks_in_forest(forest: &Forest) -> HashSet<&ObjectId> {
     forest
         .values() // Can't paralellize while values are Rc<_>. Arc?
         .map(|tree| chunks_in_tree(&*tree))
@@ -286,12 +286,12 @@ pub fn chunks_in_forest(forest: &Forest) -> HashSet<ObjectId> {
 }
 
 /// Collect the set of chunks for the files the given tree
-pub fn chunks_in_tree(tree: &Tree) -> HashSet<ObjectId> {
+pub fn chunks_in_tree(tree: &Tree) -> HashSet<&ObjectId> {
     tree.par_iter()
         .map(|(_, node)| chunks_in_node(node))
         .fold_with(HashSet::new(), |mut set, node_chunks| {
             for chunk in node_chunks {
-                set.insert(*chunk);
+                set.insert(chunk);
             }
             set
         })
