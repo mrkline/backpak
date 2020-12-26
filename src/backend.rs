@@ -124,10 +124,25 @@ impl CachedBackend {
         match found_packs.len() {
             0 => bail!("Couldn't find pack {}", hex),
             1 => Ok(()),
-            multiple => bail!(
+            multiple => panic!(
                 "Expected one pack at {}, found several! {:?}",
-                pack_path,
-                multiple
+                pack_path, multiple
+            ),
+        }
+    }
+
+    pub fn probe_snapshot(&self, id: &ObjectId) -> Result<()> {
+        let snapshot_path = format!("snapshots/{}.snapshot", id);
+        let found_snapshots = self
+            .backend
+            .list(&snapshot_path)
+            .with_context(|| format!("Couldn't find {}", snapshot_path))?;
+        match found_snapshots.len() {
+            0 => bail!("Couldn't find snapshot {}", id),
+            1 => Ok(()),
+            multiple => panic!(
+                "Expected one snapshot at {}, found several! {:?}",
+                snapshot_path, multiple
             ),
         }
     }
@@ -154,6 +169,11 @@ impl CachedBackend {
     pub fn remove_index(&mut self, id: &ObjectId) -> Result<()> {
         let index_path = format!("indexes/{}.index", id);
         self.remove(&index_path)
+    }
+
+    pub fn remove_snapshot(&mut self, id: &ObjectId) -> Result<()> {
+        let snapshot_path = format!("snapshots/{}.snapshot", id);
+        self.remove(&snapshot_path)
     }
 }
 

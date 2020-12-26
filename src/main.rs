@@ -32,6 +32,7 @@ enum Subcommand {
     Backup(backup::Args),
     Cat(cat::Args),
     Check(check::Args),
+    Forget(forget::Args),
     Ls(ls::Args),
     /// List the snapshots in this repository
     Snapshots,
@@ -48,6 +49,7 @@ fn main() -> Result<()> {
         Subcommand::Backup(b) => backup::run(&args.repository, b),
         Subcommand::Cat(c) => cat::run(&args.repository, c),
         Subcommand::Check(c) => check::run(&args.repository, c),
+        Subcommand::Forget(f) => forget::run(&args.repository, f),
         Subcommand::Ls(l) => ls::run(&args.repository, l),
         Subcommand::Snapshots => snapshots::run(&args.repository),
         Subcommand::RebuildIndex => rebuild_index::run(&args.repository),
