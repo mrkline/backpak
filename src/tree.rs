@@ -295,7 +295,10 @@ pub fn chunks_in_tree(tree: &Tree) -> HashSet<&ObjectId> {
             }
             set
         })
-        .reduce_with(|a, b| a.union(&b).cloned().collect())
+        .reduce_with(|mut a, b| {
+            a.extend(b);
+            a
+        })
         .unwrap_or_else(HashSet::new)
 }
 

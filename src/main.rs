@@ -34,6 +34,7 @@ enum Subcommand {
     Check(check::Args),
     Forget(forget::Args),
     Ls(ls::Args),
+    Prune(prune::Args),
     /// List the snapshots in this repository
     Snapshots,
     /// Build a new index from all existing packs
@@ -51,6 +52,7 @@ fn main() -> Result<()> {
         Subcommand::Check(c) => check::run(&args.repository, c),
         Subcommand::Forget(f) => forget::run(&args.repository, f),
         Subcommand::Ls(l) => ls::run(&args.repository, l),
+        Subcommand::Prune(p) => prune::run(&args.repository, p),
         Subcommand::Snapshots => snapshots::run(&args.repository),
         Subcommand::RebuildIndex => rebuild_index::run(&args.repository),
     }

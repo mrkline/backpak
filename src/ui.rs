@@ -4,5 +4,6 @@ pub mod check;
 pub mod forget;
 pub mod init;
 pub mod ls;
+pub mod prune;
 pub mod rebuild_index;
 pub mod snapshots;
