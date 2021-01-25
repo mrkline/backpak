@@ -87,7 +87,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let root = walk::pack_tree(
         &paths,
-        parent.map(|p| p.tree),
+        parent.map(|p| &p.tree),
         &mut tree_cache,
         &mut chunk_tx,
         &mut tree_tx,

@@ -9,7 +9,7 @@ use crate::tree;
 
 pub fn pack_tree(
     paths: &BTreeSet<PathBuf>,
-    previous_tree: Option<ObjectId>,
+    previous_tree: Option<&ObjectId>,
     tree_cache: &mut tree::Cache,
     chunk_tx: &mut Sender<Blob>,
     tree_tx: &mut Sender<Blob>,
@@ -35,7 +35,7 @@ pub fn pack_tree(
                 .collect::<io::Result<BTreeSet<PathBuf>>>()
                 .with_context(|| format!("Failed iterating subdirectory {}", path.display()))?;
 
-            let previous_subtree = previous_node.and_then(|n| match n.contents {
+            let previous_subtree = previous_node.and_then(|n| match &n.contents {
                 tree::NodeContents::Directory { subtree } => Some(subtree),
                 tree::NodeContents::File { .. } => {
                     trace!("{} was a file, but is now a directory", path.display());
