@@ -185,7 +185,7 @@ pub struct Cache<'a> {
     index: &'a index::Index,
 
     /// Finds the pack that contains a given blob
-    blob_to_pack_map: &'a HashMap<ObjectId, ObjectId>,
+    blob_to_pack_map: &'a index::BlobMap,
 
     /// Gets packs as-needed from the backend.
     pack_cache: &'a backend::CachedBackend,
@@ -197,7 +197,7 @@ pub struct Cache<'a> {
 impl<'a> Cache<'a> {
     pub fn new(
         index: &'a index::Index,
-        blob_to_pack_map: &'a HashMap<ObjectId, ObjectId>,
+        blob_to_pack_map: &'a index::BlobMap,
         pack_cache: &'a backend::CachedBackend,
     ) -> Self {
         Self {
