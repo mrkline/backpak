@@ -31,8 +31,8 @@ pub struct Index {
     pub packs: PackMap,
 }
 
-/// Gathers metadata for completed packs from `rx` into an index file,
-/// and uploads the index files when they reach a sufficient size.
+/// Gather metadata for completed packs from `rx` into an index file,
+/// and upload the index files when they reach a sufficient size.
 pub fn index(
     starting_index: Index,
     rx: Receiver<PackMetadata>,
@@ -132,7 +132,7 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
     Ok(id)
 }
 
-/// Loads all indexes from the provided backend and combines them into a master
+/// Load all indexes from the provided backend and combines them into a master
 /// index, removing any superseded ones.
 pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
     info!("Building a master index of backed-up blobs");
@@ -224,7 +224,7 @@ pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap> {
     Ok(mapping)
 }
 
-/// Given an index, produce a mapping that relates blobs -> their packs
+/// Gather the set of all blobs in a given index.
 pub fn blob_set(index: &Index) -> Result<HashSet<ObjectId>> {
     debug!("Building a set of all blobs");
     let mut blobs = HashSet::new();
@@ -240,7 +240,7 @@ pub fn blob_set(index: &Index) -> Result<HashSet<ObjectId>> {
     Ok(blobs)
 }
 
-/// Loads the index from the given reader,
+/// Load the index from the given reader,
 /// also returning its calculated ID.
 fn from_reader<R: Read>(r: &mut R) -> Result<(Index, ObjectId)> {
     check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for index file")?;
@@ -254,7 +254,7 @@ fn from_reader<R: Read>(r: &mut R) -> Result<(Index, ObjectId)> {
     Ok((index, id))
 }
 
-/// Loads the index with the given ID from the backend,
+/// Load the index with the given ID from the backend,
 /// verifying its contents match its ID.
 pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Index> {
     debug!("Loading index {}", id);
