@@ -7,7 +7,12 @@ use structopt::StructOpt;
 use crate::backend;
 use crate::hashing::ObjectId;
 
+/// Forget snapshots
+///
+/// Data used by these snapshots is not immediately deleted,
+/// but will be thrown out by the next prune.
 #[derive(Debug, StructOpt)]
+#[structopt(verbatim_doc_comment)]
 pub struct Args {
     #[structopt(short = "n", long)]
     pub dry_run: bool,
