@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::Arc;
 
 use anyhow::*;
 use chrono::prelude::*;
@@ -175,9 +175,11 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
 ///
 /// We use a HashMap because we never serialize a whole forest to our backup,
 /// so we'll take constant-time lookup over deterministic order.
-/// We use an Rc<Tree> so that a Forest can be used as a tree cache,
+/// We use an Arc<Tree> so that a Forest can be used as a tree cache,
 /// doling out references to its trees.
-pub type Forest = HashMap<ObjectId, Rc<Tree>>;
+/// We use Arc and not Rc so that functions can operate in parallel on all
+/// trees in the forest.
+pub type Forest = HashMap<ObjectId, Arc<Tree>>;
 
 /// A read-through cache of trees that extracts them from packs as-needed.
 pub struct Cache<'a> {
@@ -210,7 +212,7 @@ impl<'a> Cache<'a> {
 
     /// Reads the given tree from the cache,
     /// fishing it out of its packfile if required.
-    pub fn read(&mut self, id: &ObjectId) -> Result<Rc<Tree>> {
+    pub fn read(&mut self, id: &ObjectId) -> Result<Arc<Tree>> {
         if let Some(t) = self.tree_cache.get(id) {
             trace!("Tree {} is in-cache", id);
             return Ok(t.clone());
@@ -277,9 +279,9 @@ fn append_tree(
 /// Collect the set of chunks for the files in the given forest
 pub fn chunks_in_forest(forest: &Forest) -> HashSet<&ObjectId> {
     forest
-        .values() // Can't paralellize while values are Rc<_>. Arc?
-        .map(|tree| chunks_in_tree(&*tree))
-        .fold(HashSet::new(), |mut a, b| {
+        .par_iter()
+        .map(|(_id, tree)| chunks_in_tree(&*tree))
+        .reduce(HashSet::new, |mut a, b| {
             a.extend(b);
             a
         })
@@ -295,11 +297,10 @@ pub fn chunks_in_tree(tree: &Tree) -> HashSet<&ObjectId> {
             }
             set
         })
-        .reduce_with(|mut a, b| {
+        .reduce(HashSet::new, |mut a, b| {
             a.extend(b);
             a
         })
-        .unwrap_or_else(HashSet::new)
 }
 
 /// Return the slice of chunks in a file node,

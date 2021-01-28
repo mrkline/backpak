@@ -409,7 +409,7 @@ pub fn append_to_forest<R: Read + Seek>(
             entry.id
         );
 
-        assert!(forest.insert(entry.id, std::rc::Rc::new(to_add)).is_none());
+        assert!(forest.insert(entry.id, Arc::new(to_add)).is_none());
     }
     Ok(())
 }

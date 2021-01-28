@@ -28,7 +28,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let snapshots_and_forests = load_snapshots_and_forests(&cached_backend, &mut tree_cache)?;
 
-    let reachable_chunks = reachable_chunks(snapshots_and_forests.iter().map(|s| &s.forest));
+    let reachable_chunks = reachable_chunks(snapshots_and_forests.par_iter().map(|s| &s.forest));
     let (reusable_packs, partially_unused_packs) =
         partition_packs(&index, &snapshots_and_forests, &reachable_chunks)?;
 
@@ -85,7 +85,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     }
 
     // As we repack our snapshots, skip blobs in the 100% reachable packs.
-    let reusable_blobs = blobs_in_packs(reusable_packs.values().copied().par_bridge());
+    let reusable_blobs = blobs_in_packs(reusable_packs.par_iter().map(|(_id, pack)| *pack));
 
     Ok(())
 }
@@ -114,10 +114,12 @@ fn load_snapshots_and_forests(
 }
 
 /// Collect all file chunks from the provided forests
-fn reachable_chunks<'a, I: Iterator<Item = &'a tree::Forest>>(forests: I) -> HashSet<&'a ObjectId> {
+fn reachable_chunks<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
+    forests: I,
+) -> HashSet<&'a ObjectId> {
     forests
         .map(|f| tree::chunks_in_forest(f))
-        .fold(HashSet::new(), |mut a, b| {
+        .reduce(HashSet::new, |mut a, b| {
             a.extend(b);
             a
         })
@@ -164,9 +166,11 @@ fn blobs_in_packs<'a, I: ParallelIterator<Item = &'a pack::PackManifest>>(
             }
             set
         })
-        .reduce_with(|mut a, b| {
-            a.extend(b);
-            a
-        })
-        .unwrap_or_else(HashSet::new)
+        .reduce(
+            HashSet::new,
+            |mut a, b| {
+                a.extend(b);
+                a
+            },
+        )
 }
