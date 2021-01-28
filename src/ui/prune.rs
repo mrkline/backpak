@@ -29,14 +29,14 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let snapshots_and_forests = load_snapshots_and_forests(&cached_backend, &mut tree_cache)?;
 
     let reachable_chunks = reachable_chunks(snapshots_and_forests.par_iter().map(|s| &s.forest));
-    let (reusable_packs, partially_unused_packs) =
+    let (reusable_packs, sparse_packs) =
         partition_packs(&index, &snapshots_and_forests, &reachable_chunks)?;
 
     // Once we've partitioned packs, we don't need every single reachable chunk.
     // Drop that, since it could be huge.
     drop(reachable_chunks);
 
-    if partially_unused_packs.is_empty() {
+    if sparse_packs.is_empty() {
         info!("No unused blobs in any packs! Nothing to do.");
         return Ok(());
     }
@@ -59,7 +59,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     );
     debug!(
         "Packs {} could be repacked",
-        partially_unused_packs
+        sparse_packs
             .keys()
             .map(|id| id.to_string())
             .collect::<Vec<_>>()
@@ -76,16 +76,16 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     info!(
         "Keep {} packs, rewrite {}, and replace the {} current indexes",
         reusable_packs.len(),
-        partially_unused_packs.len(),
+        sparse_packs.len(),
         superseded.len()
     );
 
-    if args.dry_run {
-        return Ok(());
-    }
-
     // As we repack our snapshots, skip blobs in the 100% reachable packs.
     let reusable_blobs = blobs_in_packs(reusable_packs.par_iter().map(|(_id, pack)| *pack));
+
+    for snapshot in snapshots_and_forests.iter().rev() {
+        walk_snapshot(snapshot, &reusable_blobs, args.dry_run)?
+    }
 
     Ok(())
 }
@@ -129,6 +129,7 @@ fn reachable_chunks<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
 /// and those that don't.
 ///
 /// We'll reuse the former, and repack blobs from the latter.
+#[allow(clippy::type_complexity)]
 fn partition_packs<'a>(
     index: &'a index::Index,
     snapshots_and_forests: &[SnapshotAndForest],
@@ -166,11 +167,87 @@ fn blobs_in_packs<'a, I: ParallelIterator<Item = &'a pack::PackManifest>>(
             }
             set
         })
-        .reduce(
-            HashSet::new,
-            |mut a, b| {
-                a.extend(b);
-                a
-            },
-        )
+        .reduce(HashSet::new, |mut a, b| {
+            a.extend(b);
+            a
+        })
+}
+
+fn walk_snapshot(
+    snapshot_and_forest: &SnapshotAndForest,
+    reusable_blobs: &HashSet<ObjectId>,
+    dry_run: bool,
+) -> Result<()> {
+    debug!(
+        "Repacking any loose blobs from snapshot {}",
+        snapshot_and_forest.id
+    );
+    walk_tree(
+        &snapshot_and_forest.snapshot.tree,
+        &snapshot_and_forest.forest,
+        reusable_blobs,
+        dry_run,
+    )
+    .with_context(|| format!("In snapshot {}", snapshot_and_forest.id))
+}
+
+fn walk_tree(
+    tree_id: &ObjectId,
+    forest: &tree::Forest,
+    reusable_blobs: &HashSet<ObjectId>,
+    dry_run: bool,
+) -> Result<()> {
+    let tree: &tree::Tree = forest
+        .get(tree_id)
+        .ok_or_else(|| anyhow!("Missing tree {}", tree_id))?;
+
+    for (path, node) in tree {
+        match &node.contents {
+            tree::NodeContents::File { chunks } => {
+                for chunk in chunks {
+                    if !reusable_blobs.contains(chunk) {
+                        repack_chunk(chunk, path, dry_run)?;
+                    }
+                }
+            }
+            tree::NodeContents::Directory { subtree } => {
+                walk_tree(subtree, forest, reusable_blobs, dry_run)?
+            }
+        }
+    }
+
+    if !reusable_blobs.contains(tree_id) {
+        repack_tree(tree_id, tree, dry_run)?;
+    }
+    Ok(())
+}
+
+fn repack_chunk(id: &ObjectId, path: &Path, dry_run: bool) -> Result<()> {
+    trace!("Repacking chunk {} from {}", id, path.display());
+    if dry_run {
+        return Ok(());
+    }
+
+    Ok(())
+}
+
+fn repack_tree(id: &ObjectId, tree: &tree::Tree, dry_run: bool) -> Result<()> {
+    trace!("Repacking tree {}", id);
+    if dry_run {
+        return Ok(());
+    }
+
+    let (reserialized, check_id) = tree::serialize_and_hash(tree)?;
+    // Sanity check:
+    ensure!(
+        check_id == *id,
+        "Tree {} has a different ID ({}) when reserialized",
+        id,
+        check_id
+    );
+
+    // TODO: To the packer!
+    drop(reserialized);
+
+    Ok(())
 }
