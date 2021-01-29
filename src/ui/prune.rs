@@ -83,9 +83,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     // As we repack our snapshots, skip blobs in the 100% reachable packs.
     let reusable_blobs = blobs_in_packs(reusable_packs.par_iter().map(|(_id, pack)| *pack));
 
-    for snapshot in snapshots_and_forests.iter().rev() {
-        walk_snapshot(snapshot, &reusable_blobs, args.dry_run)?
-    }
+    walk_snapshots(&snapshots_and_forests, reusable_blobs, args.dry_run)?;
 
     Ok(())
 }
@@ -171,6 +169,17 @@ fn blobs_in_packs<'a, I: ParallelIterator<Item = &'a pack::PackManifest>>(
             a.extend(b);
             a
         })
+}
+
+fn walk_snapshots(
+    snapshots_and_forests: &[SnapshotAndForest],
+    reusable_blobs: HashSet<ObjectId>,
+    dry_run: bool,
+) -> Result<()> {
+    for snapshot in snapshots_and_forests.iter().rev() {
+        walk_snapshot(snapshot, &reusable_blobs, dry_run)?
+    }
+    Ok(())
 }
 
 fn walk_snapshot(
