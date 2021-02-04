@@ -1,4 +1,5 @@
 pub mod backend;
+pub mod backup;
 pub mod blob;
 pub mod chunk;
 pub mod file_util;

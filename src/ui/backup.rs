@@ -3,7 +3,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use anyhow::*;
 use chrono::prelude::*;
@@ -13,10 +12,8 @@ use structopt::StructOpt;
 use crate::backend;
 use crate::hashing::ObjectId;
 use crate::index;
-use crate::pack;
 use crate::snapshot::{self, Snapshot};
 use crate::tree;
-use crate::upload;
 
 mod walk;
 
@@ -54,9 +51,17 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let blob_map = index::blob_to_pack_map(&index)?;
 
     info!("Finding a parent snapshot");
-    let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
-    let parent = parent_snapshot(&paths, &snapshots);
+    let parent = parent_snapshot(&paths, snapshots);
+    let parent = parent.as_ref();
+
+    trace!("Loading all trees from the parent snapshot");
+    let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
+    let parent_forest = parent
+        .map(|p| tree::forest_from_root(&p.tree, &mut tree_cache))
+        .transpose()?
+        .unwrap_or_else(tree::Forest::new);
+    drop(tree_cache);
 
     // TODO: Load WIP index and upload any existing packs
     // before we start new ones.
@@ -64,33 +69,14 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let blob_set = Arc::new(Mutex::new(index::blob_set(&index)?));
 
     // ALL THE CONCURRENCY
-    let (mut chunk_tx, chunk_rx) = channel();
-    let (mut tree_tx, tree_rx) = channel();
-    let (chunk_pack_tx, pack_rx) = channel();
-    let tree_pack_tx = chunk_pack_tx.clone();
-    let (chunk_pack_upload_tx, upload_rx) = sync_channel(1);
-    let tree_pack_upload_tx = chunk_pack_upload_tx.clone();
-    let index_upload_tx = chunk_pack_upload_tx.clone();
-    let snapshot_upload_tx = chunk_pack_upload_tx.clone();
-
-    let mut cached_backend = backend::open(repository)?;
-
-    let tree_set = blob_set.clone(); // We need an Arc clone for the tree packer
-
-    let chunk_packer =
-        thread::spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx, blob_set));
-    let tree_packer =
-        thread::spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx, tree_set));
-    let indexer =
-        thread::spawn(move || index::index(index::Index::default(), pack_rx, index_upload_tx));
-    let uploader = thread::spawn(move || upload::upload(&mut cached_backend, upload_rx));
+    let mut backup = crate::backup::spawn_backup_threads(cached_backend, blob_set);
 
     let root = walk::pack_tree(
         &paths,
         parent.map(|p| &p.tree),
-        &mut tree_cache,
-        &mut chunk_tx,
-        &mut tree_tx,
+        &parent_forest,
+        &mut backup.chunk_tx,
+        &mut backup.tree_tx,
     )?;
     debug!("Root tree packed as {}", root);
 
@@ -110,39 +96,23 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         tree: root,
     };
 
-    snapshot::upload(&snapshot, snapshot_upload_tx)?;
+    snapshot::upload(&snapshot, backup.upload_tx)?;
 
-    drop(chunk_tx);
-    drop(tree_tx);
+    drop(backup.chunk_tx);
+    drop(backup.tree_tx);
 
-    let mut errors: Vec<anyhow::Error> = Vec::new();
-    let mut append_error = |result: Option<anyhow::Error>| {
-        if let Some(e) = result {
-            errors.push(e);
-        }
-    };
-
-    append_error(uploader.join().unwrap().err());
-    append_error(chunk_packer.join().unwrap().err());
-    append_error(tree_packer.join().unwrap().err());
-    append_error(indexer.join().unwrap().err());
-
-    if errors.is_empty() {
-        Ok(())
-    } else {
-        for e in errors {
-            error!("{:?}", e);
-        }
-        bail!("backup failed");
-    }
+    backup.threads.join().unwrap()
 }
 
-fn parent_snapshot<'a>(
+fn parent_snapshot(
     paths: &BTreeSet<PathBuf>,
-    snapshots: &'a [(Snapshot, ObjectId)],
-) -> Option<&'a Snapshot> {
-    let parent = snapshots.iter().rev().find(|snap| snap.0.paths == *paths);
-    match parent {
+    snapshots: Vec<(Snapshot, ObjectId)>,
+) -> Option<Snapshot> {
+    let parent = snapshots
+        .into_iter()
+        .rev()
+        .find(|snap| snap.0.paths == *paths);
+    match &parent {
         Some(p) => debug!("Using snapshot {} as a parent", p.1),
         None => debug!("No parent snapshot found based on absolute paths"),
     };

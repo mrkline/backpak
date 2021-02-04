@@ -1,0 +1,110 @@
+//! The backup machinery, decoupled from what needs to be backed up.
+//!
+//! Various commands (backup, prune, etc.) can walk data, existing or new,
+//! and send them to this machinery.
+
+use std::collections::HashSet;
+use std::fs::File;
+use std::sync::mpsc::*;
+use std::sync::{Arc, Mutex};
+use std::thread;
+
+use anyhow::*;
+use log::*;
+
+use crate::backend;
+use crate::blob::Blob;
+use crate::hashing::ObjectId;
+use crate::index;
+use crate::pack;
+use crate::upload;
+
+pub struct Backup {
+    pub chunk_tx: Sender<Blob>,
+    pub tree_tx: Sender<Blob>,
+    pub upload_tx: SyncSender<(String, File)>,
+    pub threads: thread::JoinHandle<Result<()>>,
+}
+
+pub fn spawn_backup_threads(
+    cached_backend: backend::CachedBackend,
+    existing_blobs: Arc<Mutex<HashSet<ObjectId>>>,
+) -> Backup {
+    let (chunk_tx, chunk_rx) = channel();
+    let (tree_tx, tree_rx) = channel();
+    let (upload_tx, upload_rx) = sync_channel(1);
+    let upload_tx2 = upload_tx.clone();
+
+    let threads = thread::spawn(move || {
+        backup_master_thread(
+            chunk_rx,
+            tree_rx,
+            upload_tx2,
+            upload_rx,
+            cached_backend,
+            existing_blobs,
+        )
+    });
+
+    Backup {
+        chunk_tx,
+        tree_tx,
+        upload_tx,
+        threads,
+    }
+}
+
+fn backup_master_thread(
+    chunk_rx: Receiver<Blob>,
+    tree_rx: Receiver<Blob>,
+    upload_tx: SyncSender<(String, File)>,
+    upload_rx: Receiver<(String, File)>,
+    mut cached_backend: backend::CachedBackend,
+    existing_blobs: Arc<Mutex<HashSet<ObjectId>>>,
+) -> Result<()> {
+    // ALL THE CONCURRENCY
+    let (chunk_pack_tx, pack_rx) = channel();
+    let tree_pack_tx = chunk_pack_tx.clone();
+    let chunk_pack_upload_tx = upload_tx;
+    let tree_pack_upload_tx = chunk_pack_upload_tx.clone();
+    let index_upload_tx = chunk_pack_upload_tx.clone();
+
+    // We need an Arc clone for the tree packer
+    let existing_blobs2 = existing_blobs.clone();
+
+    let chunk_packer = thread::spawn(move || {
+        pack::pack(
+            chunk_rx,
+            chunk_pack_tx,
+            chunk_pack_upload_tx,
+            existing_blobs,
+        )
+    });
+    let tree_packer = thread::spawn(move || {
+        pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx, existing_blobs2)
+    });
+    let indexer =
+        thread::spawn(move || index::index(index::Index::default(), pack_rx, index_upload_tx));
+    let uploader = thread::spawn(move || upload::upload(&mut cached_backend, upload_rx));
+
+    let mut errors: Vec<anyhow::Error> = Vec::new();
+    let mut append_error = |result: Option<anyhow::Error>| {
+        if let Some(e) = result {
+            errors.push(e);
+        }
+    };
+
+    append_error(uploader.join().unwrap().err());
+    append_error(chunk_packer.join().unwrap().err());
+    append_error(tree_packer.join().unwrap().err());
+    append_error(indexer.join().unwrap().err());
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        for e in errors {
+            error!("{:?}", e);
+        }
+        bail!("backup failed");
+    }
+}

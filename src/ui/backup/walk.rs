@@ -10,13 +10,13 @@ use crate::tree;
 pub fn pack_tree(
     paths: &BTreeSet<PathBuf>,
     previous_tree: Option<&ObjectId>,
-    tree_cache: &mut tree::Cache,
+    previous_forest: &tree::Forest,
     chunk_tx: &mut Sender<Blob>,
     tree_tx: &mut Sender<Blob>,
 ) -> Result<ObjectId> {
     let mut nodes = tree::Tree::new();
 
-    let previous_tree = previous_tree.map(|id| tree_cache.read(&id)).transpose()?;
+    let previous_tree = previous_tree.and_then(|id| previous_forest.get(&id));
 
     for path in paths {
         let entry_name = path.file_name().expect("Given path ended in ..");
@@ -43,9 +43,14 @@ pub fn pack_tree(
                 }
             });
 
-            let subtree: ObjectId =
-                pack_tree(&subpaths, previous_subtree, tree_cache, chunk_tx, tree_tx)
-                    .with_context(|| format!("Failed to pack subdirectory {}", path.display()))?;
+            let subtree: ObjectId = pack_tree(
+                &subpaths,
+                previous_subtree,
+                previous_forest,
+                chunk_tx,
+                tree_tx,
+            )
+            .with_context(|| format!("Failed to pack subdirectory {}", path.display()))?;
             debug!("Subtree {}/ packed as {}", path.display(), subtree);
 
             tree::Node {
