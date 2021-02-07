@@ -26,6 +26,17 @@ pub struct Backup {
     pub threads: thread::JoinHandle<Result<()>>,
 }
 
+impl Backup {
+    /// Convenience function to join the threads
+    /// assuming the channels haven't been moved out.
+    pub fn join(self) -> Result<()> {
+        drop(self.chunk_tx);
+        drop(self.tree_tx);
+        drop(self.upload_tx);
+        self.threads.join().unwrap()
+    }
+}
+
 pub fn spawn_backup_threads(
     cached_backend: backend::CachedBackend,
     existing_blobs: Arc<Mutex<HashSet<ObjectId>>>,

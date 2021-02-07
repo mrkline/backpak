@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use anyhow::*;
 use log::*;
@@ -7,6 +8,7 @@ use rayon::prelude::*;
 use structopt::StructOpt;
 
 use crate::backend;
+use crate::backup;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
@@ -22,7 +24,7 @@ pub struct Args {
 pub fn run(repository: &Path, args: Args) -> Result<()> {
     // Build the usual suspects.
     let cached_backend = backend::open(repository)?;
-    let index = index::build_master_index(&cached_backend)?;
+    let mut index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
@@ -83,7 +85,15 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     // As we repack our snapshots, skip blobs in the 100% reachable packs.
     let reusable_blobs = blobs_in_packs(reusable_packs.par_iter().map(|(_id, pack)| *pack));
 
-    walk_snapshots(&snapshots_and_forests, reusable_blobs, args.dry_run)?;
+    index.supersedes.extend(superseded);
+
+    walk_snapshots(
+        cached_backend,
+        index,
+        &snapshots_and_forests,
+        reusable_blobs,
+        args.dry_run,
+    )?;
 
     Ok(())
 }
@@ -172,19 +182,26 @@ fn blobs_in_packs<'a, I: ParallelIterator<Item = &'a pack::PackManifest>>(
 }
 
 fn walk_snapshots(
+    cached_backend: backend::CachedBackend,
+    _index: index::Index,
     snapshots_and_forests: &[SnapshotAndForest],
     reusable_blobs: HashSet<ObjectId>,
     dry_run: bool,
 ) -> Result<()> {
+    let reusable_blobs = Arc::new(Mutex::new(reusable_blobs));
+
+    let backup_threads = backup::spawn_backup_threads(cached_backend, reusable_blobs.clone());
+
     for snapshot in snapshots_and_forests.iter().rev() {
         walk_snapshot(snapshot, &reusable_blobs, dry_run)?
     }
-    Ok(())
+
+    backup_threads.join()
 }
 
 fn walk_snapshot(
     snapshot_and_forest: &SnapshotAndForest,
-    reusable_blobs: &HashSet<ObjectId>,
+    reusable_blobs: &Mutex<HashSet<ObjectId>>,
     dry_run: bool,
 ) -> Result<()> {
     debug!(
@@ -203,7 +220,7 @@ fn walk_snapshot(
 fn walk_tree(
     tree_id: &ObjectId,
     forest: &tree::Forest,
-    reusable_blobs: &HashSet<ObjectId>,
+    reusable_blobs: &Mutex<HashSet<ObjectId>>,
     dry_run: bool,
 ) -> Result<()> {
     let tree: &tree::Tree = forest
@@ -214,7 +231,7 @@ fn walk_tree(
         match &node.contents {
             tree::NodeContents::File { chunks } => {
                 for chunk in chunks {
-                    if !reusable_blobs.contains(chunk) {
+                    if !reusable_blobs.lock().unwrap().contains(chunk) {
                         repack_chunk(chunk, path, dry_run)?;
                     }
                 }
@@ -225,7 +242,7 @@ fn walk_tree(
         }
     }
 
-    if !reusable_blobs.contains(tree_id) {
+    if !reusable_blobs.lock().unwrap().contains(tree_id) {
         repack_tree(tree_id, tree, dry_run)?;
     }
     Ok(())
