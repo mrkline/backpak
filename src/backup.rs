@@ -35,16 +35,19 @@ pub fn spawn_backup_threads(
     let (upload_tx, upload_rx) = sync_channel(1);
     let upload_tx2 = upload_tx.clone();
 
-    let threads = thread::spawn(move || {
-        backup_master_thread(
-            chunk_rx,
-            tree_rx,
-            upload_tx2,
-            upload_rx,
-            cached_backend,
-            existing_blobs,
-        )
-    });
+    let threads = thread::Builder::new()
+        .name(String::from("backup master"))
+        .spawn(move || {
+            backup_master_thread(
+                chunk_rx,
+                tree_rx,
+                upload_tx2,
+                upload_rx,
+                cached_backend,
+                existing_blobs,
+            )
+        })
+        .unwrap();
 
     Backup {
         chunk_tx,
@@ -72,20 +75,32 @@ fn backup_master_thread(
     // We need an Arc clone for the tree packer
     let existing_blobs2 = existing_blobs.clone();
 
-    let chunk_packer = thread::spawn(move || {
-        pack::pack(
-            chunk_rx,
-            chunk_pack_tx,
-            chunk_pack_upload_tx,
-            existing_blobs,
-        )
-    });
-    let tree_packer = thread::spawn(move || {
-        pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx, existing_blobs2)
-    });
-    let indexer =
-        thread::spawn(move || index::index(index::Index::default(), pack_rx, index_upload_tx));
-    let uploader = thread::spawn(move || upload::upload(&mut cached_backend, upload_rx));
+    let chunk_packer = thread::Builder::new()
+        .name(String::from("chunk packer"))
+        .spawn(move || {
+            pack::pack(
+                chunk_rx,
+                chunk_pack_tx,
+                chunk_pack_upload_tx,
+                existing_blobs,
+            )
+        })
+        .unwrap();
+
+    let tree_packer = thread::Builder::new()
+        .name(String::from("tree packer"))
+        .spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx, existing_blobs2))
+        .unwrap();
+
+    let indexer = thread::Builder::new()
+        .name(String::from("indexer"))
+        .spawn(move || index::index(index::Index::default(), pack_rx, index_upload_tx))
+        .unwrap();
+
+    let uploader = thread::Builder::new()
+        .name(String::from("uploader"))
+        .spawn(move || upload::upload(&mut cached_backend, upload_rx))
+        .unwrap();
 
     let mut errors: Vec<anyhow::Error> = Vec::new();
     let mut append_error = |result: Option<anyhow::Error>| {
