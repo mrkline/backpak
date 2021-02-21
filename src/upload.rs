@@ -5,7 +5,7 @@ use crate::backend;
 use anyhow::*;
 
 pub fn upload(
-    cached_backend: &mut backend::CachedBackend,
+    cached_backend: &backend::CachedBackend,
     rx: Receiver<(String, File)>,
 ) -> Result<()> {
     while let Ok((path, fh)) = rx.recv() {

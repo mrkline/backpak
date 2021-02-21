@@ -12,6 +12,7 @@ use crate::backup;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
+use crate::read;
 use crate::snapshot;
 use crate::tree;
 
@@ -23,12 +24,14 @@ pub struct Args {
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
     // Build the usual suspects.
-    let cached_backend = backend::open(repository)?;
-    let mut index = index::build_master_index(&cached_backend)?;
+    let cached_backend = Arc::new(backend::open(repository)?);
+    let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
-    let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
-    let snapshots_and_forests = load_snapshots_and_forests(&cached_backend, &mut tree_cache)?;
+    let snapshots_and_forests = load_snapshots_and_forests(
+        &cached_backend,
+        &mut tree::Cache::new(&index, &blob_map, &cached_backend),
+    )?;
 
     let reachable_chunks = reachable_chunks(snapshots_and_forests.par_iter().map(|s| &s.forest));
     let (reusable_packs, sparse_packs) =
@@ -82,14 +85,25 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         superseded.len()
     );
 
+    // Get a reader to load the chunks we're repacking.
+    let reader = read::BlobReader::new(&cached_backend, &index, &blob_map);
+
     // As we repack our snapshots, skip blobs in the 100% reachable packs.
     let reusable_blobs = blobs_in_packs(reusable_packs.par_iter().map(|(_id, pack)| *pack));
 
-    index.supersedes.extend(superseded);
+    let reusable_packs: BTreeMap<ObjectId, pack::PackManifest> = reusable_packs
+        .into_iter()
+        .map(|(id, manifest)| (id.clone(), manifest.clone()))
+        .collect();
+    let new_index = index::Index {
+        packs: reusable_packs,
+        supersedes: superseded,
+    };
 
     walk_snapshots(
-        cached_backend,
-        index,
+        cached_backend.clone(),
+        &reader,
+        new_index,
         &snapshots_and_forests,
         reusable_blobs,
         args.dry_run,
@@ -182,27 +196,29 @@ fn blobs_in_packs<'a, I: ParallelIterator<Item = &'a pack::PackManifest>>(
 }
 
 fn walk_snapshots(
-    cached_backend: backend::CachedBackend,
-    _index: index::Index,
+    cached_backend: Arc<backend::CachedBackend>,
+    reader: &read::BlobReader,
+    new_index: index::Index,
     snapshots_and_forests: &[SnapshotAndForest],
     reusable_blobs: HashSet<ObjectId>,
     dry_run: bool,
 ) -> Result<()> {
     let reusable_blobs = Arc::new(Mutex::new(reusable_blobs));
 
-    let backup_threads = backup::spawn_backup_threads(cached_backend, reusable_blobs.clone());
+    let mut backup = (!dry_run)
+        .then(|| backup::spawn_backup_threads(cached_backend, reusable_blobs.clone(), new_index));
 
     for snapshot in snapshots_and_forests.iter().rev() {
-        walk_snapshot(snapshot, &reusable_blobs, dry_run)?
+        walk_snapshot(snapshot, &reusable_blobs, &mut backup)?
     }
 
-    backup_threads.join()
+    backup.map(|b| b.join()).unwrap_or(Ok(()))
 }
 
 fn walk_snapshot(
     snapshot_and_forest: &SnapshotAndForest,
     reusable_blobs: &Mutex<HashSet<ObjectId>>,
-    dry_run: bool,
+    backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     debug!(
         "Repacking any loose blobs from snapshot {}",
@@ -212,7 +228,7 @@ fn walk_snapshot(
         &snapshot_and_forest.snapshot.tree,
         &snapshot_and_forest.forest,
         reusable_blobs,
-        dry_run,
+        backup,
     )
     .with_context(|| format!("In snapshot {}", snapshot_and_forest.id))
 }
@@ -221,7 +237,7 @@ fn walk_tree(
     tree_id: &ObjectId,
     forest: &tree::Forest,
     reusable_blobs: &Mutex<HashSet<ObjectId>>,
-    dry_run: bool,
+    backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     let tree: &tree::Tree = forest
         .get(tree_id)
@@ -232,38 +248,38 @@ fn walk_tree(
             tree::NodeContents::File { chunks } => {
                 for chunk in chunks {
                     if !reusable_blobs.lock().unwrap().contains(chunk) {
-                        repack_chunk(chunk, path, dry_run)?;
+                        repack_chunk(chunk, path, backup)?;
                     }
                 }
             }
             tree::NodeContents::Directory { subtree } => {
-                walk_tree(subtree, forest, reusable_blobs, dry_run)?
+                walk_tree(subtree, forest, reusable_blobs, backup)?
             }
         }
     }
 
     if !reusable_blobs.lock().unwrap().contains(tree_id) {
-        repack_tree(tree_id, tree, dry_run)?;
+        repack_tree(tree_id, tree, backup)?;
     }
     Ok(())
 }
 
-fn repack_chunk(id: &ObjectId, path: &Path, dry_run: bool) -> Result<()> {
+fn repack_chunk(id: &ObjectId, path: &Path, backup: &mut Option<backup::Backup>) -> Result<()> {
     trace!("Repacking chunk {} from {}", id, path.display());
-    if dry_run {
-        return Ok(());
+    if let Some(_b) = backup {
+        // TODO actually back up
     }
-
     Ok(())
 }
 
-fn repack_tree(id: &ObjectId, tree: &tree::Tree, dry_run: bool) -> Result<()> {
+fn repack_tree(
+    id: &ObjectId,
+    tree: &tree::Tree,
+    backup: &mut Option<backup::Backup>,
+) -> Result<()> {
     trace!("Repacking tree {}", id);
-    if dry_run {
-        return Ok(());
-    }
 
-    let (reserialized, check_id) = tree::serialize_and_hash(tree)?;
+    let (_reserialized, check_id) = tree::serialize_and_hash(tree)?;
     // Sanity check:
     ensure!(
         check_id == *id,
@@ -272,8 +288,9 @@ fn repack_tree(id: &ObjectId, tree: &tree::Tree, dry_run: bool) -> Result<()> {
         check_id
     );
 
-    // TODO: To the packer!
-    drop(reserialized);
+    if let Some(_b) = backup {
+        // TODO actually back up
+    }
 
     Ok(())
 }

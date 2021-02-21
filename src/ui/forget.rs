@@ -30,7 +30,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     assert!(!args.to_forget.is_empty());
 
-    let mut cached_backend = backend::open(repository)?;
+    let cached_backend = backend::open(repository)?;
 
     let mut failure = false;
 

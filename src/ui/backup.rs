@@ -68,8 +68,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let blob_set = Arc::new(Mutex::new(index::blob_set(&index)?));
 
-    // ALL THE CONCURRENCY
-    let mut backup = crate::backup::spawn_backup_threads(cached_backend, blob_set);
+    let mut backup =
+        crate::backup::spawn_backup_threads(Arc::new(cached_backend), blob_set, index::Index::default());
 
     let root = walk::pack_tree(
         &paths,

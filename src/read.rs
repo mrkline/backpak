@@ -220,7 +220,7 @@ mod test {
         let backup_dir = tempfile::tempdir().expect("Failed to create temp test directory");
         let backup_path = backup_dir.path();
         backend::initialize(backup_path)?;
-        let mut backend = backend::open(backup_path)?;
+        let backend = backend::open(backup_path)?;
 
         let mut chunks = Vec::new();
 

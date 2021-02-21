@@ -38,8 +38,9 @@ impl Backup {
 }
 
 pub fn spawn_backup_threads(
-    cached_backend: backend::CachedBackend,
+    cached_backend: Arc<backend::CachedBackend>,
     existing_blobs: Arc<Mutex<HashSet<ObjectId>>>,
+    starting_index: index::Index,
 ) -> Backup {
     let (chunk_tx, chunk_rx) = channel();
     let (tree_tx, tree_rx) = channel();
@@ -56,6 +57,7 @@ pub fn spawn_backup_threads(
                 upload_rx,
                 cached_backend,
                 existing_blobs,
+                starting_index,
             )
         })
         .unwrap();
@@ -73,8 +75,9 @@ fn backup_master_thread(
     tree_rx: Receiver<Blob>,
     upload_tx: SyncSender<(String, File)>,
     upload_rx: Receiver<(String, File)>,
-    mut cached_backend: backend::CachedBackend,
+    cached_backend: Arc<backend::CachedBackend>,
     existing_blobs: Arc<Mutex<HashSet<ObjectId>>>,
+    starting_index: index::Index,
 ) -> Result<()> {
     // ALL THE CONCURRENCY
     let (chunk_pack_tx, pack_rx) = channel();
@@ -105,12 +108,12 @@ fn backup_master_thread(
 
     let indexer = thread::Builder::new()
         .name(String::from("indexer"))
-        .spawn(move || index::index(index::Index::default(), pack_rx, index_upload_tx))
+        .spawn(move || index::index(starting_index, pack_rx, index_upload_tx))
         .unwrap();
 
     let uploader = thread::Builder::new()
         .name(String::from("uploader"))
-        .spawn(move || upload::upload(&mut cached_backend, upload_rx))
+        .spawn(move || upload::upload(&*cached_backend, upload_rx))
         .unwrap();
 
     let mut errors: Vec<anyhow::Error> = Vec::new();

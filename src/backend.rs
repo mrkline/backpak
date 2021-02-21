@@ -29,9 +29,9 @@ trait Backend {
     fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>>;
 
     /// Write the given read stream to the given key
-    fn write(&mut self, from: &mut dyn Read, to: &str) -> Result<()>;
+    fn write(&self, from: &mut dyn Read, to: &str) -> Result<()>;
 
-    fn remove(&mut self, which: &str) -> Result<()>;
+    fn remove(&self, which: &str) -> Result<()>;
 
     /// Lists all keys with the given prefix
     fn list(&self, prefix: &str) -> Result<Vec<String>>;
@@ -68,7 +68,7 @@ impl CachedBackend {
     /// Take the completed file and its `<id>.<type>` name and
     /// store it to an object with the appropriate key per
     /// [`destination()`](destination)
-    pub fn write(&mut self, from: &str, mut from_fh: File) -> Result<()> {
+    pub fn write(&self, from: &str, mut from_fh: File) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let to = base_directory.join(destination(from));
@@ -89,7 +89,7 @@ impl CachedBackend {
         Ok(())
     }
 
-    pub fn remove(&mut self, to_remove: &str) -> Result<()> {
+    pub fn remove(&self, to_remove: &str) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { .. } => {
                 // Just unlink the file!
@@ -166,12 +166,12 @@ impl CachedBackend {
             .with_context(|| format!("Couldn't open {}", snapshot_path))
     }
 
-    pub fn remove_index(&mut self, id: &ObjectId) -> Result<()> {
+    pub fn remove_index(&self, id: &ObjectId) -> Result<()> {
         let index_path = format!("indexes/{}.index", id);
         self.remove(&index_path)
     }
 
-    pub fn remove_snapshot(&mut self, id: &ObjectId) -> Result<()> {
+    pub fn remove_snapshot(&self, id: &ObjectId) -> Result<()> {
         let snapshot_path = format!("snapshots/{}.snapshot", id);
         self.remove(&snapshot_path)
     }

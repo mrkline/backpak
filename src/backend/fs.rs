@@ -70,7 +70,7 @@ impl Backend for FilesystemBackend {
         })?))
     }
 
-    fn write(&mut self, from: &mut dyn Read, to: &str) -> Result<()> {
+    fn write(&self, from: &mut dyn Read, to: &str) -> Result<()> {
         let to = self.base_directory.join(to);
         let mut fh =
             fs::File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
@@ -78,7 +78,7 @@ impl Backend for FilesystemBackend {
         Ok(())
     }
 
-    fn remove(&mut self, which: &str) -> Result<()> {
+    fn remove(&self, which: &str) -> Result<()> {
         let which = self.base_directory.join(which);
         fs::remove_file(&which).with_context(|| format!("Couldn't remove {}", which.display()))?;
         Ok(())
