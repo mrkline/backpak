@@ -83,13 +83,7 @@ fn backup_master_thread(
 
     let chunk_packer = thread::Builder::new()
         .name(String::from("chunk packer"))
-        .spawn(move || {
-            pack::pack(
-                chunk_rx,
-                chunk_pack_tx,
-                chunk_pack_upload_tx,
-            )
-        })
+        .spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx))
         .unwrap();
 
     let tree_packer = thread::Builder::new()

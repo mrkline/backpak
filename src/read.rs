@@ -70,8 +70,7 @@ impl<'a> BlobReader<'a> {
         if blob_index < current_pack.current_blob_index {
             warn!(
                 "Restarting pack since we're at blob {} and want {} (can't read packs backwards)",
-                current_pack.current_blob_index,
-                blob_index
+                current_pack.current_blob_index, blob_index
             );
             self.reset_stream()?;
 
@@ -83,11 +82,13 @@ impl<'a> BlobReader<'a> {
 
         let mut sink = io::sink();
 
-        trace!(
-            "Skipping {} blobs to get to blob {}",
-            blob_index - current_pack.current_blob_index,
-            blob_id
-        );
+        if blob_index != current_pack.current_blob_index {
+            trace!(
+                "Streaming past {} blobs to get to blob {}",
+                blob_index - current_pack.current_blob_index,
+                blob_id
+            );
+        }
 
         let mut blob_bytes = None;
 
@@ -234,8 +235,7 @@ mod test {
         let (pack_tx, pack_rx) = channel();
         let (upload_tx, upload_rx) = sync_channel(1);
 
-        let chunk_packer =
-            std::thread::spawn(move || pack::pack(chunk_rx, pack_tx, upload_tx));
+        let chunk_packer = std::thread::spawn(move || pack::pack(chunk_rx, pack_tx, upload_tx));
 
         let uploader = std::thread::spawn(move || -> Result<backend::CachedBackend> {
             let mut num_packs = 0;

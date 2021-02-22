@@ -36,7 +36,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let reachable_chunks = reachable_chunks(snapshots_and_forests.par_iter().map(|s| &s.forest));
     let (reusable_packs, sparse_packs) =
-        partition_packs(&index, &snapshots_and_forests, &reachable_chunks)?;
+        partition_packs(&index, &snapshots_and_forests, &reachable_chunks);
 
     // Once we've partitioned packs, we don't need every single reachable chunk.
     // Drop that, since it could be huge.
@@ -86,21 +86,20 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         superseded.len()
     );
 
-    // As we repack our snapshots, skip blobs in the 100% reachable packs.
-    let mut packed_blobs = blobs_in_packs(reusable_packs.par_iter().map(|(_id, pack)| *pack));
-
     let reusable_packs: BTreeMap<ObjectId, pack::PackManifest> = reusable_packs
         .into_iter()
-        .map(|(id, manifest)| (id.clone(), manifest.clone()))
+        .map(|(id, manifest)| (*id, manifest.clone()))
         .collect();
     let new_index = index::Index {
         packs: reusable_packs,
-        supersedes: superseded,
+        supersedes: superseded.clone(),
     };
 
-    let mut backup = (!args.dry_run).then(|| {
-        backup::spawn_backup_threads(cached_backend.clone(), new_index)
-    });
+    // As we repack our snapshots, skip blobs in the 100% reachable packs.
+    let mut packed_blobs = index::blob_set(&new_index)?;
+
+    let mut backup =
+        (!args.dry_run).then(|| backup::spawn_backup_threads(cached_backend.clone(), new_index));
 
     // Get a reader to load the chunks we're repacking.
     let mut reader = read::BlobReader::new(&cached_backend, &index, &blob_map);
@@ -112,7 +111,18 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         &mut backup,
     )?;
 
-    backup.map(|b| b.join()).unwrap_or(Ok(()))
+    if let Some(b) = backup {
+        b.join()?;
+    }
+
+    for old_index in &superseded {
+        cached_backend.remove_index(old_index)?;
+    }
+    for old_pack in sparse_packs.keys() {
+        cached_backend.remove_pack(old_pack)?;
+    }
+
+    Ok(())
 }
 
 struct SnapshotAndForest {
@@ -159,10 +169,10 @@ fn partition_packs<'a>(
     index: &'a index::Index,
     snapshots_and_forests: &[SnapshotAndForest],
     reachable_chunks: &HashSet<&ObjectId>,
-) -> Result<(
+) -> (
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
-)> {
+) {
     let partitioned = index.packs.iter().partition(|(_pack_id, manifest)| {
         // Reusable packs are ones where all blobs...
         manifest.iter().map(|entry| &entry.id).all(|id| {
@@ -176,26 +186,7 @@ fn partition_packs<'a>(
         })
     });
 
-    Ok(partitioned)
-}
-
-/// Collect a set of all blobs in the given pack manifests.
-///
-/// Copies the IDs since we'll be passing them to [`pack::pack()`](pack::pack)
-fn blobs_in_packs<'a, I: ParallelIterator<Item = &'a pack::PackManifest>>(
-    packs: I,
-) -> HashSet<ObjectId> {
-    packs
-        .fold_with(HashSet::new(), |mut set, manifest| {
-            for entry in manifest {
-                set.insert(entry.id);
-            }
-            set
-        })
-        .reduce(HashSet::new, |mut a, b| {
-            a.extend(b);
-            a
-        })
+    partitioned
 }
 
 fn walk_snapshots(
@@ -245,8 +236,10 @@ fn walk_tree(
         match &node.contents {
             tree::NodeContents::File { chunks } => {
                 for chunk in chunks {
-                    if !packed_blobs.insert(*chunk) {
+                    if packed_blobs.insert(*chunk) {
                         repack_chunk(chunk, path, reader, backup)?;
+                    } else {
+                        trace!("Skipping chunk {}; already packed", chunk);
                     }
                 }
             }
@@ -256,8 +249,10 @@ fn walk_tree(
         }
     }
 
-    if !packed_blobs.insert(*tree_id) {
+    if packed_blobs.insert(*tree_id) {
         repack_tree(tree_id, tree, backup)?;
+    } else {
+        trace!("Skipping tree {}; already packed", tree_id);
     }
     Ok(())
 }
@@ -299,7 +294,7 @@ fn repack_tree(
 
     if let Some(b) = backup {
         let contents = blob::Contents::Buffer(reserialized);
-        b.chunk_tx.send(blob::Blob {
+        b.tree_tx.send(blob::Blob {
             contents,
             id: *id,
             kind: blob::Type::Tree,

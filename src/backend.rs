@@ -166,6 +166,12 @@ impl CachedBackend {
             .with_context(|| format!("Couldn't open {}", snapshot_path))
     }
 
+    pub fn remove_pack(&self, id: &ObjectId) -> Result<()> {
+        let hex = id.to_string();
+        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
+        self.remove(&pack_path)
+    }
+
     pub fn remove_index(&self, id: &ObjectId) -> Result<()> {
         let index_path = format!("indexes/{}.index", id);
         self.remove(&index_path)

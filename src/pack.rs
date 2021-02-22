@@ -56,7 +56,6 @@ pub fn pack(
 
     // For each blob...
     while let Ok(blob) = rx.recv() {
-
         // TODO: We previously checked against a set of already-packed blobs here
         // to avoid double-packing, but to simplify concurrency issues, we moved
         // it to the backup/prune threads.
@@ -398,7 +397,9 @@ pub fn append_to_forest<R: Read + Seek>(
             entry.id
         );
 
-        assert!(forest.insert(entry.id, std::sync::Arc::new(to_add)).is_none());
+        assert!(forest
+            .insert(entry.id, std::sync::Arc::new(to_add))
+            .is_none());
     }
     Ok(())
 }
