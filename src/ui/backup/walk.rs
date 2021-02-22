@@ -1,5 +1,6 @@
 use super::*;
 
+use std::collections::HashSet;
 use std::io;
 
 use crate::blob::{self, Blob};
@@ -11,6 +12,7 @@ pub fn pack_tree(
     paths: &BTreeSet<PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
+    packed_blobs: &mut HashSet<ObjectId>,
     chunk_tx: &mut Sender<Blob>,
     tree_tx: &mut Sender<Blob>,
 ) -> Result<ObjectId> {
@@ -47,6 +49,7 @@ pub fn pack_tree(
                 &subpaths,
                 previous_subtree,
                 previous_forest,
+                packed_blobs,
                 chunk_tx,
                 tree_tx,
             )
@@ -67,9 +70,14 @@ pub fn pack_tree(
             let mut chunk_ids = Vec::new();
             for chunk in chunks {
                 chunk_ids.push(chunk.id);
-                chunk_tx
-                    .send(chunk)
-                    .context("backup -> chunk packer channel exited early")?;
+
+                if packed_blobs.insert(chunk.id) {
+                    chunk_tx
+                        .send(chunk)
+                        .context("backup -> chunk packer channel exited early")?;
+                } else {
+                    trace!("Skipping chunk {}; already packed", chunk.id);
+                }
             }
             tree::Node {
                 metadata,
@@ -82,13 +90,17 @@ pub fn pack_tree(
         );
     }
     let (bytes, id) = tree::serialize_and_hash(&nodes)?;
-    tree_tx
-        .send(Blob {
-            contents: blob::Contents::Buffer(bytes),
-            id,
-            kind: blob::Type::Tree,
-        })
-        .context("backup -> tree packer channel exited early")?;
+    if packed_blobs.insert(id) {
+        tree_tx
+            .send(Blob {
+                contents: blob::Contents::Buffer(bytes),
+                id,
+                kind: blob::Type::Tree,
+            })
+            .context("backup -> tree packer channel exited early")?;
+    } else {
+        trace!("Skipping tree {}; already packed", id);
+    }
     Ok(id)
 }
 

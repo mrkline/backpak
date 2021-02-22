@@ -1,8 +1,8 @@
 use super::*;
 
-use std::sync::Mutex;
 use std::collections::HashMap;
 use std::io;
+use std::sync::Mutex;
 
 /// A backend that stores everything as path-addressed buffers.
 ///

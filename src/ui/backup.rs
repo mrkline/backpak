@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::*;
 use chrono::prelude::*;
@@ -66,15 +66,16 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     // TODO: Load WIP index and upload any existing packs
     // before we start new ones.
 
-    let blob_set = Arc::new(Mutex::new(index::blob_set(&index)?));
+    let mut packed_blobs = index::blob_set(&index)?;
 
     let mut backup =
-        crate::backup::spawn_backup_threads(Arc::new(cached_backend), blob_set, index::Index::default());
+        crate::backup::spawn_backup_threads(Arc::new(cached_backend), index::Index::default());
 
     let root = walk::pack_tree(
         &paths,
         parent.map(|p| &p.tree),
         &parent_forest,
+        &mut packed_blobs,
         &mut backup.chunk_tx,
         &mut backup.tree_tx,
     )?;

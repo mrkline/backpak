@@ -3,10 +3,9 @@
 //! Various commands (backup, prune, etc.) can walk data, existing or new,
 //! and send them to this machinery.
 
-use std::collections::HashSet;
 use std::fs::File;
 use std::sync::mpsc::*;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 
 use anyhow::*;
@@ -14,7 +13,6 @@ use log::*;
 
 use crate::backend;
 use crate::blob::Blob;
-use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
 use crate::upload;
@@ -39,7 +37,6 @@ impl Backup {
 
 pub fn spawn_backup_threads(
     cached_backend: Arc<backend::CachedBackend>,
-    existing_blobs: Arc<Mutex<HashSet<ObjectId>>>,
     starting_index: index::Index,
 ) -> Backup {
     let (chunk_tx, chunk_rx) = channel();
@@ -56,7 +53,6 @@ pub fn spawn_backup_threads(
                 upload_tx2,
                 upload_rx,
                 cached_backend,
-                existing_blobs,
                 starting_index,
             )
         })
@@ -76,7 +72,6 @@ fn backup_master_thread(
     upload_tx: SyncSender<(String, File)>,
     upload_rx: Receiver<(String, File)>,
     cached_backend: Arc<backend::CachedBackend>,
-    existing_blobs: Arc<Mutex<HashSet<ObjectId>>>,
     starting_index: index::Index,
 ) -> Result<()> {
     // ALL THE CONCURRENCY
@@ -86,9 +81,6 @@ fn backup_master_thread(
     let tree_pack_upload_tx = chunk_pack_upload_tx.clone();
     let index_upload_tx = chunk_pack_upload_tx.clone();
 
-    // We need an Arc clone for the tree packer
-    let existing_blobs2 = existing_blobs.clone();
-
     let chunk_packer = thread::Builder::new()
         .name(String::from("chunk packer"))
         .spawn(move || {
@@ -96,14 +88,13 @@ fn backup_master_thread(
                 chunk_rx,
                 chunk_pack_tx,
                 chunk_pack_upload_tx,
-                existing_blobs,
             )
         })
         .unwrap();
 
     let tree_packer = thread::Builder::new()
         .name(String::from("tree packer"))
-        .spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx, existing_blobs2))
+        .spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx))
         .unwrap();
 
     let indexer = thread::Builder::new()

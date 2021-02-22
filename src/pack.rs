@@ -1,9 +1,7 @@
-use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
 use std::sync::mpsc::*;
-use std::sync::{Arc, Mutex};
 
 use anyhow::*;
 use log::*;
@@ -50,7 +48,6 @@ pub fn pack(
     rx: Receiver<Blob>,
     to_index: Sender<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
-    packed_blobs: Arc<Mutex<HashSet<ObjectId>>>,
 ) -> Result<()> {
     let mut writer = PackfileWriter::new()?;
 
@@ -59,20 +56,12 @@ pub fn pack(
 
     // For each blob...
     while let Ok(blob) = rx.recv() {
-        // See if we've already recorded it. If so, skip it.
-        // If not, note that we're backing it up.
-        // (Adding it to this set doesn't put us at risk of missing it
-        // if everything below fails.
-        // If the backup process dies, it will pick back up at the WIP index,
-        // regardless of what's in this set.)
-        if !packed_blobs.lock().unwrap().insert(blob.id) {
-            // If the blob has already been packed, skip it!
-            match blob.kind {
-                blob::Type::Chunk => trace!("Skipping chunk {}; already packed", blob.id),
-                blob::Type::Tree => trace!("Skipping tree {}; already packed", blob.id),
-            };
-            continue;
-        }
+
+        // TODO: We previously checked against a set of already-packed blobs here
+        // to avoid double-packing, but to simplify concurrency issues, we moved
+        // it to the backup/prune threads.
+        // Should we have a second here to double-check?
+        // Sanity checks are nice, but maybe extra O(N) RAM usage, not so much.
 
         // Write a blob and check how many (uncompressed) bytes we've written to the file so far.
         bytes_written += writer.write_blob(blob)?;
@@ -409,7 +398,7 @@ pub fn append_to_forest<R: Read + Seek>(
             entry.id
         );
 
-        assert!(forest.insert(entry.id, Arc::new(to_add)).is_none());
+        assert!(forest.insert(entry.id, std::sync::Arc::new(to_add)).is_none());
     }
     Ok(())
 }
@@ -478,9 +467,7 @@ mod test {
         let (pack_tx, pack_rx) = channel();
         let (upload_tx, upload_rx) = sync_channel(1);
 
-        let blobs = Arc::new(Mutex::new(HashSet::new()));
-
-        let chunk_packer = std::thread::spawn(move || pack(chunk_rx, pack_tx, upload_tx, blobs));
+        let chunk_packer = std::thread::spawn(move || pack(chunk_rx, pack_tx, upload_tx));
 
         let upload_chucker = std::thread::spawn(move || -> Result<()> {
             // This test doesn't actually care about the files themselves,

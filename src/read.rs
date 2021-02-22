@@ -69,7 +69,8 @@ impl<'a> BlobReader<'a> {
         let blob_index = index_of(blob_id, current_pack.manifest, &current_pack.id)?;
         if blob_index < current_pack.current_blob_index {
             warn!(
-                "Restarting pack since we've read past blob {} (can't read packs backwards)",
+                "Restarting pack since we're at blob {} and want {} (can't read packs backwards)",
+                current_pack.current_blob_index,
                 blob_index
             );
             self.reset_stream()?;
@@ -203,7 +204,6 @@ mod test {
 
     use std::collections::*;
     use std::sync::mpsc::*;
-    use std::sync::{Arc, Mutex};
 
     use crate::blob;
     use crate::chunk;
@@ -234,9 +234,8 @@ mod test {
         let (pack_tx, pack_rx) = channel();
         let (upload_tx, upload_rx) = sync_channel(1);
 
-        let blobs = Arc::new(Mutex::new(HashSet::new()));
         let chunk_packer =
-            std::thread::spawn(move || pack::pack(chunk_rx, pack_tx, upload_tx, blobs));
+            std::thread::spawn(move || pack::pack(chunk_rx, pack_tx, upload_tx));
 
         let uploader = std::thread::spawn(move || -> Result<backend::CachedBackend> {
             let mut num_packs = 0;
