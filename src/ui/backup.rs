@@ -89,8 +89,15 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             .to_string(),
     };
 
+    let now = Local::now();
+    // I'm probably missing somthing here;
+    // just trying to get the local timezone offset.
+    // https://stackoverflow.com/a/59603899
+    // .into() converts to UTC (+0)
+    let time = now.with_timezone(now.offset());
+
     let snapshot = Snapshot {
-        time: Local::now().into(),
+        time,
         author,
         tags: args.tags.into_iter().collect(),
         paths,
