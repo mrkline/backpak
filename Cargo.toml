@@ -9,9 +9,11 @@ opt-level = 2 # We want optimization even for debug builds for all the hashing.
 
 [dependencies]
 anyhow = "1.0"
+enum-map = "0.6"
 fastcdc = "1.0"
 hex = "0.4"
 hostname = "0.3"
+lazy_static = "1.0"
 log = "0.4"
 memmap = "0.7"
 num_cpus = "1.0"

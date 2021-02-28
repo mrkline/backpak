@@ -14,7 +14,7 @@ use crate::pack;
 use crate::upload;
 
 pub fn run(repository: &Path) -> Result<()> {
-    let mut cached_backend = backend::open(repository)?;
+    let cached_backend = backend::open(repository)?;
 
     let superseded = cached_backend
         .list_indexes()?
@@ -45,7 +45,7 @@ pub fn run(repository: &Path) -> Result<()> {
     };
     let indexer = thread::spawn(move || index::index(replacing, pack_rx, upload_tx));
 
-    upload::upload(&mut cached_backend, upload_rx)?;
+    upload::upload(&cached_backend, upload_rx)?;
 
     ensure!(indexer.join().unwrap()?, "No new index built");
 

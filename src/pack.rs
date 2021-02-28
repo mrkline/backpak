@@ -12,6 +12,7 @@ use crate::backend;
 use crate::blob::{self, Blob};
 use crate::file_util;
 use crate::hashing::{HashingReader, ObjectId};
+use crate::timers::*;
 use crate::tree;
 use crate::DEFAULT_TARGET_SIZE;
 
@@ -56,6 +57,7 @@ pub fn pack(
 
     // For each blob...
     while let Ok(blob) = rx.recv() {
+        let timer = time(Timer::Pack);
         // TODO: We previously checked against a set of already-packed blobs here
         // to avoid double-packing, but to simplify concurrency issues, we moved
         // it to the backup/prune threads.
@@ -86,12 +88,16 @@ pub fn pack(
                 let (metadata, persisted) = writer.finalize()?;
                 let finalized_path = format!("{}.pack", metadata.id);
 
+                drop(timer); // Don't time waiting around for the uploader
+
                 to_upload
                     .send((finalized_path, persisted))
                     .context("packer -> uploader channel exited early")?;
                 to_index
                     .send(metadata)
                     .context("packer -> indexer channel exited early")?;
+
+                let _timer = time(Timer::Pack);
 
                 writer = PackfileWriter::new()?;
                 bytes_written = 0;
@@ -109,8 +115,10 @@ pub fn pack(
         }
     }
     if bytes_written > 0 {
+        let timer = time(Timer::Pack);
         let (metadata, persisted) = writer.finalize()?;
         let finalized_path = format!("{}.pack", metadata.id);
+        drop(timer); // Don't time waiting around for the uploader
         to_upload
             .send((finalized_path, persisted))
             .context("packer -> uploader channel exited early")?;

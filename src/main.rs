@@ -4,6 +4,7 @@ use anyhow::*;
 use simplelog::*;
 use structopt::StructOpt;
 
+use backpak::timers;
 use backpak::ui::*;
 
 #[derive(Debug, StructOpt)]
@@ -55,7 +56,10 @@ fn main() -> Result<()> {
         Subcommand::Prune(p) => prune::run(&args.repository, p),
         Subcommand::Snapshots => snapshots::run(&args.repository),
         Subcommand::RebuildIndex => rebuild_index::run(&args.repository),
-    }
+    }?;
+
+    timers::log_times();
+    Ok(())
 }
 
 /// Set up simplelog to spit messages to stderr.
