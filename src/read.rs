@@ -9,6 +9,7 @@ use anyhow::*;
 use log::*;
 
 use crate::backend;
+use crate::counters;
 use crate::hashing::{HashingReader, ObjectId};
 use crate::index;
 use crate::pack;
@@ -72,7 +73,7 @@ impl<'a> BlobReader<'a> {
                 "Restarting pack since we're at blob {} and want {} (can't read packs backwards)",
                 current_pack.current_blob_index, blob_index
             );
-            self.reset_stream()?;
+            self.restart_stream()?;
 
             // self.current_pack was moved; update the reference.
             current_pack = self.current_pack.as_mut().unwrap();
@@ -103,6 +104,7 @@ impl<'a> BlobReader<'a> {
                     &mut sink,
                 )
                 .with_context(|| format!("Couldn't read past blob {}", entry.id))?;
+                counters::bump(counters::Op::PackSkippedBlob);
             } else {
                 // This is it!
                 let mut hashing_decoder =
@@ -159,11 +161,11 @@ impl<'a> BlobReader<'a> {
         Ok(())
     }
 
-    fn reset_stream(&mut self) -> Result<()> {
+    fn restart_stream(&mut self) -> Result<()> {
         let mut current_pack: CurrentPackfile = self
             .current_pack
             .take()
-            .expect("reset_stream called before pack was loaded");
+            .expect("restart_stream called before pack was loaded");
 
         let mut file: BufReader<File> = current_pack.blob_stream.finish();
         // Seek back to the start of the zstd stream, past the magic bytes.
@@ -175,6 +177,7 @@ impl<'a> BlobReader<'a> {
         current_pack.blob_stream = blob_stream;
         current_pack.current_blob_index = 0;
         self.current_pack = Some(current_pack);
+        counters::bump(counters::Op::PackStreamRestart);
 
         Ok(())
     }
@@ -276,13 +279,13 @@ mod test {
 
         // Read the first chunk:
         readback(&chunks[0], &mut reader)?;
-        // Read it again, forcing a reset.
+        // Read it again, forcing a restart.
         readback(&chunks[0], &mut reader)?;
 
         // Seek to the third chunk
         readback(&chunks[2], &mut reader)?;
 
-        // And reset to get the second
+        // And restart to get the second
         readback(&chunks[1], &mut reader)?;
         // Get the last!
         readback(&chunks[3], &mut reader)?;

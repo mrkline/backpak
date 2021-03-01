@@ -10,6 +10,7 @@ use rayon::prelude::*;
 use serde_derive::*;
 
 use crate::backend;
+use crate::counters;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
@@ -215,7 +216,10 @@ impl<'a> Cache<'a> {
     pub fn read(&mut self, id: &ObjectId) -> Result<Arc<Tree>> {
         if let Some(t) = self.tree_cache.get(id) {
             trace!("Tree {} is in-cache", id);
+            counters::bump(counters::Op::TreeCacheHit);
             return Ok(t.clone());
+        } else {
+            counters::bump(counters::Op::TreeCacheMiss);
         }
 
         let pack_id = self

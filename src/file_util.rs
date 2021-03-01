@@ -5,6 +5,8 @@ use std::sync::Arc;
 use anyhow::*;
 use log::*;
 
+use crate::counters;
+
 /// Checks for the given magic bytes at the start of the file
 pub fn check_magic<R: Read>(r: &mut R, expected: &[u8]) -> Result<()> {
     let mut magic: [u8; 8] = [0; 8];
@@ -44,10 +46,12 @@ pub fn read_file(path: &Path) -> Result<Arc<LoadedFile>> {
         trace!("{} is < 10MB, reading to buffer", path.display());
         let mut buffer = Vec::new();
         fh.read_to_end(&mut buffer)?;
+        counters::bump(counters::Op::FileToBuffer);
         LoadedFile::Buffered(buffer)
     } else {
         trace!("{} is > 10MB, memory mapping", path.display());
         let mapping = unsafe { memmap::Mmap::map(&fh)? };
+        counters::bump(counters::Op::FileToMmap);
         LoadedFile::Mapped(mapping)
     };
 

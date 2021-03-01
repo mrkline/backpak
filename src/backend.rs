@@ -7,7 +7,6 @@ use anyhow::*;
 use log::*;
 
 use crate::hashing::ObjectId;
-use crate::timers::*;
 
 mod fs;
 mod memory;
@@ -57,7 +56,6 @@ pub struct CachedBackend {
 impl CachedBackend {
     /// Read the object at the given key into a file and return a handle to that file.
     fn read(&self, from: &str) -> Result<File> {
-        let _timer = time(Timer::BackendRead);
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let from = base_directory.join(from);
@@ -71,7 +69,6 @@ impl CachedBackend {
     /// store it to an object with the appropriate key per
     /// [`destination()`](destination)
     pub fn write(&self, from: &str, mut from_fh: File) -> Result<()> {
-        let _timer = time(Timer::BackendWrite);
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let to = base_directory.join(destination(from));
@@ -93,7 +90,6 @@ impl CachedBackend {
     }
 
     pub fn remove(&self, to_remove: &str) -> Result<()> {
-        let _timer = time(Timer::BackendWrite);
         match &self.cache {
             WritethroughCache::Local { .. } => {
                 // Just unlink the file!

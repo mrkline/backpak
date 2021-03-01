@@ -14,7 +14,6 @@ use crate::backend;
 use crate::file_util::check_magic;
 use crate::hashing::{HashingReader, HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
-use crate::timers::*;
 
 const MAGIC_BYTES: &[u8] = b"MKBAKIDX";
 
@@ -45,8 +44,6 @@ pub fn index(
 
     // For each pack...
     while let Ok(PackMetadata { id, manifest }) = rx.recv() {
-        let _timer = time(Timer::Index);
-
         ensure!(
             index.packs.insert(id, manifest).is_none(),
             "Duplicate pack received: {}",
@@ -70,8 +67,6 @@ pub fn index(
     }
 
     if let Some(mut persisted) = persisted {
-        let timer = time(Timer::Index);
-
         let index_id = index_id.unwrap();
         let index_name = format!("{}.index", index_id);
 
@@ -94,8 +89,6 @@ pub fn index(
             index_id,
             persisted.metadata()?.len()
         );
-
-        drop(timer);
 
         to_upload
             .send((index_name, persisted))

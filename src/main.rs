@@ -4,7 +4,7 @@ use anyhow::*;
 use simplelog::*;
 use structopt::StructOpt;
 
-use backpak::timers;
+use backpak::counters;
 use backpak::ui::*;
 
 #[derive(Debug, StructOpt)]
@@ -58,7 +58,7 @@ fn main() -> Result<()> {
         Subcommand::RebuildIndex => rebuild_index::run(&args.repository),
     }?;
 
-    timers::log_times();
+    counters::log_counts();
     Ok(())
 }
 

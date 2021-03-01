@@ -6,7 +6,6 @@ use std::io;
 use crate::blob::{self, Blob};
 use crate::chunk;
 use crate::hashing::ObjectId;
-use crate::timers::*;
 use crate::tree;
 
 pub fn pack_tree(
@@ -20,8 +19,6 @@ pub fn pack_tree(
     let mut nodes = tree::Tree::new();
 
     let previous_tree = previous_tree.and_then(|id| previous_forest.get(&id));
-
-    let mut timer = time(Timer::Walk);
 
     for path in paths {
         let entry_name = path.file_name().expect("Given path ended in ..");
@@ -48,7 +45,6 @@ pub fn pack_tree(
                 }
             });
 
-            drop(timer); // The recursive call will time itself.
             let subtree: ObjectId = pack_tree(
                 &subpaths,
                 previous_subtree,
@@ -60,7 +56,6 @@ pub fn pack_tree(
             .with_context(|| format!("Failed to pack subdirectory {}", path.display()))?;
             debug!("Subtree {}/ packed as {}", path.display(), subtree);
 
-            timer = time(Timer::Walk);
             tree::Node {
                 metadata,
                 contents: tree::NodeContents::Directory { subtree },
@@ -71,12 +66,8 @@ pub fn pack_tree(
                 contents: previous_node.unwrap().contents.clone(),
             }
         } else {
-            // Don't count the chunk time, chunking has its own timer
-            drop(timer);
             let chunks = chunk::chunk_file(&path)?;
 
-            // We don't want to count any waiting on the queue;
-            // assume some vector pushes don't take appreciable time.
             let mut chunk_ids = Vec::new();
             for chunk in chunks {
                 chunk_ids.push(chunk.id);
@@ -89,7 +80,6 @@ pub fn pack_tree(
                     trace!("Skipping chunk {}; already packed", chunk.id);
                 }
             }
-            timer = time(Timer::Walk);
             tree::Node {
                 metadata,
                 contents: tree::NodeContents::File { chunks: chunk_ids },
@@ -101,7 +91,6 @@ pub fn pack_tree(
         );
     }
     let (bytes, id) = tree::serialize_and_hash(&nodes)?;
-    drop(timer);
 
     if packed_blobs.insert(id) {
         tree_tx

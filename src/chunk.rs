@@ -9,7 +9,6 @@ use rayon::prelude::*;
 use crate::blob::{self, Blob};
 use crate::file_util;
 use crate::hashing::ObjectId;
-use crate::timers::*;
 
 /// A span of a file.
 ///
@@ -63,8 +62,6 @@ pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
     const MIN_SIZE: usize = 1024 * 512;
     const TARGET_SIZE: usize = 1024 * 1024;
     const MAX_SIZE: usize = 1024 * 1024 * 2;
-
-    let _timer = time(Timer::Chunk);
 
     let path: &Path = path.as_ref();
 
