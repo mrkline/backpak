@@ -7,6 +7,9 @@ edition = "2018"
 [profile.dev]
 opt-level = 2 # We want optimization even for debug builds for all the hashing.
 
+[profile.release]
+debug = true
+
 [dependencies]
 anyhow = "1.0"
 enum-map = "0.6"
