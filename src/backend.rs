@@ -114,6 +114,31 @@ impl CachedBackend {
         self.backend.list("packs/")
     }
 
+    pub fn find_snapshot(&self, prefix: &str) -> Result<String> {
+        let mut matches = self
+            .list_snapshots()?
+            .into_iter()
+            .filter(|snap| {
+                Path::new(snap)
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with(prefix)
+            })
+            .collect::<Vec<_>>();
+
+        match matches.len() {
+            0 => bail!("No snapshots start with {}", prefix),
+            1 => Ok(matches.pop().unwrap()),
+            multiple => bail!(
+                "More than one snapshots start with {}: {:?}",
+                prefix,
+                multiple
+            ),
+        }
+    }
+
     pub fn probe_pack(&self, id: &ObjectId) -> Result<()> {
         let hex = id.to_string();
         let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
@@ -127,22 +152,6 @@ impl CachedBackend {
             multiple => panic!(
                 "Expected one pack at {}, found several! {:?}",
                 pack_path, multiple
-            ),
-        }
-    }
-
-    pub fn probe_snapshot(&self, id: &ObjectId) -> Result<()> {
-        let snapshot_path = format!("snapshots/{}.snapshot", id);
-        let found_snapshots = self
-            .backend
-            .list(&snapshot_path)
-            .with_context(|| format!("Couldn't find {}", snapshot_path))?;
-        match found_snapshots.len() {
-            0 => bail!("Couldn't find snapshot {}", id),
-            1 => Ok(()),
-            multiple => panic!(
-                "Expected one snapshot at {}, found several! {:?}",
-                snapshot_path, multiple
             ),
         }
     }

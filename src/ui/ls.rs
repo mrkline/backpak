@@ -13,7 +13,7 @@ use crate::tree;
 /// List the files in a snapshot
 #[derive(Debug, StructOpt)]
 pub struct Args {
-    snapshot_id: ObjectId,
+    snapshot_prefix: String,
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
@@ -22,12 +22,12 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     }
 
     let cached_backend = backend::open(repository)?;
-    let snapshot = snapshot::load(&args.snapshot_id, &cached_backend)?;
+    let (snapshot, id) = snapshot::find_and_load(&args.snapshot_prefix, &cached_backend)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
-    info!("Listing files for snapshot {}", args.snapshot_id);
+    info!("Listing files for snapshot {}", id);
 
     let snapshot_tree = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
     printer_recursor(&snapshot.tree, &snapshot_tree, 0);

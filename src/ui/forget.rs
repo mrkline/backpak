@@ -5,7 +5,6 @@ use log::*;
 use structopt::StructOpt;
 
 use crate::backend;
-use crate::hashing::ObjectId;
 
 /// Forget snapshots
 ///
@@ -17,10 +16,8 @@ pub struct Args {
     #[structopt(short = "n", long)]
     pub dry_run: bool,
 
-    // TODO: Abbreviation matching a la git
-    // (useful for all snapshots. Maybe other stuff too...)
     #[structopt(required = true)]
-    to_forget: Vec<ObjectId>,
+    to_forget: Vec<String>,
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
@@ -34,19 +31,28 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let mut failure = false;
 
-    for snapshot in &args.to_forget {
-        if args.dry_run {
-            if let Err(e) = cached_backend.probe_snapshot(snapshot) {
+    for id_prefix in &args.to_forget {
+        let snapshot_path = match cached_backend.find_snapshot(id_prefix) {
+            Ok(path) => path,
+            Err(e) => {
                 error!("{:?}", e);
                 failure = true;
-            } else {
-                info!("Would remove {}", snapshot);
+                continue;
             }
-        } else if let Err(e) = cached_backend.remove_snapshot(snapshot) {
-            error!("{:?}", e);
-            failure = true;
-        } else {
-            info!("Removed snapshot {}", snapshot);
+        };
+        let id = backend::id_from_path(&snapshot_path).unwrap();
+
+        if args.dry_run {
+            info!("Would remove {}", id);
+            continue;
+        }
+
+        match cached_backend.remove(&snapshot_path) {
+            Ok(()) => info!("Removed snapshot {}", id),
+            Err(e) => {
+                error!("{:?}", e);
+                failure = true;
+            }
         }
     }
 

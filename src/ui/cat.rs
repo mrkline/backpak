@@ -49,7 +49,7 @@ pub enum Subcommand {
     /// the contents of all files and folders at that time,
     /// and (optionally) an author and tags for later lookup.
     #[structopt(verbatim_doc_comment)]
-    Snapshot { id: ObjectId },
+    Snapshot { id_prefix: String },
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
@@ -92,8 +92,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             let index = index::load(&id, &cached_backend)?;
             serde_json::to_writer(io::stdout(), &index)?;
         }
-        Subcommand::Snapshot { id } => {
-            let snapshot = snapshot::load(&id, &cached_backend)?;
+        Subcommand::Snapshot { id_prefix } => {
+            let snapshot = snapshot::find_and_load(&id_prefix, &cached_backend)?;
             serde_json::to_writer(io::stdout(), &snapshot)?;
         }
     }

@@ -71,6 +71,15 @@ fn from_reader<R: Read>(r: &mut R) -> Result<(Snapshot, ObjectId)> {
     Ok((snapshot, id))
 }
 
+pub fn find_and_load(
+    id_prefix: &str,
+    cached_backend: &backend::CachedBackend,
+) -> Result<(Snapshot, ObjectId)> {
+    let snap_path = cached_backend.find_snapshot(id_prefix)?;
+    let id = backend::id_from_path(snap_path)?;
+    Ok((load(&id, cached_backend)?, id))
+}
+
 /// Loads the snapshot with the given ID from the backend,
 /// verifying its contents match its ID.
 pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Snapshot> {
