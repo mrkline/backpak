@@ -8,6 +8,7 @@ use log::*;
 
 #[derive(Debug, Copy, Clone, Enum)]
 pub enum Op {
+    IndexLoad,
     FileToBuffer,
     FileToMmap,
     TreeCacheHit,
@@ -42,6 +43,7 @@ pub fn log_counts() {
     lazy_static! {
         static ref OP_NAMES: EnumMap<Op, &'static str> = {
             enum_map! {
+                Op::IndexLoad => "indexes loaded",
                 Op::FileToBuffer => "files read into buffers",
                 Op::FileToMmap => "files memory mapped",
                 Op::TreeCacheHit => "tree cache hits",

@@ -11,6 +11,7 @@ use serde_derive::*;
 use tempfile::NamedTempFile;
 
 use crate::backend;
+use crate::counters;
 use crate::file_util::check_magic;
 use crate::hashing::{HashingReader, HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
@@ -266,6 +267,7 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<In
         id,
         calculated_id
     );
+    counters::bump(counters::Op::IndexLoad);
     Ok(index)
 }
 
