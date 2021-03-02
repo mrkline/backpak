@@ -40,6 +40,10 @@ pub fn log_counts() {
         .filter(|(_k, v)| *v > 0) // Ignore things we didn't do
         .collect::<Vec<_>>();
 
+    if counts.len() == 0 {
+        return;
+    }
+
     lazy_static! {
         static ref OP_NAMES: EnumMap<Op, &'static str> = {
             enum_map! {
