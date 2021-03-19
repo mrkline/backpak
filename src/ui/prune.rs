@@ -115,11 +115,13 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         b.join()?;
     }
 
-    for old_index in &superseded {
-        cached_backend.remove_index(old_index)?;
-    }
-    for old_pack in sparse_packs.keys() {
-        cached_backend.remove_pack(old_pack)?;
+    if !args.dry_run {
+        for old_index in &superseded {
+            cached_backend.remove_index(old_index)?;
+        }
+        for old_pack in sparse_packs.keys() {
+            cached_backend.remove_pack(old_pack)?;
+        }
     }
 
     Ok(())

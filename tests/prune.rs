@@ -49,6 +49,23 @@ fn backup_src() -> Result<()> {
     let before_packs = files_in(&backup_path.join("packs")).collect::<HashSet<_>>();
     assert_eq!(3, before_packs.len());
 
+    // Dry run shouldn't do anything!
+    let dry_run = cli_run(backup_path)?
+        .args(&["prune", "-n"])
+        .assert()
+        .success();
+    let dry_run_output = std::str::from_utf8(&dry_run.get_output().stderr).unwrap();
+    // Expecting
+    // [ INFO] Keep 1 packs, rewrite 2, and replace the 2 current indexes
+    assert!(dry_run_output.contains("Keep 1 packs, rewrite 2, and replace the 2 current indexes"));
+
+    // They're the same!
+    let dry_run_packs = files_in(&backup_path.join("packs")).collect::<HashSet<_>>();
+    assert_eq!(before_packs, dry_run_packs);
+
+    // Paranoia.
+    cli_run(backup_path)?.arg("check").assert().success();
+
     let prune_run = cli_run(backup_path)?.arg("prune").assert().success();
     let prune_output = std::str::from_utf8(&prune_run.get_output().stderr).unwrap();
     // Expecting
@@ -57,10 +74,8 @@ fn backup_src() -> Result<()> {
 
     // They're different!
     let after_packs = files_in(&backup_path.join("packs")).collect::<HashSet<_>>();
-    assert_eq!(3, files_in(&backup_path.join("packs")).count());
     assert_ne!(before_packs, after_packs);
 
-    // Paranoia.
     cli_run(backup_path)?
         .args(&["check", "--read-packs"])
         .assert()
