@@ -142,12 +142,19 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
 #[cfg(target_family = "windows")]
 fn windows_timestamp(ts: u64) -> Option<DateTime<Utc>> {
     // Windows returns 100ns intervals since January 1, 1601
-    match ts {
-        0 => None,
-        stamp => Some(
+    const TICKS_PER_SECOND: u64 = 1_000_000_000 / 100;
+
+    if ts == 0 {
+        None
+    } else {
+        let seconds = ts / TICKS_PER_SECOND;
+        let nanos = (ts % TICKS_PER_SECOND) * 100;
+
+        Some(
             Utc.ymd(1601, 1, 1).and_hms(0, 0, 0)
-                + chrono::Duration::nanoseconds(stamp as i64 * 100),
-        ),
+                + chrono::Duration::seconds(seconds as i64)
+                + chrono::Duration::nanoseconds(nanos as i64),
+        )
     }
 }
 
