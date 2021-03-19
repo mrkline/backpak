@@ -40,7 +40,7 @@ pub fn log_counts() {
         .filter(|(_k, v)| *v > 0) // Ignore things we didn't do
         .collect::<Vec<_>>();
 
-    if counts.len() == 0 {
+    if counts.is_empty() {
         return;
     }
 
