@@ -32,6 +32,13 @@ pub struct Index {
     pub packs: PackMap,
 }
 
+impl Index {
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.supersedes.is_empty() && self.packs.is_empty()
+    }
+}
+
 /// Gather metadata for completed packs from `rx` into an index file,
 /// and upload the index files when they reach a sufficient size.
 pub fn index(
@@ -42,6 +49,20 @@ pub fn index(
     let mut index = starting_index;
     let mut index_id = None;
     let mut persisted = None;
+
+    // If we're given a non-empty index, write that out to start with.
+    // (For example, it could be an index from `prune` that omits packs
+    // we no longer need. If we don't write it but delete those packs anyways...)
+    if !index.is_empty() {
+        let (id, temp_file) = to_temp_file(&index)?;
+        index_id = Some(id);
+
+        persisted = Some(
+            temp_file
+                .persist(WIP_NAME)
+                .with_context(|| format!("Couldn't persist WIP index to {}", WIP_NAME))?,
+        );
+    }
 
     // For each pack...
     while let Ok(PackMetadata { id, manifest }) = rx.recv() {

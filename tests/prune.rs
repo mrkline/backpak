@@ -91,3 +91,46 @@ fn backup_src() -> Result<()> {
     backup_dir.close().expect("Couldn't delete test directory");
     Ok(())
 }
+
+#[test]
+fn no_repacks_needed() -> Result<()> {
+    let backup_dir = tempdir().expect("Failed to create temp test directory");
+    let backup_path = backup_dir.path();
+
+    cli_run(backup_path)?.arg("init").assert().success();
+
+    // Let's back up the source code
+    cli_run(backup_path)?
+        .args(&["backup", "src"])
+        .assert()
+        .success();
+
+    // Grab the first snapshot ID.
+    let snapshots = files_in(&backup_path.join("snapshots")).collect::<Vec<_>>();
+    assert_eq!(snapshots.len(), 1);
+    let first_snapshot = snapshots[0].file_stem().unwrap().to_str().unwrap();
+
+    // Let's back up the reference files.
+    // Should be totally different packs, nothing reused.
+    cli_run(backup_path)?
+        .args(&["backup", "tests/references"])
+        .assert()
+        .success();
+
+    // Axe the first backup. This will create a situation where the pack(s)
+    // can be pruned AND we don't need to repack anything - just make a new index.
+    cli_run(backup_path)?
+        .args(&["forget", first_snapshot])
+        .assert()
+        .success();
+
+    cli_run(backup_path)?.arg("prune").assert().success();
+
+    // We were previously blowing up here because I forgot to write
+    // a new index if nothing was repacked.
+    // So, we deleted packs but kept them in the index. Oops.
+    cli_run(backup_path)?.arg("check").assert().success();
+
+    backup_dir.close().expect("Couldn't delete test directory");
+    Ok(())
+}
