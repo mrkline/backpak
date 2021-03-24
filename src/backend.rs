@@ -115,6 +115,11 @@ impl CachedBackend {
     }
 
     pub fn find_snapshot(&self, prefix: &str) -> Result<String> {
+        // Like Git, require at least a few digits of an ID.
+        if prefix.len() < 4 {
+            bail!("Provide a snapshot ID with at least 4 digits!");
+        }
+
         let mut matches = self
             .list_snapshots()?
             .into_iter()
@@ -131,11 +136,7 @@ impl CachedBackend {
         match matches.len() {
             0 => bail!("No snapshots start with {}", prefix),
             1 => Ok(matches.pop().unwrap()),
-            multiple => bail!(
-                "More than one snapshots start with {}: {:?}",
-                prefix,
-                multiple
-            ),
+            multiple => bail!("{} different snapshots start with {}", multiple, prefix,),
         }
     }
 
