@@ -37,14 +37,12 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
 fn printer_recursor(tree_id: &ObjectId, forest: &tree::Forest, level: usize) {
     let next_level = level + 1;
-    let current_tree = forest.get(tree_id);
-    assert!(
-        current_tree.is_some(),
-        "Missing tree {} in the forest",
-        tree_id
-    );
+    let tree: &tree::Tree = forest
+        .get(tree_id)
+        .ok_or_else(|| anyhow!("Missing tree {}", tree_id))
+        .unwrap();
 
-    for (path, node) in current_tree.unwrap().iter() {
+    for (path, node) in tree {
         print!("{}{}", " ".repeat(level * 2), path.display());
         match &node.contents {
             tree::NodeContents::Directory { subtree } => {

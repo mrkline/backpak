@@ -232,7 +232,8 @@ fn walk_tree(
 ) -> Result<()> {
     let tree: &tree::Tree = forest
         .get(tree_id)
-        .ok_or_else(|| anyhow!("Missing tree {}", tree_id))?;
+        .ok_or_else(|| anyhow!("Missing tree {}", tree_id))
+        .unwrap();
 
     for (path, node) in tree {
         match &node.contents {
