@@ -3,6 +3,7 @@ name = "backpak"
 version = "0.1.0"
 authors = ["Matt Kline"]
 edition = "2018"
+resolver = "2" # Try new dependency resolver from Rust 1.51
 
 [profile.dev]
 opt-level = 2 # We want optimization even for debug builds for all the hashing.
