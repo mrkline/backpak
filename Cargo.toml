@@ -13,6 +13,7 @@ incremental = true # Iterate faster
 debug = true
 
 [dependencies]
+atty = "0.2"
 anyhow = "1.0"
 enum-map = "0.6"
 fastcdc = "1.0"
@@ -37,8 +38,10 @@ version = "0.4"
 features = ["serde"]
 
 [dependencies.simplelog]
-version = "0.7"
-features = ["test"]
+version = "0.10"
+git = "https://github.com/mrkline/simplelog.rs"
+branch = "optional-color"
+features = ["test", "termcolor"]
 
 [dependencies.zstd]
 version = "0.5"

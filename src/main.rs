@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::*;
 use simplelog::*;
+use structopt::clap::arg_enum;
 use structopt::StructOpt;
 
 use backpak::counters;
@@ -14,6 +15,10 @@ struct Args {
     #[structopt(short, long, parse(from_occurrences))]
     verbose: u8,
 
+    #[structopt(short, long, case_insensitive = true, default_value = "auto")]
+    #[structopt(name = "always/auto/never")]
+    color: Color,
+
     /// Prepend ISO-8601 timestamps to all trace messages (from --verbose).
     /// Useful for benchmarking.
     #[structopt(short, long)]
@@ -24,6 +29,15 @@ struct Args {
 
     #[structopt(subcommand)]
     subcommand: Subcommand,
+}
+
+arg_enum! {
+    #[derive(Debug)]
+    enum Color {
+        Auto,
+        Always,
+        Never
+    }
 }
 
 #[derive(Debug, StructOpt)]
@@ -44,7 +58,7 @@ enum Subcommand {
 
 fn main() -> Result<()> {
     let args = Args::from_args();
-    init_logger(args.verbose, args.timestamps)?;
+    init_logger(&args)?;
 
     match args.subcommand {
         Subcommand::Init => init::run(&args.repository),
@@ -63,20 +77,20 @@ fn main() -> Result<()> {
 }
 
 /// Set up simplelog to spit messages to stderr.
-fn init_logger(verbosity: u8, timestamps: bool) -> Result<()> {
+fn init_logger(args: &Args) -> Result<()> {
     let mut builder = ConfigBuilder::new();
     // Shut a bunch of stuff off - we're just spitting to stderr.
     builder.set_location_level(LevelFilter::Trace);
     builder.set_target_level(LevelFilter::Off);
     builder.set_thread_level(LevelFilter::Off);
-    if timestamps {
+    if args.timestamps {
         builder.set_time_format_str("%+");
         builder.set_time_level(LevelFilter::Error);
     } else {
         builder.set_time_level(LevelFilter::Off);
     }
 
-    let level = match verbosity {
+    let level = match args.verbose {
         0 => LevelFilter::Warn,
         1 => LevelFilter::Info,
         2 => LevelFilter::Debug,
@@ -88,7 +102,19 @@ fn init_logger(verbosity: u8, timestamps: bool) -> Result<()> {
     if cfg!(test) {
         TestLogger::init(level, config).context("Couldn't init test logger")
     } else {
-        TermLogger::init(level, config.clone(), TerminalMode::Stderr)
+        let color = match args.color {
+            Color::Always => ColorChoice::AlwaysAnsi,
+            Color::Auto => {
+                if atty::is(atty::Stream::Stderr) {
+                    ColorChoice::Auto
+                } else {
+                    ColorChoice::Never
+                }
+            }
+            Color::Never => ColorChoice::Never,
+        };
+
+        TermLogger::init(level, config.clone(), TerminalMode::Stderr, color)
             .or_else(|_| SimpleLogger::init(level, config))
             .context("Couldn't init logger")
     }
