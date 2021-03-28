@@ -39,8 +39,6 @@ features = ["serde"]
 
 [dependencies.simplelog]
 version = "0.10"
-git = "https://github.com/mrkline/simplelog.rs"
-branch = "optional-color"
 features = ["test", "termcolor"]
 
 [dependencies.zstd]
