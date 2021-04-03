@@ -24,6 +24,11 @@ struct Args {
     #[structopt(short, long)]
     timestamps: bool,
 
+    /// Change to the given directory before doing anything else
+    #[structopt(short = "C", long, name = "path")]
+    #[structopt(verbatim_doc_comment)]
+    working_directory: Option<PathBuf>,
+
     #[structopt(short, long)]
     repository: PathBuf,
 
@@ -59,6 +64,10 @@ enum Subcommand {
 fn main() -> Result<()> {
     let args = Args::from_args();
     init_logger(&args)?;
+
+    if let Some(dir) = &args.working_directory {
+        std::env::set_current_dir(dir).expect("Couldn't change working directory");
+    }
 
     match args.subcommand {
         Subcommand::Init => init::run(&args.repository),

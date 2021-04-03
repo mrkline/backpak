@@ -131,7 +131,7 @@ fn to_temp_file(index: &Index) -> Result<(ObjectId, NamedTempFile)> {
     let mut fh = tempfile::Builder::new()
         .prefix("temp-backpak-")
         .suffix(".index")
-        .tempfile_in(&std::env::current_dir()?) // TODO: Configurable?
+        .tempfile_in(&std::env::current_dir()?)
         .context("Couldn't open temporary index for writing")?;
 
     Ok((to_file(fh.as_file_mut(), index)?, fh))

@@ -136,7 +136,7 @@ impl PackfileWriter {
         let mut fh = tempfile::Builder::new()
             .prefix("temp-backpak-")
             .suffix(".pack")
-            .tempfile_in(&std::env::current_dir()?) // TODO: Configurable?
+            .tempfile_in(&std::env::current_dir()?)
             .context("Couldn't open temporary packfile for writing")?;
 
         fh.write_all(MAGIC_BYTES)?;
