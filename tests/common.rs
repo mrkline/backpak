@@ -17,6 +17,10 @@ pub fn cli_run(working_dir: &Path, backup_path: &Path) -> Result<assert_cmd::Com
     Ok(cmd)
 }
 
+pub fn stderr(cmd: &assert_cmd::assert::Assert) -> &str {
+    std::str::from_utf8(&cmd.get_output().stderr).unwrap()
+}
+
 pub fn count_directory_entries<P: AsRef<Path>>(dir: P) -> usize {
     #[allow(clippy::suspicious_map)]
     std::fs::read_dir(dir)

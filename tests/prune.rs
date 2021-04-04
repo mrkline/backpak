@@ -47,6 +47,13 @@ fn backup_src() -> Result<()> {
     assert_eq!(2, files_in(backup_path.join("snapshots")).count());
     assert_eq!(3, files_in(backup_path.join("packs")).count());
 
+    // Prune shouldn't do anything until we forget some snapshots.
+    let prune_run = cli_run(working_path, backup_path)?
+        .arg("prune")
+        .assert()
+        .success();
+    assert!(stderr(&prune_run).contains("No unused blobs in any packs! Nothing to do."));
+
     // Axe the first backup. This will create a situation where the pack(s)
     // can be pruned - we still need the chunks for `tests/references`
     // but not `tests/*.rs`.
@@ -64,9 +71,7 @@ fn backup_src() -> Result<()> {
         .args(&["prune", "-n"])
         .assert()
         .success();
-    let dry_run_output = std::str::from_utf8(&dry_run.get_output().stderr).unwrap();
-    // Expecting
-    assert!(dry_run_output
+    assert!(stderr(&dry_run)
         .contains("Keep 1 packs, rewrite 2, drop 0, and replace the 2 current indexes"));
 
     // They're the same!
@@ -83,12 +88,8 @@ fn backup_src() -> Result<()> {
         .arg("prune")
         .assert()
         .success();
-    let prune_output = std::str::from_utf8(&prune_run.get_output().stderr).unwrap();
-    // Expecting
-    // [ INFO] Keep 1 packs, rewrite 2, and replace the 2 current indexes
-    assert!(
-        prune_output.contains("Keep 1 packs, rewrite 2, drop 0, and replace the 2 current indexes")
-    );
+    assert!(stderr(&prune_run)
+        .contains("Keep 1 packs, rewrite 2, drop 0, and replace the 2 current indexes"));
 
     // They're different!
     let after_packs = files_in(backup_path.join("packs")).collect::<HashSet<_>>();
