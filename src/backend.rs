@@ -114,32 +114,6 @@ impl CachedBackend {
         self.backend.list("packs/")
     }
 
-    pub fn find_snapshot(&self, prefix: &str) -> Result<String> {
-        // Like Git, require at least a few digits of an ID.
-        if prefix.len() < 4 {
-            bail!("Provide a snapshot ID with at least 4 digits!");
-        }
-
-        let mut matches = self
-            .list_snapshots()?
-            .into_iter()
-            .filter(|snap| {
-                Path::new(snap)
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .starts_with(prefix)
-            })
-            .collect::<Vec<_>>();
-
-        match matches.len() {
-            0 => bail!("No snapshots start with {}", prefix),
-            1 => Ok(matches.pop().unwrap()),
-            multiple => bail!("{} different snapshots start with {}", multiple, prefix,),
-        }
-    }
-
     pub fn probe_pack(&self, id: &ObjectId) -> Result<()> {
         let hex = id.to_string();
         let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);

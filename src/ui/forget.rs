@@ -32,22 +32,21 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let mut failure = false;
 
     for id_prefix in &args.to_forget {
-        let snapshot_path = match cached_backend.find_snapshot(id_prefix) {
-            Ok(path) => path,
+        let id = match crate::snapshot::find(id_prefix, &cached_backend) {
+            Ok(id) => id,
             Err(e) => {
                 error!("{:?}", e);
                 failure = true;
                 continue;
             }
         };
-        let id = backend::id_from_path(&snapshot_path).unwrap();
 
         if args.dry_run {
             info!("Would remove {}", id);
             continue;
         }
 
-        match cached_backend.remove(&snapshot_path) {
+        match cached_backend.remove_snapshot(&id) {
             Ok(()) => info!("Removed snapshot {}", id),
             Err(e) => {
                 error!("{:?}", e);

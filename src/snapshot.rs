@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::SyncSender;
 
 use anyhow::*;
@@ -75,8 +75,7 @@ pub fn find_and_load(
     id_prefix: &str,
     cached_backend: &backend::CachedBackend,
 ) -> Result<(Snapshot, ObjectId)> {
-    let snap_path = cached_backend.find_snapshot(id_prefix)?;
-    let id = backend::id_from_path(snap_path)?;
+    let id = find(id_prefix, cached_backend)?;
     Ok((load(&id, cached_backend)?, id))
 }
 
@@ -111,6 +110,39 @@ pub fn load_chronologically(
         .collect::<Result<Vec<(Snapshot, ObjectId)>>>()?;
     snapshots.sort_by_key(|(snap, _)| snap.time);
     Ok(snapshots)
+}
+
+pub fn find(prefix: &str, cached_backend: &crate::backend::CachedBackend) -> Result<ObjectId> {
+    if prefix == "last" {
+        match load_chronologically(cached_backend)?.iter().rev().next() {
+            None => bail!("No snapshots taken yet"),
+            Some((_snap, id)) => return Ok(*id),
+        }
+    }
+
+    // Like Git, require at least a few digits of an ID.
+    if prefix.len() < 4 {
+        bail!("Provide a snapshot ID with at least 4 digits!");
+    }
+
+    let mut matches = cached_backend
+        .list_snapshots()?
+        .into_iter()
+        .filter(|snap| {
+            Path::new(snap)
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with(prefix)
+        })
+        .collect::<Vec<_>>();
+
+    match matches.len() {
+        0 => bail!("No snapshots start with {}", prefix),
+        1 => backend::id_from_path(matches.pop().unwrap()),
+        multiple => bail!("{} different snapshots start with {}", multiple, prefix,),
+    }
 }
 
 #[cfg(test)]
