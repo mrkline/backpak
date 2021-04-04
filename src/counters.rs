@@ -48,8 +48,8 @@ pub fn log_counts() {
         static ref OP_NAMES: EnumMap<Op, &'static str> = {
             enum_map! {
                 Op::IndexLoad => "indexes loaded",
-                Op::FileToBuffer => "files read into buffers",
-                Op::FileToMmap => "files memory mapped",
+                Op::FileToBuffer => "input files buffered",
+                Op::FileToMmap => "input files memory mapped",
                 Op::TreeCacheHit => "tree cache hits",
                 Op::TreeCacheMiss => "tree cache misses",
                 Op::PackSkippedBlob => "blobs skipped reading packs",
