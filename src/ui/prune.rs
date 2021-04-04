@@ -35,14 +35,16 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     )?;
 
     let reachable_chunks = reachable_chunks(snapshots_and_forests.par_iter().map(|s| &s.forest));
-    let (reusable_packs, sparse_packs) =
-        partition_packs(&index, &snapshots_and_forests, &reachable_chunks);
+    let (reusable_packs, packs_to_prune) =
+        partition_reusable_packs(&index, &snapshots_and_forests, &reachable_chunks);
+    let (droppable_packs, sparse_packs) =
+        partition_droppable_packs(&packs_to_prune, &snapshots_and_forests, &reachable_chunks);
 
     // Once we've partitioned packs, we don't need every single reachable chunk.
     // Drop that, since it could be huge.
     drop(reachable_chunks);
 
-    if sparse_packs.is_empty() {
+    if packs_to_prune.is_empty() {
         info!("No unused blobs in any packs! Nothing to do.");
         return Ok(());
     }
@@ -72,6 +74,14 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             .join(", ")
     );
     debug!(
+        "Packs {} can be dropped",
+        droppable_packs
+            .keys()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    debug!(
         "Indexes {} could be replaced",
         superseded
             .iter()
@@ -80,11 +90,16 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             .join(", ")
     );
     info!(
-        "Keep {} packs, rewrite {}, and replace the {} current indexes",
+        "Keep {} packs, rewrite {}, drop {}, and replace the {} current indexes",
         reusable_packs.len(),
         sparse_packs.len(),
+        droppable_packs.len(),
         superseded.len()
     );
+
+    // We just needed these for diagnostics; axe em.
+    drop(sparse_packs);
+    drop(droppable_packs);
 
     let reusable_packs: BTreeMap<ObjectId, pack::PackManifest> = reusable_packs
         .into_iter()
@@ -119,7 +134,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         for old_index in &superseded {
             cached_backend.remove_index(old_index)?;
         }
-        for old_pack in sparse_packs.keys() {
+        for old_pack in packs_to_prune.keys() {
             cached_backend.remove_pack(old_pack)?;
         }
     }
@@ -167,7 +182,7 @@ fn reachable_chunks<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
 ///
 /// We'll reuse the former, and repack blobs from the latter.
 #[allow(clippy::type_complexity)]
-fn partition_packs<'a>(
+fn partition_reusable_packs<'a>(
     index: &'a index::Index,
     snapshots_and_forests: &[SnapshotAndForest],
     reachable_chunks: &HashSet<&ObjectId>,
@@ -175,20 +190,48 @@ fn partition_packs<'a>(
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
 ) {
-    let partitioned = index.packs.iter().partition(|(_pack_id, manifest)| {
-        // Reusable packs are ones where all blobs...
-        manifest.iter().map(|entry| &entry.id).all(|id| {
-            // Are reachable chunks...
-            reachable_chunks.contains(id) ||
-                // Or reachable trees.
-                snapshots_and_forests
-                    .iter()
-                    .map(|snap_and_forest| &snap_and_forest.forest)
-                    .any(|forest| forest.contains_key(id))
-        })
-    });
+    index.packs.iter().partition(|(_pack_id, manifest)| {
+        // Reusable packs are ones where all blobs are reachable.
+        manifest
+            .iter()
+            .map(|entry| &entry.id)
+            .all(|id| blob_is_reachable(id, snapshots_and_forests, reachable_chunks))
+    })
+}
 
-    partitioned
+/// Partition packs into those that have 0% reachable blobs
+/// and those that have _some_.
+///
+/// This is just so that we can accurately report which packs will be dropped
+/// completely.
+#[allow(clippy::type_complexity)]
+fn partition_droppable_packs<'a>(
+    packs_to_prune: &BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
+    snapshots_and_forests: &[SnapshotAndForest],
+    reachable_chunks: &HashSet<&ObjectId>,
+) -> (
+    BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
+    BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
+) {
+    packs_to_prune.iter().partition(|(_pack_id, manifest)| {
+        // Droppable packs are ones where no blobs are reachable
+        !manifest
+            .iter()
+            .map(|entry| &entry.id)
+            .any(|id| blob_is_reachable(id, snapshots_and_forests, reachable_chunks))
+    })
+}
+
+fn blob_is_reachable(
+    blob: &ObjectId,
+    snapshots_and_forests: &[SnapshotAndForest],
+    reachable_chunks: &HashSet<&ObjectId>,
+) -> bool {
+    reachable_chunks.contains(blob)
+        || snapshots_and_forests
+            .iter()
+            .map(|snap_and_forest| &snap_and_forest.forest)
+            .any(|forest| forest.contains_key(blob))
 }
 
 fn walk_snapshots(

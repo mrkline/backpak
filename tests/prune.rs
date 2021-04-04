@@ -66,8 +66,8 @@ fn backup_src() -> Result<()> {
         .success();
     let dry_run_output = std::str::from_utf8(&dry_run.get_output().stderr).unwrap();
     // Expecting
-    // [ INFO] Keep 1 packs, rewrite 2, and replace the 2 current indexes
-    assert!(dry_run_output.contains("Keep 1 packs, rewrite 2, and replace the 2 current indexes"));
+    assert!(dry_run_output
+        .contains("Keep 1 packs, rewrite 2, drop 0, and replace the 2 current indexes"));
 
     // They're the same!
     let dry_run_packs = files_in(backup_path.join("packs")).collect::<HashSet<_>>();
@@ -86,7 +86,9 @@ fn backup_src() -> Result<()> {
     let prune_output = std::str::from_utf8(&prune_run.get_output().stderr).unwrap();
     // Expecting
     // [ INFO] Keep 1 packs, rewrite 2, and replace the 2 current indexes
-    assert!(prune_output.contains("Keep 1 packs, rewrite 2, and replace the 2 current indexes"));
+    assert!(
+        prune_output.contains("Keep 1 packs, rewrite 2, drop 0, and replace the 2 current indexes")
+    );
 
     // They're different!
     let after_packs = files_in(backup_path.join("packs")).collect::<HashSet<_>>();
@@ -151,10 +153,14 @@ fn no_repacks_needed() -> Result<()> {
         .assert()
         .success();
 
-    cli_run(working_path, backup_path)?
+    let prune_run = cli_run(working_path, backup_path)?
         .arg("prune")
         .assert()
         .success();
+    let prune_output = std::str::from_utf8(&prune_run.get_output().stderr).unwrap();
+    assert!(
+        prune_output.contains("Keep 2 packs, rewrite 0, drop 2, and replace the 2 current indexes")
+    );
 
     // We were previously blowing up here because I forgot to write
     // a new index if nothing was repacked.
