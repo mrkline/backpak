@@ -28,7 +28,7 @@ pub fn count_directory_entries<P: AsRef<Path>>(dir: P) -> usize {
         .count()
 }
 
-pub fn files_in(p: &Path) -> impl Iterator<Item = PathBuf> {
+pub fn files_in<P: AsRef<Path>>(p: P) -> impl Iterator<Item = PathBuf> {
     WalkDir::new(p)
         .into_iter()
         .map(|e| e.expect("couldn't walk dir"))

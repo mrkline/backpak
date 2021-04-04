@@ -32,7 +32,7 @@ fn backup_src() -> Result<()> {
         .success();
 
     // Grab the first snapshot ID.
-    let snapshots = files_in(&backup_path.join("snapshots")).collect::<Vec<_>>();
+    let snapshots = files_in(backup_path.join("snapshots")).collect::<Vec<_>>();
     assert_eq!(snapshots.len(), 1);
     let first_snapshot = snapshots[0].file_stem().unwrap().to_str().unwrap();
 
@@ -44,8 +44,8 @@ fn backup_src() -> Result<()> {
         .assert()
         .success();
 
-    assert_eq!(2, files_in(&backup_path.join("snapshots")).count());
-    assert_eq!(3, files_in(&backup_path.join("packs")).count());
+    assert_eq!(2, files_in(backup_path.join("snapshots")).count());
+    assert_eq!(3, files_in(backup_path.join("packs")).count());
 
     // Axe the first backup. This will create a situation where the pack(s)
     // can be pruned - we still need the chunks for `tests/references`
@@ -55,8 +55,8 @@ fn backup_src() -> Result<()> {
         .assert()
         .success();
 
-    assert_eq!(1, files_in(&backup_path.join("snapshots")).count());
-    let before_packs = files_in(&backup_path.join("packs")).collect::<HashSet<_>>();
+    assert_eq!(1, files_in(backup_path.join("snapshots")).count());
+    let before_packs = files_in(backup_path.join("packs")).collect::<HashSet<_>>();
     assert_eq!(3, before_packs.len());
 
     // Dry run shouldn't do anything!
@@ -70,7 +70,7 @@ fn backup_src() -> Result<()> {
     assert!(dry_run_output.contains("Keep 1 packs, rewrite 2, and replace the 2 current indexes"));
 
     // They're the same!
-    let dry_run_packs = files_in(&backup_path.join("packs")).collect::<HashSet<_>>();
+    let dry_run_packs = files_in(backup_path.join("packs")).collect::<HashSet<_>>();
     assert_eq!(before_packs, dry_run_packs);
 
     // Paranoia.
@@ -89,7 +89,7 @@ fn backup_src() -> Result<()> {
     assert!(prune_output.contains("Keep 1 packs, rewrite 2, and replace the 2 current indexes"));
 
     // They're different!
-    let after_packs = files_in(&backup_path.join("packs")).collect::<HashSet<_>>();
+    let after_packs = files_in(backup_path.join("packs")).collect::<HashSet<_>>();
     assert_ne!(before_packs, after_packs);
 
     cli_run(working_path, backup_path)?
@@ -132,7 +132,7 @@ fn no_repacks_needed() -> Result<()> {
         .success();
 
     // Grab the first snapshot ID.
-    let snapshots = files_in(&backup_path.join("snapshots")).collect::<Vec<_>>();
+    let snapshots = files_in(backup_path.join("snapshots")).collect::<Vec<_>>();
     assert_eq!(snapshots.len(), 1);
     let first_snapshot = snapshots[0].file_stem().unwrap().to_str().unwrap();
 
