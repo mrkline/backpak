@@ -89,7 +89,7 @@ impl CachedBackend {
         Ok(())
     }
 
-    pub fn remove(&self, to_remove: &str) -> Result<()> {
+    fn remove(&self, to_remove: &str) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { .. } => {
                 // Just unlink the file!
