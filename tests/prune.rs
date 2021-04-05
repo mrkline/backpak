@@ -24,10 +24,10 @@ fn backup_src() -> Result<()> {
         .assert()
         .success();
 
-    // Let's back up these tests files and the references.
+    // Let's back up these the source code.
     cli_run(working_path, backup_path)?
         .arg("backup")
-        .arg(project_dir.join("tests"))
+        .arg(project_dir.join("src"))
         .assert()
         .success();
 
@@ -36,11 +36,11 @@ fn backup_src() -> Result<()> {
     assert_eq!(snapshots.len(), 1);
     let first_snapshot = snapshots[0].file_stem().unwrap().to_str().unwrap();
 
-    // And again, but just the references.
+    // And again, but just the UI code.
     // This will share blobs with the previous backup.
     cli_run(working_path, backup_path)?
         .arg("backup")
-        .arg(project_dir.join("tests/references"))
+        .arg(project_dir.join("src/ui"))
         .assert()
         .success();
 
@@ -143,7 +143,7 @@ fn no_repacks_needed() -> Result<()> {
     // Should be totally different packs, nothing reused.
     cli_run(working_path, backup_path)?
         .arg("backup")
-        .arg(project_dir.join("tests/references"))
+        .arg(project_dir.join("tests/references/sr71.txt"))
         .assert()
         .success();
 
