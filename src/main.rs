@@ -90,8 +90,6 @@ fn main() -> Result<()> {
 /// Set up simplelog to spit messages to stderr.
 fn init_logger(args: &Args) -> Result<()> {
     let mut builder = ConfigBuilder::new();
-    // Shut a bunch of stuff off - we're just spitting to stderr.
-    builder.set_location_level(LevelFilter::Trace);
     builder.set_target_level(LevelFilter::Off);
     builder.set_thread_level(LevelFilter::Off);
     if args.timestamps {
@@ -107,6 +105,11 @@ fn init_logger(args: &Args) -> Result<()> {
         2 => LevelFilter::Debug,
         _ => LevelFilter::Trace,
     };
+
+    if level == LevelFilter::Trace {
+        builder.set_location_level(LevelFilter::Error);
+    }
+    builder.set_level_padding(LevelPadding::Left);
 
     let config = builder.build();
 

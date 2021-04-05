@@ -98,7 +98,7 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Sn
 pub fn load_chronologically(
     cached_backend: &crate::backend::CachedBackend,
 ) -> Result<Vec<(Snapshot, ObjectId)>> {
-    info!("Reading snapshots");
+    debug!("Reading snapshots");
     let mut snapshots = cached_backend
         .list_snapshots()?
         .par_iter()

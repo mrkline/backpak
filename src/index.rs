@@ -106,7 +106,7 @@ pub fn index(
             fs::rename(WIP_NAME, &index_name)
                 .with_context(|| format!("Couldn't rename {} to {}", WIP_NAME, index_name))?;
         }
-        info!(
+        debug!(
             "Index {} finished ({} bytes)",
             index_id,
             persisted.metadata()?.len()
@@ -117,7 +117,7 @@ pub fn index(
             .context("indexer -> uploader channel exited early")?;
         Ok(true)
     } else {
-        info!("No new indexes created - nothing changed");
+        debug!("No new indexes created - nothing changed");
         Ok(false)
     }
 }
@@ -157,7 +157,7 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
 /// Load all indexes from the provided backend and combines them into a master
 /// index, removing any superseded ones.
 pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
-    info!("Building a master index of backed-up blobs");
+    info!("Building a master index");
 
     #[derive(Debug, Default)]
     struct Results {
@@ -208,7 +208,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
     // Strip out superseded indexes.
     for superseded in &shared.superseded_indexes {
         if shared.loaded_indexes.remove(&superseded).is_some() {
-            info!("Index {} is superseded and can be deleted.", superseded);
+            debug!("Index {} is superseded and can be deleted.", superseded);
         }
     }
 

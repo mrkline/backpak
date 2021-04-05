@@ -72,6 +72,14 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let mut backup =
         crate::backup::spawn_backup_threads(Arc::new(cached_backend), index::Index::default());
 
+    info!(
+        "Backing up {}",
+        paths
+            .iter()
+            .map(|p| p.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
     let root = pack_tree(
         &paths,
         parent.map(|p| &p.tree),
@@ -174,13 +182,21 @@ pub fn pack_tree(
                 tree_tx,
             )
             .with_context(|| format!("Failed to pack subdirectory {}", path.display()))?;
-            debug!("Subtree {}/ packed as {}", path.display(), subtree);
+            trace!(
+                "Subtree {}{} packed as {}",
+                path.display(),
+                std::path::MAIN_SEPARATOR,
+                subtree
+            );
+            info!("finished {}{}", path.display(), std::path::MAIN_SEPARATOR);
 
             tree::Node {
                 metadata,
                 contents: tree::NodeContents::Directory { subtree },
             }
         } else if !file_changed(path, &metadata, previous_node) {
+            info!("{:>8} {}", "skip", path.display());
+
             tree::Node {
                 metadata,
                 contents: previous_node.unwrap().contents.clone(),
@@ -197,9 +213,11 @@ pub fn pack_tree(
                         .send(chunk)
                         .context("backup -> chunk packer channel exited early")?;
                 } else {
-                    trace!("Skipping chunk {}; already packed", chunk.id);
+                    trace!("chunk {} already packed", chunk.id);
                 }
             }
+            info!("{:>8} {}", "backup", path.display());
+
             tree::Node {
                 metadata,
                 contents: tree::NodeContents::File { chunks: chunk_ids },
@@ -221,7 +239,7 @@ pub fn pack_tree(
             })
             .context("backup -> tree packer channel exited early")?;
     } else {
-        trace!("Skipping tree {}; already packed", id);
+        trace!("tree {} already packed", id);
     }
     Ok(id)
 }
@@ -266,8 +284,8 @@ fn file_changed(
         return true;
     }
 
-    debug!(
-        "{} matches its previous size and modification time. Reusing previous chunks",
+    trace!(
+        "{} matches its previous size and modification time. Reuse parent chunks",
         path.display()
     );
     false
