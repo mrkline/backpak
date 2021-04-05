@@ -21,6 +21,10 @@ pub fn stderr(cmd: &assert_cmd::assert::Assert) -> &str {
     std::str::from_utf8(&cmd.get_output().stderr).unwrap()
 }
 
+pub fn stdout(cmd: &assert_cmd::assert::Assert) -> &str {
+    std::str::from_utf8(&cmd.get_output().stdout).unwrap()
+}
+
 pub fn count_directory_entries<P: AsRef<Path>>(dir: P) -> usize {
     #[allow(clippy::suspicious_map)]
     std::fs::read_dir(dir)
@@ -38,6 +42,12 @@ pub fn files_in<P: AsRef<Path>>(p: P) -> impl Iterator<Item = PathBuf> {
         .map(|e| e.expect("couldn't walk dir"))
         .filter(|e| e.file_type().is_file())
         .map(|e| e.into_path())
+}
+
+pub fn dir_entries<P: AsRef<Path>>(p: P) -> impl Iterator<Item = PathBuf> {
+    std::fs::read_dir(p)
+        .unwrap()
+        .map(|e| e.expect("couldn't read dir").path())
 }
 
 // If we don't already have a big file at "tests/references",
