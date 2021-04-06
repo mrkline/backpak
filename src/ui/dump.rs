@@ -112,7 +112,7 @@ fn dump_dir(
             path.display()
         )?;
         // If it's a directory, write a trailing /
-        if node.metadata.is_directory() {
+        if node.is_directory() {
             write!(writer, "{}", std::path::MAIN_SEPARATOR)?;
         }
         writeln!(writer)?;

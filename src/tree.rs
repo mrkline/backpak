@@ -20,15 +20,35 @@ use crate::prettify;
 ///
 /// Files have chunks, and a directory has a subtree representing
 /// everything in that subdirectory.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
 pub enum NodeContents {
     File { chunks: Vec<ObjectId> },
     Directory { subtree: ObjectId },
 }
 
+impl NodeContents {
+    // Convenience methods for when we know the type already.
+
+    #[inline]
+    pub fn chunks(&self) -> &[ObjectId] {
+        match self {
+            NodeContents::File { chunks } => chunks,
+            _ => panic!("Expected a file, got a directory"),
+        }
+    }
+
+    #[inline]
+    pub fn subtree(&self) -> &ObjectId {
+        match self {
+            NodeContents::Directory { subtree } => subtree,
+            _ => panic!("Expected a directory, got a file"),
+        }
+    }
+}
+
 /// Backup-relevant metadata taken from a `stat()` call on a Posix system.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PosixMetadata {
     mode: u32,
     size: u64,
@@ -44,7 +64,7 @@ pub struct PosixMetadata {
 
 /// Backup-relevant metadata taken from a `GetFileInformationByHandle` call
 /// on Windows.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WindowsMetadata {
     attributes: u32,
     size: u64,
@@ -57,7 +77,7 @@ pub struct WindowsMetadata {
 }
 
 /// A file or directory's metadata - Windows or Posix.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
 pub enum NodeMetadata {
     Posix(PosixMetadata),
@@ -164,6 +184,26 @@ pub struct Node {
     #[serde(flatten)]
     pub contents: NodeContents,
     pub metadata: NodeMetadata,
+}
+
+impl Node {
+    pub fn is_directory(&self) -> bool {
+        // Assert that the contents matches the metadata while we're at it.
+        // We can be confident this won't be flipped by corruption since
+        // we verify a Tree's hash when deserializing it,
+        // AND we're confident that we don't screw it up when generating trees
+        // in ui/backup.rs
+        match &self.contents {
+            NodeContents::Directory { .. } => {
+                assert!(self.metadata.is_directory());
+                true
+            }
+            NodeContents::File { .. } => {
+                assert!(!self.metadata.is_directory());
+                false
+            }
+        }
+    }
 }
 
 /// A tree represents a single directory of files (with contents),

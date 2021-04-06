@@ -1,12 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::*;
 use log::*;
 use structopt::StructOpt;
 
 use crate::backend;
-use crate::hashing::ObjectId;
 use crate::index;
+use crate::ls;
 use crate::snapshot;
 use crate::tree;
 
@@ -17,10 +17,6 @@ pub struct Args {
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
-    unsafe {
-        crate::prettify::prettify_serialize();
-    }
-
     let cached_backend = backend::open(repository)?;
     let (snapshot, id) = snapshot::find_and_load(&args.snapshot_prefix, &cached_backend)?;
     let index = index::build_master_index(&cached_backend)?;
@@ -30,32 +26,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     info!("Listing files for snapshot {}", id);
 
     let snapshot_tree = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
-    printer_recursor(&snapshot.tree, &snapshot_tree, &Path::new(""));
+    ls::print_tree("", &Path::new(""), &snapshot.tree, &snapshot_tree);
 
     Ok(())
-}
-
-fn printer_recursor(tree_id: &ObjectId, forest: &tree::Forest, prefix: &Path) {
-    let tree: &tree::Tree = forest
-        .get(tree_id)
-        .ok_or_else(|| anyhow!("Missing tree {}", tree_id))
-        .unwrap();
-
-    for (path, node) in tree {
-        if !prefix.as_os_str().is_empty() {
-            print!("{}{}", prefix.display(), std::path::MAIN_SEPARATOR);
-        }
-        print!("{}", path.display());
-        match &node.contents {
-            tree::NodeContents::Directory { subtree } => {
-                println!("{}", std::path::MAIN_SEPARATOR);
-                let mut new_prefix: PathBuf = prefix.to_owned();
-                new_prefix.push(path);
-                printer_recursor(subtree, forest, &new_prefix);
-            }
-            tree::NodeContents::File { .. } => {
-                println!();
-            }
-        };
-    }
 }
