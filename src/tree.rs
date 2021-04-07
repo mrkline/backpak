@@ -179,7 +179,7 @@ fn windows_timestamp(ts: u64) -> Option<DateTime<Utc>> {
 }
 
 /// A single file or directory and its metadata
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Node {
     #[serde(flatten)]
     pub contents: NodeContents,

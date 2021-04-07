@@ -6,6 +6,7 @@ use log::*;
 use structopt::StructOpt;
 
 use crate::backend;
+use crate::fs_tree;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::ls;
@@ -18,7 +19,7 @@ use crate::tree;
 #[derive(Debug, StructOpt)]
 pub struct Args {
     first_snapshot: String,
-    second_snapshot: String,
+    second_snapshot: Option<String>,
 }
 
 pub fn run(repository: &Path, args: Args) -> Result<()> {
@@ -28,20 +29,48 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
     let (snapshot1, id1) = snapshot::find_and_load(&args.first_snapshot, &cached_backend)?;
-    let (snapshot2, id2) = snapshot::find_and_load(&args.second_snapshot, &cached_backend)?;
+    let snapshot1_forest = tree::forest_from_root(&snapshot1.tree, &mut tree_cache)?;
 
-    info!("Comparing snapshot {} -> {}", id1, id2);
-
-    let snapshot_tree1 = tree::forest_from_root(&snapshot1.tree, &mut tree_cache)?;
-    let snapshot_tree2 = tree::forest_from_root(&snapshot2.tree, &mut tree_cache)?;
+    let (id2, forest2) = load_snapshot2_or_paths(
+        &id1,
+        &snapshot1,
+        &snapshot1_forest,
+        &args.second_snapshot,
+        &cached_backend,
+        &mut tree_cache,
+    )?;
 
     compare_trees(
-        (&snapshot1.tree, &snapshot_tree1),
-        (&snapshot2.tree, &snapshot_tree2),
+        (&snapshot1.tree, &snapshot1_forest),
+        (&id2, &forest2),
         Path::new(""),
     );
 
     Ok(())
+}
+
+fn load_snapshot2_or_paths(
+    id1: &ObjectId,
+    snapshot1: &snapshot::Snapshot,
+    snapshot1_forest: &tree::Forest,
+    second_snapshot: &Option<String>,
+    cached_backend: &backend::CachedBackend,
+    tree_cache: &mut tree::Cache,
+) -> Result<(ObjectId, tree::Forest)> {
+    if let Some(second_snapshot) = second_snapshot {
+        let (snapshot2, id2) = snapshot::find_and_load(&second_snapshot, &cached_backend)?;
+        let snapshot2_forest = tree::forest_from_root(&snapshot2.tree, tree_cache)?;
+
+        info!("Comparing snapshot {} to {}", id1, id2);
+
+        Ok((snapshot2.tree, snapshot2_forest))
+    } else {
+        info!(
+            "Comparing snapshot {} to its paths, {:?}",
+            id1, snapshot1.paths
+        );
+        fs_tree::forest_from_fs(&snapshot1.paths, Some(&snapshot1.tree), snapshot1_forest)
+    }
 }
 
 fn compare_trees(
@@ -85,6 +114,9 @@ pub fn compare_nodes(
             if node1.contents != node2.contents {
                 ls::print_node("M ", path, node1, &tree::Forest::new());
             } else if node1.metadata != node2.metadata {
+                // TODO: atime is being a PITA. Do we want it?
+                // Should we ignore it for diffing purposes?
+                // trace!("{:#?} != {:#?}", node1.metadata, node2.metadata);
                 ls::print_node("U ", path, node1, &tree::Forest::new());
             }
         }

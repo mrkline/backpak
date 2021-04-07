@@ -4,6 +4,7 @@ pub mod blob;
 pub mod chunk;
 pub mod counters;
 pub mod file_util;
+pub mod fs_tree;
 pub mod hashing;
 pub mod index;
 pub mod ls;

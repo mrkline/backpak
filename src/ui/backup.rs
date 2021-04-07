@@ -13,6 +13,7 @@ use structopt::StructOpt;
 use crate::backend;
 use crate::blob::{self, Blob};
 use crate::chunk;
+use crate::fs_tree;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::snapshot::{self, Snapshot};
@@ -144,7 +145,7 @@ pub fn pack_tree(
     chunk_tx: &mut Sender<Blob>,
     tree_tx: &mut Sender<Blob>,
 ) -> Result<ObjectId> {
-    let mut nodes = tree::Tree::new();
+    let mut tree = tree::Tree::new();
 
     let previous_tree = previous_tree.and_then(|id| previous_forest.get(&id));
 
@@ -158,8 +159,8 @@ pub fn pack_tree(
         let metadata = tree::get_metadata(path)?;
 
         let node = if metadata.is_directory() {
-            // Gather the dir entries in `path`, call pack_tree with them,
-            // and add an entry to `nodes` for the subtree.
+            // Gather the dir entries in `path`, recurse into it,
+            // and add the subtree to the tree.
             let subpaths = fs::read_dir(path)?
                 .map(|entry| entry.map(|e| e.path()))
                 .collect::<io::Result<BTreeSet<PathBuf>>>()
@@ -183,7 +184,7 @@ pub fn pack_tree(
             )
             .with_context(|| format!("Failed to pack subdirectory {}", path.display()))?;
             trace!(
-                "Subtree {}{} packed as {}",
+                "{}{} packed as {}",
                 path.display(),
                 std::path::MAIN_SEPARATOR,
                 subtree
@@ -194,7 +195,7 @@ pub fn pack_tree(
                 metadata,
                 contents: tree::NodeContents::Directory { subtree },
             }
-        } else if !file_changed(path, &metadata, previous_node) {
+        } else if !fs_tree::file_changed(path, &metadata, previous_node) {
             info!("{:>8} {}", "skip", path.display());
 
             tree::Node {
@@ -224,11 +225,11 @@ pub fn pack_tree(
             }
         };
         ensure!(
-            nodes.insert(PathBuf::from(entry_name), node).is_none(),
+            tree.insert(PathBuf::from(entry_name), node).is_none(),
             "Duplicate tree entries"
         );
     }
-    let (bytes, id) = tree::serialize_and_hash(&nodes)?;
+    let (bytes, id) = tree::serialize_and_hash(&tree)?;
 
     if packed_blobs.insert(id) {
         tree_tx
@@ -242,51 +243,4 @@ pub fn pack_tree(
         trace!("tree {} already packed", id);
     }
     Ok(id)
-}
-
-fn file_changed(
-    path: &Path,
-    metadata: &tree::NodeMetadata,
-    previous_node: Option<&tree::Node>,
-) -> bool {
-    assert!(!metadata.is_directory());
-
-    if previous_node.is_none() {
-        trace!("No previous node for {}", path.display());
-        return true;
-    }
-    let previous_node = previous_node.unwrap();
-    let previous_metadata = &previous_node.metadata;
-
-    if previous_metadata.is_directory() {
-        trace!(
-            "{} was a directory before and is a file now",
-            path.display()
-        );
-        return true;
-    }
-    if let tree::NodeContents::Directory { .. } = previous_node.contents {
-        // That's not right...
-        warn!("{}'s previous metadata has directory contents but flags say it was a file. Re-evaluating", path.display());
-        return true;
-    }
-
-    if metadata.modification_time() != previous_metadata.modification_time() {
-        trace!("{} was changed since its last backup", path.display());
-        return true;
-    }
-
-    if metadata.size() != previous_metadata.size() {
-        trace!(
-            "{} is a different size than it was last backup",
-            path.display()
-        );
-        return true;
-    }
-
-    trace!(
-        "{} matches its previous size and modification time. Reuse parent chunks",
-        path.display()
-    );
-    false
 }
