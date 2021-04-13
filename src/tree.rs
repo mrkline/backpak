@@ -48,7 +48,7 @@ impl NodeContents {
 }
 
 /// Backup-relevant metadata taken from a `stat()` call on a Posix system.
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PosixMetadata {
     mode: u32,
     size: u64,
@@ -62,9 +62,26 @@ pub struct PosixMetadata {
     change_time: DateTime<Utc>,
 }
 
+// We don't want to make or break metadata equivalence with access time -
+// just looking at a file means its metadata probably wouldn't match.
+
+impl PartialEq for PosixMetadata {
+    fn eq(&self, o: &Self) -> bool {
+        self.mode == o.mode &&
+            self.size == o.size &&
+            self.user_id == o.user_id &&
+            self.group_id == o.group_id &&
+            // Skip access time!
+            self.modify_time == o.modify_time &&
+            self.change_time == o.change_time
+    }
+}
+
+impl Eq for PosixMetadata {}
+
 /// Backup-relevant metadata taken from a `GetFileInformationByHandle` call
 /// on Windows.
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WindowsMetadata {
     attributes: u32,
     size: u64,
@@ -75,6 +92,18 @@ pub struct WindowsMetadata {
     #[serde(with = "prettify::date_time_option")]
     write_time: Option<DateTime<Utc>>,
 }
+
+impl PartialEq for WindowsMetadata {
+    fn eq(&self, o: &Self) -> bool {
+        self.attributes == o.attributes &&
+            self.size == o.size &&
+            self.creation_time == o.creation_time &&
+            // Skip access time!
+            self.write_time == o.write_time
+    }
+}
+
+impl Eq for WindowsMetadata {}
 
 /// A file or directory's metadata - Windows or Posix.
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
