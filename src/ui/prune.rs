@@ -289,6 +289,9 @@ fn walk_tree(
                     }
                 }
             }
+            tree::NodeContents::Symlink { .. } => {
+                // Nothing to repack for symlinks.
+            }
             tree::NodeContents::Directory { subtree } => {
                 walk_tree(subtree, forest, reader, packed_blobs, backup)?
             }

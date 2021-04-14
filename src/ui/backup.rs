@@ -158,70 +158,93 @@ pub fn pack_tree(
 
         let metadata = tree::get_metadata(path)?;
 
-        let node = if metadata.is_directory() {
-            // Gather the dir entries in `path`, recurse into it,
-            // and add the subtree to the tree.
-            let subpaths = fs::read_dir(path)?
-                .map(|entry| entry.map(|e| e.path()))
-                .collect::<io::Result<BTreeSet<PathBuf>>>()
-                .with_context(|| format!("Failed iterating subdirectory {}", path.display()))?;
+        let node = match metadata.kind() {
+            tree::NodeType::Directory => {
+                // Gather the dir entries in `path`, recurse into it,
+                // and add the subtree to the tree.
+                let subpaths = fs::read_dir(path)?
+                    .map(|entry| entry.map(|e| e.path()))
+                    .collect::<io::Result<BTreeSet<PathBuf>>>()
+                    .with_context(|| format!("Failed iterating subdirectory {}", path.display()))?;
 
-            let previous_subtree = previous_node.and_then(|n| match &n.contents {
-                tree::NodeContents::Directory { subtree } => Some(subtree),
-                tree::NodeContents::File { .. } => {
-                    trace!("{} was a file, but is now a directory", path.display());
-                    None
+                let previous_subtree = previous_node.and_then(|n| match &n.contents {
+                    tree::NodeContents::Directory { subtree } => Some(subtree),
+                    tree::NodeContents::File { .. } => {
+                        trace!("{} was a file, but is now a directory", path.display());
+                        None
+                    }
+                    tree::NodeContents::Symlink { target } => {
+                        trace!(
+                            "{} was a file, but is now a symlink to {}",
+                            path.display(),
+                            target.display()
+                        );
+                        None
+                    }
+                });
+
+                let subtree: ObjectId = pack_tree(
+                    &subpaths,
+                    previous_subtree,
+                    previous_forest,
+                    packed_blobs,
+                    chunk_tx,
+                    tree_tx,
+                )
+                .with_context(|| format!("Failed to pack subdirectory {}", path.display()))?;
+                trace!(
+                    "{}{} packed as {}",
+                    path.display(),
+                    std::path::MAIN_SEPARATOR,
+                    subtree
+                );
+                info!("finished {}{}", path.display(), std::path::MAIN_SEPARATOR);
+
+                tree::Node {
+                    metadata,
+                    contents: tree::NodeContents::Directory { subtree },
                 }
-            });
-
-            let subtree: ObjectId = pack_tree(
-                &subpaths,
-                previous_subtree,
-                previous_forest,
-                packed_blobs,
-                chunk_tx,
-                tree_tx,
-            )
-            .with_context(|| format!("Failed to pack subdirectory {}", path.display()))?;
-            trace!(
-                "{}{} packed as {}",
-                path.display(),
-                std::path::MAIN_SEPARATOR,
-                subtree
-            );
-            info!("finished {}{}", path.display(), std::path::MAIN_SEPARATOR);
-
-            tree::Node {
-                metadata,
-                contents: tree::NodeContents::Directory { subtree },
             }
-        } else if !fs_tree::file_changed(path, &metadata, previous_node) {
-            info!("{:>8} {}", "skip", path.display());
+            tree::NodeType::Symlink => {
+                info!("{:>8} {}", "symlink", path.display());
 
-            tree::Node {
-                metadata,
-                contents: previous_node.unwrap().contents.clone(),
+                let target = fs::read_link(&path).context("Couldn't get symlink target")?;
+
+                tree::Node {
+                    metadata,
+                    contents: tree::NodeContents::Symlink { target },
+                }
             }
-        } else {
-            let chunks = chunk::chunk_file(&path)?;
+            tree::NodeType::File => {
+                if !fs_tree::file_changed(path, &metadata, previous_node) {
+                    info!("{:>8} {}", "skip", path.display());
 
-            let mut chunk_ids = Vec::new();
-            for chunk in chunks {
-                chunk_ids.push(chunk.id);
-
-                if packed_blobs.insert(chunk.id) {
-                    chunk_tx
-                        .send(chunk)
-                        .context("backup -> chunk packer channel exited early")?;
+                    tree::Node {
+                        metadata,
+                        contents: previous_node.unwrap().contents.clone(),
+                    }
                 } else {
-                    trace!("chunk {} already packed", chunk.id);
-                }
-            }
-            info!("{:>8} {}", "backup", path.display());
+                    let chunks = chunk::chunk_file(&path)?;
 
-            tree::Node {
-                metadata,
-                contents: tree::NodeContents::File { chunks: chunk_ids },
+                    let mut chunk_ids = Vec::new();
+                    for chunk in chunks {
+                        chunk_ids.push(chunk.id);
+
+                        if packed_blobs.insert(chunk.id) {
+                            chunk_tx
+                                .send(chunk)
+                                .context("backup -> chunk packer channel exited early")?;
+                        } else {
+                            trace!("chunk {} already packed", chunk.id);
+                        }
+                    }
+                    info!("{:>8} {}", "backup", path.display());
+
+                    tree::Node {
+                        metadata,
+                        contents: tree::NodeContents::File { chunks: chunk_ids },
+                    }
+                }
             }
         };
         ensure!(

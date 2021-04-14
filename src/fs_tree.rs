@@ -32,7 +32,7 @@ pub fn forest_from_fs(
 
         let metadata = tree::get_metadata(path)?;
 
-        let node = if metadata.is_directory() {
+        let node = if metadata.kind() == tree::NodeType::Directory {
             // Gather the dir entries in `path`, recurse into it,
             // and add the subtree to the tree.
             let subpaths = fs::read_dir(path)?
@@ -44,6 +44,14 @@ pub fn forest_from_fs(
                 tree::NodeContents::Directory { subtree } => Some(subtree),
                 tree::NodeContents::File { .. } => {
                     trace!("{} was a file, but is now a directory", path.display());
+                    None
+                }
+                tree::NodeContents::Symlink { target } => {
+                    trace!(
+                        "{} was a file, but is now a symlink to {}",
+                        path.display(),
+                        target.display()
+                    );
                     None
                 }
             });
@@ -106,17 +114,18 @@ pub fn file_changed(
     metadata: &tree::NodeMetadata,
     previous_node: Option<&tree::Node>,
 ) -> bool {
-    assert!(!metadata.is_directory());
+    assert_eq!(metadata.kind(), tree::NodeType::File);
 
     if previous_node.is_none() {
         trace!("No previous node for {}", path.display());
         return true;
     }
     let previous_node = previous_node.unwrap();
-    if previous_node.is_directory() {
+    if previous_node.kind() != metadata.kind() {
         trace!(
-            "{} was a directory before and is a file now",
-            path.display()
+            "{} was a {} before and is a file now",
+            path.display(),
+            format!("{:?}", previous_node.kind()).to_lowercase(),
         );
         return true;
     }

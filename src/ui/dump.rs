@@ -79,6 +79,9 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
                     current_tree_id = *subtree; // Continue our search.
                 }
             }
+            tree::NodeContents::Symlink { target } => {
+                dump_symlink(target, &path_so_far, &args.output)?;
+            }
             tree::NodeContents::File { chunks } => {
                 if is_last_component {
                     dump_file(&chunks, &cached_backend, &index, &blob_map, &args.output)?;
@@ -111,12 +114,24 @@ fn dump_dir(
             std::path::MAIN_SEPARATOR,
             path.display()
         )?;
-        // If it's a directory, write a trailing /
-        if node.is_directory() {
-            write!(writer, "{}", std::path::MAIN_SEPARATOR)?;
-        }
-        writeln!(writer)?;
+        match &node.contents {
+            tree::NodeContents::Directory { .. } => {
+                // If it's a directory, write a trailing /
+                writeln!(writer, "{}", std::path::MAIN_SEPARATOR)
+            }
+            tree::NodeContents::Symlink { target } => {
+                writeln!(writer, "-> {}", target.display())
+            }
+            tree::NodeContents::File { .. } => writeln!(writer),
+        }?;
     }
+    writer.flush()?;
+    Ok(())
+}
+
+fn dump_symlink(target: &Path, path_so_far: &Path, output_path: &Option<PathBuf>) -> Result<()> {
+    let mut writer = open_writer(output_path)?;
+    writeln!(writer, "{} -> {}", path_so_far.display(), target.display())?;
     writer.flush()?;
     Ok(())
 }

@@ -25,6 +25,7 @@ use crate::prettify;
 pub enum NodeContents {
     File { chunks: Vec<ObjectId> },
     Directory { subtree: ObjectId },
+    Symlink { target: PathBuf },
 }
 
 impl NodeContents {
@@ -34,7 +35,7 @@ impl NodeContents {
     pub fn chunks(&self) -> &[ObjectId] {
         match self {
             NodeContents::File { chunks } => chunks,
-            _ => panic!("Expected a file, got a directory"),
+            _ => panic!("Expected a file"),
         }
     }
 
@@ -42,7 +43,7 @@ impl NodeContents {
     pub fn subtree(&self) -> &ObjectId {
         match self {
             NodeContents::Directory { subtree } => subtree,
-            _ => panic!("Expected a directory, got a file"),
+            _ => panic!("Expected a directory"),
         }
     }
 }
@@ -113,16 +114,38 @@ pub enum NodeMetadata {
     Windows(WindowsMetadata),
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum NodeType {
+    File,
+    Directory,
+    Symlink,
+    // TODO: Unknown?
+}
+
 impl NodeMetadata {
-    pub fn is_directory(&self) -> bool {
+    pub fn kind(&self) -> NodeType {
         match self {
             NodeMetadata::Posix(p) => {
                 // man inode
-                (p.mode & 0o170000) == 0o0040000
+                let type_bits = p.mode & 0o170000;
+
+                if type_bits == 0o0120000 {
+                    NodeType::Symlink
+                } else if type_bits == 0o0040000 {
+                    NodeType::Directory
+                } else {
+                    NodeType::File
+                }
             }
             NodeMetadata::Windows(w) => {
                 // https://docs.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
-                (w.attributes & 0x10) != 0
+                if (w.attributes & 0x400) != 0 {
+                    NodeType::Symlink
+                } else if (w.attributes & 0x10) != 0 {
+                    NodeType::Directory
+                } else {
+                    NodeType::File
+                }
             }
         }
     }
@@ -147,7 +170,8 @@ impl NodeMetadata {
 pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
     use std::os::unix::fs::MetadataExt;
 
-    let meta = fs::metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
+    let meta =
+        fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
     let mode = meta.mode();
     let size = meta.size();
     let user_id = meta.uid();
@@ -171,7 +195,8 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
 pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
     use std::os::windows::fs::MetadataExt;
 
-    let meta = fs::metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
+    let meta =
+        fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
     let attributes = meta.file_attributes();
     let size = meta.file_size();
 
@@ -216,20 +241,24 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn is_directory(&self) -> bool {
+    pub fn kind(&self) -> NodeType {
         // Assert that the contents matches the metadata while we're at it.
         // We can be confident this won't be flipped by corruption since
         // we verify a Tree's hash when deserializing it,
         // AND we're confident that we don't screw it up when generating trees
         // in ui/backup.rs
         match &self.contents {
-            NodeContents::Directory { .. } => {
-                assert!(self.metadata.is_directory());
-                true
-            }
             NodeContents::File { .. } => {
-                assert!(!self.metadata.is_directory());
-                false
+                assert_eq!(self.metadata.kind(), NodeType::File);
+                NodeType::File
+            }
+            NodeContents::Directory { .. } => {
+                assert_eq!(self.metadata.kind(), NodeType::Directory);
+                NodeType::Directory
+            }
+            NodeContents::Symlink { .. } => {
+                assert_eq!(self.metadata.kind(), NodeType::Symlink);
+                NodeType::Symlink
             }
         }
     }
@@ -348,7 +377,7 @@ fn append_tree(
             NodeContents::Directory { subtree } => {
                 append_tree(subtree, forest, cache, stack_set)?;
             }
-            NodeContents::File { .. } => {}
+            NodeContents::File { .. } | NodeContents::Symlink { .. } => {}
         };
     }
 
@@ -384,11 +413,11 @@ pub fn chunks_in_tree(tree: &Tree) -> HashSet<&ObjectId> {
 }
 
 /// Return the slice of chunks in a file node,
-/// or an empty slice if `node` is a directory
+/// or an empty slice if `node` is a directory or symlink
 pub fn chunks_in_node(node: &Node) -> &[ObjectId] {
     match &node.contents {
-        NodeContents::Directory { .. } => &[],
         NodeContents::File { chunks, .. } => chunks,
+        NodeContents::Directory { .. } | NodeContents::Symlink { .. } => &[],
     }
 }
 

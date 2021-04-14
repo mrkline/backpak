@@ -15,6 +15,9 @@ pub fn print_node(prefix: &str, path: &Path, node: &tree::Node, forest: &tree::F
         tree::NodeContents::File { .. } => {
             println!();
         }
+        tree::NodeContents::Symlink { target } => {
+            println!(" -> {}", target.display());
+        }
     };
 }
 

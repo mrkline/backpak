@@ -108,19 +108,16 @@ pub fn compare_nodes(
     (node2, forest2): (&tree::Node, &tree::Forest),
     path: &Path,
 ) {
-    match (node1.is_directory(), node2.is_directory()) {
-        (false, false) => {
-            // Both are files.
+    match (node1.kind(), node2.kind()) {
+        (tree::NodeType::File, tree::NodeType::File) => {
             if node1.contents != node2.contents {
                 ls::print_node("M ", path, node1, &tree::Forest::new());
             } else if node1.metadata != node2.metadata {
-                // TODO: atime is being a PITA. Do we want it?
-                // Should we ignore it for diffing purposes?
                 // trace!("{:#?} != {:#?}", node1.metadata, node2.metadata);
                 ls::print_node("U ", path, node1, &tree::Forest::new());
             }
         }
-        (true, true) => {
+        (tree::NodeType::Directory, tree::NodeType::Directory) => {
             // Both are directories
             compare_trees(
                 (node1.contents.subtree(), forest1),
@@ -129,7 +126,7 @@ pub fn compare_nodes(
             );
         }
         _ => {
-            // If we changed from file to directory or directory to file,
+            // If we changed from one type to another,
             // just - the old and + the new
             ls::print_node("- ", &path, node1, forest1);
             ls::print_node("+ ", &path, node2, forest2);
