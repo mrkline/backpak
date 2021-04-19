@@ -57,8 +57,9 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         .map(backend::id_from_path)
         .collect::<Result<BTreeSet<ObjectId>>>()?;
 
-    debug!(
-        "Packs {} are entirely in use",
+    // We care much less about packs in use
+    trace!(
+        "Packs [{}] are entirely in use",
         reusable_packs
             .keys()
             .map(|id| id.to_string())
@@ -66,7 +67,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             .join(", ")
     );
     debug!(
-        "Packs {} could be repacked",
+        "Packs [{}] could be repacked",
         sparse_packs
             .keys()
             .map(|id| id.to_string())
@@ -74,7 +75,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             .join(", ")
     );
     debug!(
-        "Packs {} can be dropped",
+        "Packs [{}] can be dropped",
         droppable_packs
             .keys()
             .map(|id| id.to_string())
@@ -82,7 +83,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             .join(", ")
     );
     debug!(
-        "Indexes {} could be replaced",
+        "Indexes [{}] could be replaced",
         superseded
             .iter()
             .map(|id| id.to_string())
