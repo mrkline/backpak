@@ -31,7 +31,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let cached_backend = backend::open(repository)?;
 
-    let success = if args.to_forget == &["duplicates"] {
+    let success = if args.to_forget == ["duplicates"] {
         forget_duplicate_snapshots(&cached_backend, args.dry_run)?
     } else {
         forget_snapshot_list(&cached_backend, &args)
