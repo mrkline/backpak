@@ -1,3 +1,6 @@
+//! [uploads](upload) files ([packs](crate::pack), [indexes](crate::index),
+//! [snapshots](crate::snapshot)) to a [backend]
+
 use std::fs::File;
 use std::sync::mpsc::Receiver;
 

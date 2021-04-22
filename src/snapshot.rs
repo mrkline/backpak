@@ -1,3 +1,4 @@
+//! Build, read and write snapshots of the filesystem to create our backups
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;

@@ -1,3 +1,5 @@
+//! Uniquely ID and store directories and their metadata
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,7 +18,7 @@ use crate::index;
 use crate::pack;
 use crate::prettify;
 
-/// The contents of a file or directory.
+/// The contents of a directory entry (file, directory, symlink)
 ///
 /// Files have chunks, and a directory has a subtree representing
 /// everything in that subdirectory.
@@ -44,6 +46,14 @@ impl NodeContents {
         match self {
             NodeContents::Directory { subtree } => subtree,
             _ => panic!("Expected a directory"),
+        }
+    }
+
+    #[inline]
+    pub fn target(&self) -> &Path {
+        match self {
+            NodeContents::Symlink { target } => &target,
+            _ => panic!("Expected a symlink"),
         }
     }
 }
@@ -80,7 +90,7 @@ impl PartialEq for PosixMetadata {
 
 impl Eq for PosixMetadata {}
 
-/// Backup-relevant metadata taken from a `GetFileInformationByHandle` call
+/// Backup-relevant metadata taken from a `GetFileInformationByHandle()` call
 /// on Windows.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowsMetadata {
@@ -265,7 +275,7 @@ impl Node {
 }
 
 /// A tree represents a single directory of files (with contents),
-/// directories (with subtrees), and their metadata, addressed by name.
+/// directories (with subtrees), and their metadata, addressed by entry name.
 pub type Tree = BTreeMap<PathBuf, Node>;
 
 /// Serialize the tree into its on-disk CBOR representation and return its
@@ -279,7 +289,7 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
 /// A collection of trees (which can reference each other as subtrees),
 /// used to represent a directory hierarchy.
 ///
-/// We use a HashMap because we never serialize a whole forest to our backup,
+/// We use a HashMap because we never serialize a whole forest as a single object,
 /// so we'll take constant-time lookup over deterministic order.
 /// We use an Arc<Tree> so that a Forest can be used as a tree cache,
 /// doling out references to its trees.
@@ -287,7 +297,7 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
 /// trees in the forest.
 pub type Forest = HashMap<ObjectId, Arc<Tree>>;
 
-/// A read-through cache of trees that extracts them from packs as-needed.
+/// A read-through cache of trees that extracts them from packs on-demand
 pub struct Cache<'a> {
     /// The master index, used to look up a pack's manifest from its ID
     index: &'a index::Index,
@@ -295,7 +305,7 @@ pub struct Cache<'a> {
     /// Finds the pack that contains a given blob
     blob_to_pack_map: &'a index::BlobMap,
 
-    /// Gets packs as-needed from the backend.
+    /// Gets packs on-demand from the backend.
     pack_cache: &'a backend::CachedBackend,
 
     /// Our actual tree cache.

@@ -1,3 +1,5 @@
+//! Cut files into content-based chunks.
+
 use std::path::Path;
 use std::sync::Arc;
 
@@ -33,14 +35,14 @@ impl AsRef<[u8]> for FileSpan {
 
 pub type ChunkedFile = Vec<Blob>;
 
-/// Chunks a file into content-based chunks between 512kB and 2MB, aiming for 1MB.
+/// Cuts a file into content-based chunks between 512kB and 2MB, aiming for 1MB.
 ///
 /// Duplicati makes a convincing argument that heavyweight attempts to
 /// deduplicate data at the chunk level (as opposed to the file level) isn't
 /// worth your time
-/// (https://duplicati.readthedocs.io/en/latest/appendix-a-how-the-backup-process-works/#processing-similar-data)
+/// (<https://duplicati.readthedocs.io/en/latest/appendix-a-how-the-backup-process-works/#processing-similar-data>)
 /// whereas Restic uses content-based chunking
-/// (https://restic.readthedocs.io/en/latest/100_references.html#backups-and-deduplication).
+/// (<https://restic.readthedocs.io/en/latest/100_references.html#backups-and-deduplication>).
 ///
 /// Duplicati makes some convincing arguments
 /// (that the compression algorithm itself will help deduplicate things,
@@ -57,7 +59,7 @@ pub type ChunkedFile = Vec<Blob>;
 /// (almost) every chunk in the backup. So let's find one that works pretty well
 /// ASAP.
 ///
-/// See https://crates.io/crates/fastcdc
+/// See <https://crates.io/crates/fastcdc>
 pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
     const MIN_SIZE: usize = 1024 * 512;
     const TARGET_SIZE: usize = 1024 * 1024;

@@ -1,3 +1,5 @@
+//! Utilities for reading files into buffers and checking magic bytes.
+
 use std::io::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
@@ -36,6 +38,7 @@ impl LoadedFile {
     }
 }
 
+/// Reads an entire file if it's small enough, memory maps it otherwise.
 pub fn read_file(path: &Path) -> Result<Arc<LoadedFile>> {
     const MEGA: u64 = 1024 * 1024;
 

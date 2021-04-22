@@ -1,3 +1,5 @@
+//! Change the entire program's serialization scheme with this one weird trick!
+
 static mut PRETTIFY: bool = false;
 
 /// Indicate that various fields should be prettified for JSON output.

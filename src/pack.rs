@@ -1,3 +1,6 @@
+//! Build, read, and write compressed packs of [blobs](blob::Blob),
+//! suitable for storing in a [backend]
+
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};

@@ -1,4 +1,4 @@
-//! The backup machinery, decoupled from what needs to be backed up.
+//! Common backup machinery exposed as channel-chomping threads
 //!
 //! Various commands (backup, prune, etc.) can walk data, existing or new,
 //! and send them to this machinery.

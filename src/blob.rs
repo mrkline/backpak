@@ -1,3 +1,5 @@
+//! Defines [`Blob`], our fundamental unit of backup.
+
 use serde_derive::*;
 
 use crate::chunk::FileSpan;
@@ -14,6 +16,15 @@ pub struct Blob {
     pub id: ObjectId,
     /// Is the blob a chunk or a tree?
     pub kind: Type,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Type {
+    /// A chunk of a file.
+    Chunk,
+    /// File and directory metadata
+    Tree,
 }
 
 /// Either part of a loaded file or Vec[u8] buffer.
@@ -34,13 +45,4 @@ impl Blob {
             Contents::Span(s) => s.as_ref(),
         }
     }
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Type {
-    /// A chunk of a file.
-    Chunk,
-    /// File and directory metadata
-    Tree,
 }

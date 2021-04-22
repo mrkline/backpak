@@ -1,3 +1,5 @@
+//! Print [trees](crate::tree)
+
 use std::path::Path;
 
 use anyhow::*;

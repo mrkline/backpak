@@ -1,3 +1,5 @@
+//! Build, read, and write [indexes](Index) of packs' contents.
+
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
@@ -24,7 +26,7 @@ const WIP_NAME: &str = "backpak-wip.index";
 
 pub type PackMap = BTreeMap<ObjectId, PackManifest>;
 
-/// An index maps packs to the blobs they contain,
+/// Maps packs to the blobs they contain,
 /// and lists any previous indexes they supersede.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Index {

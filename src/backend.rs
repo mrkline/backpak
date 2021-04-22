@@ -1,3 +1,6 @@
+//! Places where we can make a backup repository - the local filesystem,
+//! (eventually) cloud hosts, etc.
+
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::prelude::*;

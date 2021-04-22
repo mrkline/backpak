@@ -1,3 +1,5 @@
+//! Tools for hashing everything we care about into a unique [`ObjectId`]
+
 use std::fmt;
 use std::io;
 use std::io::prelude::*;
@@ -12,6 +14,7 @@ pub struct ObjectId {
 }
 
 impl ObjectId {
+    /// Calculates an ID from the given bytes
     pub fn hash(bytes: &[u8]) -> Self {
         Self {
             digest: Sha224::digest(bytes),
@@ -22,6 +25,8 @@ impl ObjectId {
         Self { digest }
     }
 
+    /// Gets a git-like shortened version of the hash that's unique enough
+    /// for most UI uses.
     pub fn short_name(&self) -> String {
         let mut full = format!("{}", self);
         let _rest = full.split_off(8);
