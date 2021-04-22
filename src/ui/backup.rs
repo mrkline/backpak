@@ -1,6 +1,5 @@
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashSet};
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
 use std::sync::Arc;
@@ -68,8 +67,6 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     // TODO: Load WIP index and upload any existing packs
     // before we start new ones.
 
-    let mut packed_blobs = index::blob_set(&index)?;
-
     let mut backup =
         crate::backup::spawn_backup_threads(Arc::new(cached_backend), index::Index::default());
 
@@ -81,7 +78,10 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             .collect::<Vec<_>>()
             .join(", ")
     );
-    let root = pack_tree(
+
+    let mut packed_blobs = index::blob_set(&index)?;
+
+    let root = backup_tree(
         &paths,
         parent.map(|p| &p.tree),
         &parent_forest,
@@ -89,6 +89,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         &mut backup.chunk_tx,
         &mut backup.tree_tx,
     )?;
+    drop(parent_forest);
+    drop(packed_blobs);
     debug!("Root tree packed as {}", root);
 
     let author = match args.author {
@@ -137,7 +139,7 @@ fn parent_snapshot(
     parent.map(|(snap, _)| snap)
 }
 
-pub fn pack_tree(
+pub fn backup_tree(
     paths: &BTreeSet<PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
@@ -145,53 +147,19 @@ pub fn pack_tree(
     chunk_tx: &mut Sender<Blob>,
     tree_tx: &mut Sender<Blob>,
 ) -> Result<ObjectId> {
-    let mut tree = tree::Tree::new();
+    use fs_tree::DirectoryEntry;
 
-    let previous_tree = previous_tree.and_then(|id| previous_forest.get(&id));
+    // Both closures need to get at packed_blobs at some point...
+    let packed_blobs = RefCell::new(packed_blobs);
 
-    for path in paths {
-        let entry_name = path.file_name().expect("Given path ended in ..");
-
-        let previous_node = previous_tree
-            .as_ref()
-            .and_then(|tree| tree.get(Path::new(entry_name)));
-
-        let metadata = tree::get_metadata(path)?;
-
-        let node = match metadata.kind() {
-            tree::NodeType::Directory => {
-                // Gather the dir entries in `path`, recurse into it,
-                // and add the subtree to the tree.
-                let subpaths = fs::read_dir(path)?
-                    .map(|entry| entry.map(|e| e.path()))
-                    .collect::<io::Result<BTreeSet<PathBuf>>>()
-                    .with_context(|| format!("Failed iterating subdirectory {}", path.display()))?;
-
-                let previous_subtree = previous_node.and_then(|n| match &n.contents {
-                    tree::NodeContents::Directory { subtree } => Some(subtree),
-                    tree::NodeContents::File { .. } => {
-                        trace!("{} was a file, but is now a directory", path.display());
-                        None
-                    }
-                    tree::NodeContents::Symlink { target } => {
-                        trace!(
-                            "{} was a file, but is now a symlink to {}",
-                            path.display(),
-                            target.display()
-                        );
-                        None
-                    }
-                });
-
-                let subtree: ObjectId = pack_tree(
-                    &subpaths,
-                    previous_subtree,
-                    previous_forest,
-                    packed_blobs,
-                    chunk_tx,
-                    tree_tx,
-                )
-                .with_context(|| format!("Failed to pack subdirectory {}", path.display()))?;
+    let mut visit = |tree: &mut tree::Tree,
+                     path: &Path,
+                     metadata: tree::NodeMetadata,
+                     previous_node: Option<&tree::Node>,
+                     entry: DirectoryEntry<ObjectId>|
+     -> Result<()> {
+        let subnode = match entry {
+            DirectoryEntry::Directory(subtree) => {
                 trace!(
                     "{}{} packed as {}",
                     path.display(),
@@ -205,65 +173,75 @@ pub fn pack_tree(
                     contents: tree::NodeContents::Directory { subtree },
                 }
             }
-            tree::NodeType::Symlink => {
+            DirectoryEntry::Symlink { target } => {
                 info!("{:>8} {}", "symlink", path.display());
-
-                let target = fs::read_link(&path).context("Couldn't get symlink target")?;
 
                 tree::Node {
                     metadata,
                     contents: tree::NodeContents::Symlink { target },
                 }
             }
-            tree::NodeType::File => {
-                if !fs_tree::file_changed(path, &metadata, previous_node) {
-                    info!("{:>8} {}", "skip", path.display());
+            DirectoryEntry::UnchangedFile => {
+                info!("{:>8} {}", "skip", path.display());
 
-                    tree::Node {
-                        metadata,
-                        contents: previous_node.unwrap().contents.clone(),
+                tree::Node {
+                    metadata,
+                    contents: previous_node.unwrap().contents.clone(),
+                }
+            }
+            DirectoryEntry::ChangedFile => {
+                let chunks = chunk::chunk_file(&path)?;
+
+                let mut chunk_ids = Vec::new();
+                for chunk in chunks {
+                    chunk_ids.push(chunk.id);
+
+                    if packed_blobs.borrow_mut().insert(chunk.id) {
+                        chunk_tx
+                            .send(chunk)
+                            .context("backup -> chunk packer channel exited early")?;
+                    } else {
+                        trace!("chunk {} already packed", chunk.id);
                     }
-                } else {
-                    let chunks = chunk::chunk_file(&path)?;
+                }
+                info!("{:>8} {}", "backup", path.display());
 
-                    let mut chunk_ids = Vec::new();
-                    for chunk in chunks {
-                        chunk_ids.push(chunk.id);
-
-                        if packed_blobs.insert(chunk.id) {
-                            chunk_tx
-                                .send(chunk)
-                                .context("backup -> chunk packer channel exited early")?;
-                        } else {
-                            trace!("chunk {} already packed", chunk.id);
-                        }
-                    }
-                    info!("{:>8} {}", "backup", path.display());
-
-                    tree::Node {
-                        metadata,
-                        contents: tree::NodeContents::File { chunks: chunk_ids },
-                    }
+                tree::Node {
+                    metadata,
+                    contents: tree::NodeContents::File { chunks: chunk_ids },
                 }
             }
         };
         ensure!(
-            tree.insert(PathBuf::from(entry_name), node).is_none(),
+            tree.insert(PathBuf::from(path.file_name().unwrap()), subnode)
+                .is_none(),
             "Duplicate tree entries"
         );
-    }
-    let (bytes, id) = tree::serialize_and_hash(&tree)?;
+        Ok(())
+    };
 
-    if packed_blobs.insert(id) {
-        tree_tx
-            .send(Blob {
-                contents: blob::Contents::Buffer(bytes),
-                id,
-                kind: blob::Type::Tree,
-            })
-            .context("backup -> tree packer channel exited early")?;
-    } else {
-        trace!("tree {} already packed", id);
-    }
-    Ok(id)
+    let mut finalize = |tree: tree::Tree| -> Result<ObjectId> {
+        let (bytes, id) = tree::serialize_and_hash(&tree)?;
+
+        if packed_blobs.borrow_mut().insert(id) {
+            tree_tx
+                .send(Blob {
+                    contents: blob::Contents::Buffer(bytes),
+                    id,
+                    kind: blob::Type::Tree,
+                })
+                .context("backup -> tree packer channel exited early")?;
+        } else {
+            trace!("tree {} already packed", id);
+        }
+        Ok(id)
+    };
+
+    fs_tree::walk_fs(
+        paths,
+        previous_tree,
+        previous_forest,
+        &mut visit,
+        &mut finalize,
+    )
 }
