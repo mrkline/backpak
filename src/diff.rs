@@ -2,16 +2,36 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use anyhow::*;
+use log::*;
 
 use crate::hashing::ObjectId;
 use crate::tree::{Forest, Node, NodeType, Tree};
 
 pub trait Callbacks {
-    fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest);
-    fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest);
-    fn contents_changed(&mut self, node_path: &Path, node: &Node);
-    fn metadata_changed(&mut self, node_path: &Path, node: &Node);
-    fn nothing_changed(&mut self, _node_path: &Path, _node: &Node) {}
+    /// A tree node with the given path was added
+    fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()>;
+
+    /// A tree node at the given path was removed
+    fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest) -> Result<()>;
+
+    /// The contents of a file or symlink changed (not called on directories).
+    /// Presume metadata also changed.
+    fn contents_changed(
+        &mut self,
+        node_path: &Path,
+        old_node: &Node,
+        new_node: &Node,
+    ) -> Result<()>;
+
+    /// A node's metadata was changed.
+    fn metadata_changed(&mut self, node_path: &Path, node: &Node) -> Result<()>;
+
+    /// A node didn't change.
+    fn nothing_changed(&mut self, _node_path: &Path, _node: &Node) -> Result<()> {
+        Ok(())
+    }
+
+    /// Called when the type of a node changed.
     fn type_changed(
         &mut self,
         node_path: &Path,
@@ -19,7 +39,7 @@ pub trait Callbacks {
         old_forest: &Forest,
         new_node: &Node,
         new_forest: &Forest,
-    );
+    ) -> Result<()>;
 }
 
 pub fn compare_trees(
@@ -48,8 +68,10 @@ pub fn compare_trees(
             (Some(old_node), None) => callbacks.node_removed(&node_path, old_node, forest1),
             (Some(l), Some(r)) => {
                 compare_nodes((l, forest1), (r, forest2), &node_path, callbacks);
+                Ok(())
             }
-        };
+        }
+        .unwrap_or_else(|e| error!("{:?}", e));
     }
 }
 
@@ -60,27 +82,46 @@ pub fn compare_nodes(
     callbacks: &mut dyn Callbacks,
 ) {
     match (node1.kind(), node2.kind()) {
-        (NodeType::File, NodeType::File) => {
+        (NodeType::File, NodeType::File) | (NodeType::Symlink, NodeType::Symlink) => {
             if node1.contents != node2.contents {
-                callbacks.contents_changed(path, node1);
+                callbacks.contents_changed(path, node1, node2)
             } else if node1.metadata != node2.metadata {
                 // trace!("{:#?} != {:#?}", node1.metadata, node2.metadata);
-                callbacks.metadata_changed(path, node1);
+                callbacks.metadata_changed(path, node2)
             } else {
-                callbacks.nothing_changed(path, node1);
+                callbacks.nothing_changed(path, node2)
             }
+            .unwrap_or_else(|e| error!("{:?}", e));
         }
         (NodeType::Directory, NodeType::Directory) => {
+            let mut changed = false;
             // Both are directories
-            compare_trees(
-                (node1.contents.subtree(), forest1),
-                (node2.contents.subtree(), forest2),
-                path,
-                callbacks,
-            );
+            if node1.contents != node2.contents {
+                compare_trees(
+                    (node1.contents.subtree(), forest1),
+                    (node2.contents.subtree(), forest2),
+                    path,
+                    callbacks,
+                );
+                changed = true;
+            }
+            if node1.metadata != node2.metadata {
+                // trace!("{:#?} != {:#?}", node1.metadata, node2.metadata);
+                callbacks
+                    .metadata_changed(path, node1)
+                    .unwrap_or_else(|e| error!("{:?}", e));
+                changed = true;
+            }
+            if !changed {
+                callbacks
+                    .nothing_changed(path, node1)
+                    .unwrap_or_else(|e| error!("{:?}", e));
+            }
         }
         _ => {
-            callbacks.type_changed(&path, node1, forest1, node2, forest2);
+            callbacks
+                .type_changed(&path, node1, forest1, node2, forest2)
+                .unwrap_or_else(|e| error!("{:?}", e));
         }
     }
 }

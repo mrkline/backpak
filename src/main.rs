@@ -57,6 +57,7 @@ enum Subcommand {
     Forget(forget::Args),
     Ls(ls::Args),
     Prune(prune::Args),
+    Restore(restore::Args),
     /// List the snapshots in this repository
     Snapshots,
     /// Build a new index from all existing packs
@@ -88,6 +89,7 @@ fn run() -> Result<()> {
         Subcommand::Forget(f) => forget::run(&args.repository, f),
         Subcommand::Ls(l) => ls::run(&args.repository, l),
         Subcommand::Prune(p) => prune::run(&args.repository, p),
+        Subcommand::Restore(r) => restore::run(&args.repository, r),
         Subcommand::Snapshots => snapshots::run(&args.repository),
         Subcommand::RebuildIndex => rebuild_index::run(&args.repository),
     }?;
@@ -140,5 +142,6 @@ fn init_logger(args: &Args) {
         TermLogger::init(level, config.clone(), TerminalMode::Stderr, color)
             .or_else(|_| SimpleLogger::init(level, config))
             .context("Couldn't init logger")
-    }.unwrap()
+    }
+    .unwrap()
 }

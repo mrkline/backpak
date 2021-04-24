@@ -8,4 +8,5 @@ pub mod init;
 pub mod ls;
 pub mod prune;
 pub mod rebuild_index;
+pub mod restore;
 pub mod snapshots;

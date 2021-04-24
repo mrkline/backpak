@@ -11,11 +11,9 @@ use crate::hashing::ObjectId;
 use crate::index;
 use crate::ls;
 use crate::snapshot;
-use crate::tree::{self, Forest, Node};
+use crate::tree::{self, Forest, Node, NodeType};
 
-/// Compare two snapshots
-///
-/// TODO: Compare snapshots to a path!
+/// Compare two snapshots, or a snapshot to the current tree
 #[derive(Debug, StructOpt)]
 pub struct Args {
     first_snapshot: String,
@@ -77,20 +75,37 @@ fn load_snapshot2_or_paths(
 struct PrintDiffs {}
 
 impl diff::Callbacks for PrintDiffs {
-    fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) {
-        ls::print_node("+ ", &node_path, new_node, forest)
+    fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()> {
+        ls::print_node("+ ", &node_path, new_node, ls::Recurse::Yes(forest));
+        Ok(())
     }
 
-    fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest) {
-        ls::print_node("- ", &node_path, old_node, forest)
+    fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest) -> Result<()> {
+        ls::print_node("- ", &node_path, old_node, ls::Recurse::Yes(forest));
+        Ok(())
     }
 
-    fn contents_changed(&mut self, node_path: &Path, node: &Node) {
-        ls::print_node("M ", node_path, node, &tree::Forest::new());
+    fn contents_changed(
+        &mut self,
+        node_path: &Path,
+        old_node: &Node,
+        new_node: &Node,
+    ) -> Result<()> {
+        assert!(old_node.kind() == NodeType::File || old_node.kind() == NodeType::Symlink);
+        assert_eq!(old_node.kind(), new_node.kind());
+
+        if old_node.kind() == NodeType::Symlink {
+            ls::print_node("- ", node_path, old_node, ls::Recurse::No);
+            ls::print_node("+ ", node_path, new_node, ls::Recurse::No);
+        } else {
+            ls::print_node("M ", node_path, old_node, ls::Recurse::No);
+        }
+        Ok(())
     }
 
-    fn metadata_changed(&mut self, node_path: &Path, node: &Node) {
-        ls::print_node("U ", node_path, node, &tree::Forest::new());
+    fn metadata_changed(&mut self, node_path: &Path, node: &Node) -> Result<()> {
+        ls::print_node("U ", node_path, node, ls::Recurse::No);
+        Ok(())
     }
 
     fn type_changed(
@@ -100,10 +115,11 @@ impl diff::Callbacks for PrintDiffs {
         old_forest: &Forest,
         new_node: &Node,
         new_forest: &Forest,
-    ) {
+    ) -> Result<()> {
         // If we changed from one type to another,
         // just - the old and + the new
-        ls::print_node("- ", &node_path, old_node, old_forest);
-        ls::print_node("+ ", &node_path, new_node, new_forest);
+        ls::print_node("- ", &node_path, old_node, ls::Recurse::Yes(old_forest));
+        ls::print_node("+ ", &node_path, new_node, ls::Recurse::Yes(new_forest));
+        Ok(())
     }
 }

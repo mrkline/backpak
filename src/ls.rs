@@ -7,12 +7,19 @@ use anyhow::*;
 use crate::hashing::ObjectId;
 use crate::tree;
 
-pub fn print_node(prefix: &str, path: &Path, node: &tree::Node, forest: &tree::Forest) {
+pub enum Recurse<'a> {
+    Yes(&'a tree::Forest),
+    No,
+}
+
+pub fn print_node(prefix: &str, path: &Path, node: &tree::Node, should_recurse: Recurse) {
     print!("{}{}", prefix, path.display());
     match &node.contents {
         tree::NodeContents::Directory { subtree } => {
             println!("{}", std::path::MAIN_SEPARATOR);
-            print_tree(prefix, &path, subtree, forest);
+            if let Recurse::Yes(forest) = should_recurse {
+                print_tree(prefix, &path, subtree, forest);
+            }
         }
         tree::NodeContents::File { .. } => {
             println!();
@@ -32,6 +39,6 @@ pub fn print_tree(prefix: &str, tree_path: &Path, tree_id: &ObjectId, forest: &t
     for (path, node) in tree {
         let mut node_path = tree_path.to_owned();
         node_path.push(path);
-        print_node(prefix, &node_path, node, forest);
+        print_node(prefix, &node_path, node, Recurse::Yes(forest));
     }
 }
