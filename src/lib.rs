@@ -3,6 +3,7 @@ pub mod backup;
 pub mod blob;
 pub mod chunk;
 pub mod counters;
+pub mod diff;
 pub mod file_util;
 pub mod fs_tree;
 pub mod hashing;

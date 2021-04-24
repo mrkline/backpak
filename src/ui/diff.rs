@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use anyhow::*;
@@ -6,12 +5,13 @@ use log::*;
 use structopt::StructOpt;
 
 use crate::backend;
+use crate::diff;
 use crate::fs_tree;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::ls;
 use crate::snapshot;
-use crate::tree;
+use crate::tree::{self, Forest, Node};
 
 /// Compare two snapshots
 ///
@@ -40,10 +40,11 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         &mut tree_cache,
     )?;
 
-    compare_trees(
+    diff::compare_trees(
         (&snapshot1.tree, &snapshot1_forest),
         (&id2, &forest2),
         Path::new(""),
+        &mut PrintDiffs {},
     );
 
     Ok(())
@@ -73,63 +74,36 @@ fn load_snapshot2_or_paths(
     }
 }
 
-fn compare_trees(
-    (id1, forest1): (&ObjectId, &tree::Forest),
-    (id2, forest2): (&ObjectId, &tree::Forest),
-    tree_path: &Path,
-) {
-    let tree1: &tree::Tree = forest1
-        .get(id1)
-        .ok_or_else(|| anyhow!("Missing tree {}", id1))
-        .unwrap();
+struct PrintDiffs {}
 
-    let tree2: &tree::Tree = forest2
-        .get(id2)
-        .ok_or_else(|| anyhow!("Missing tree {}", id2))
-        .unwrap();
-
-    let all_paths = tree1.keys().chain(tree2.keys()).collect::<BTreeSet<_>>();
-    for path in all_paths {
-        let mut node_path = tree_path.to_owned();
-        node_path.push(path);
-        match (tree1.get(path), tree2.get(path)) {
-            (None, None) => unreachable!(),
-            (None, Some(new_node)) => ls::print_node("+ ", &node_path, new_node, forest2),
-            (Some(old_node), None) => ls::print_node("- ", &node_path, old_node, forest1),
-            (Some(l), Some(r)) => {
-                compare_nodes((l, forest1), (r, forest2), &node_path);
-            }
-        };
+impl diff::Callbacks for PrintDiffs {
+    fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) {
+        ls::print_node("+ ", &node_path, new_node, forest)
     }
-}
 
-pub fn compare_nodes(
-    (node1, forest1): (&tree::Node, &tree::Forest),
-    (node2, forest2): (&tree::Node, &tree::Forest),
-    path: &Path,
-) {
-    match (node1.kind(), node2.kind()) {
-        (tree::NodeType::File, tree::NodeType::File) => {
-            if node1.contents != node2.contents {
-                ls::print_node("M ", path, node1, &tree::Forest::new());
-            } else if node1.metadata != node2.metadata {
-                // trace!("{:#?} != {:#?}", node1.metadata, node2.metadata);
-                ls::print_node("U ", path, node1, &tree::Forest::new());
-            }
-        }
-        (tree::NodeType::Directory, tree::NodeType::Directory) => {
-            // Both are directories
-            compare_trees(
-                (node1.contents.subtree(), forest1),
-                (node2.contents.subtree(), forest2),
-                path,
-            );
-        }
-        _ => {
-            // If we changed from one type to another,
-            // just - the old and + the new
-            ls::print_node("- ", &path, node1, forest1);
-            ls::print_node("+ ", &path, node2, forest2);
-        }
+    fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest) {
+        ls::print_node("- ", &node_path, old_node, forest)
+    }
+
+    fn contents_changed(&mut self, node_path: &Path, node: &Node) {
+        ls::print_node("M ", node_path, node, &tree::Forest::new());
+    }
+
+    fn metadata_changed(&mut self, node_path: &Path, node: &Node) {
+        ls::print_node("U ", node_path, node, &tree::Forest::new());
+    }
+
+    fn type_changed(
+        &mut self,
+        node_path: &Path,
+        old_node: &Node,
+        old_forest: &Forest,
+        new_node: &Node,
+        new_forest: &Forest,
+    ) {
+        // If we changed from one type to another,
+        // just - the old and + the new
+        ls::print_node("- ", &node_path, old_node, old_forest);
+        ls::print_node("+ ", &node_path, new_node, new_forest);
     }
 }
