@@ -63,9 +63,16 @@ enum Subcommand {
     RebuildIndex,
 }
 
-fn main() -> Result<()> {
+fn main() {
+    run().unwrap_or_else(|e| {
+        log::error!("{:?}", e);
+        std::process::exit(1);
+    });
+}
+
+fn run() -> Result<()> {
     let args = Args::from_args();
-    init_logger(&args)?;
+    init_logger(&args);
 
     if let Some(dir) = &args.working_directory {
         std::env::set_current_dir(dir).expect("Couldn't change working directory");
@@ -90,7 +97,7 @@ fn main() -> Result<()> {
 }
 
 /// Set up simplelog to spit messages to stderr.
-fn init_logger(args: &Args) -> Result<()> {
+fn init_logger(args: &Args) {
     let mut builder = ConfigBuilder::new();
     builder.set_target_level(LevelFilter::Off);
     builder.set_thread_level(LevelFilter::Off);
@@ -133,5 +140,5 @@ fn init_logger(args: &Args) -> Result<()> {
         TermLogger::init(level, config.clone(), TerminalMode::Stderr, color)
             .or_else(|_| SimpleLogger::init(level, config))
             .context("Couldn't init logger")
-    }
+    }.unwrap()
 }
