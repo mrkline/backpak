@@ -195,9 +195,12 @@ pub fn forest_from_fs(
                     contents: tree::NodeContents::Directory { subtree },
                 }
             }
-            DirectoryEntry::Symlink { .. } => {
-                // Nothing to do for symlinks; they're already part of the tree.
-                return Ok(());
+            DirectoryEntry::Symlink { target } => {
+                info!("{:>8} {}", "symlink", path.display());
+                tree::Node {
+                    metadata,
+                    contents: tree::NodeContents::Symlink { target },
+                }
             }
             DirectoryEntry::UnchangedFile => {
                 info!("{:>8} {}", "skip", path.display());
