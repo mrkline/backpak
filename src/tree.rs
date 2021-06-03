@@ -195,9 +195,9 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
         size,
         user_id,
         group_id,
-        change_time,
         access_time,
         modify_time,
+        change_time,
     }))
 }
 
