@@ -45,8 +45,10 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let (fs_id, fs_forest) = load_fs_tree(&id, &snapshot, &snapshot_forest, &args.output)?;
 
+    let metadata = args.times || args.atimes;
+
     let mut res = Restorer {
-        printer: Default::default(),
+        printer: super::diff::PrintDiffs { metadata },
         dry_run: args.dry_run,
         delete: args.delete,
         restore_times: args.times,

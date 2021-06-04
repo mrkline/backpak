@@ -16,6 +16,9 @@ use crate::tree::{self, Forest, Node, NodeType};
 /// Compare two snapshots, or a snapshot to the current tree
 #[derive(Debug, StructOpt)]
 pub struct Args {
+    #[structopt(short, long)]
+    metadata: bool,
+
     first_snapshot: String,
     second_snapshot: Option<String>,
 }
@@ -42,7 +45,9 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         (&snapshot1.tree, &snapshot1_forest),
         (&id2, &forest2),
         Path::new(""),
-        &mut PrintDiffs {},
+        &mut PrintDiffs {
+            metadata: args.metadata,
+        },
     );
 
     Ok(())
@@ -73,7 +78,9 @@ fn load_snapshot2_or_paths(
 }
 
 #[derive(Debug, Default)]
-pub struct PrintDiffs {}
+pub struct PrintDiffs {
+    pub metadata: bool,
+}
 
 impl diff::Callbacks for PrintDiffs {
     fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()> {
@@ -105,7 +112,9 @@ impl diff::Callbacks for PrintDiffs {
     }
 
     fn metadata_changed(&mut self, node_path: &Path, node: &Node) -> Result<()> {
-        ls::print_node("U ", node_path, node, ls::Recurse::No);
+        if self.metadata {
+            ls::print_node("U ", node_path, node, ls::Recurse::No);
+        }
         Ok(())
     }
 
