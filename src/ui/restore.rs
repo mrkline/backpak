@@ -9,9 +9,8 @@ use crate::diff;
 use crate::fs_tree;
 use crate::hashing::ObjectId;
 use crate::index;
-use crate::ls;
 use crate::snapshot;
-use crate::tree::{self, Forest, Node, NodeType};
+use crate::tree::{self, Forest, Node};
 
 /// Compare two snapshots
 #[derive(Debug, StructOpt)]
@@ -22,6 +21,7 @@ pub struct Args {
     #[structopt(short = "n", long)]
     dry_run: bool,
 
+    // Args based on rsync's
     #[structopt(short, long)]
     delete: bool,
 
@@ -46,6 +46,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let (fs_id, fs_forest) = load_fs_tree(&id, &snapshot, &snapshot_forest, &args.output)?;
 
     let mut res = Restorer {
+        printer: Default::default(),
         dry_run: args.dry_run,
         delete: args.delete,
         restore_times: args.times,
@@ -98,6 +99,7 @@ fn load_fs_tree(
 
 #[derive(Debug)]
 struct Restorer {
+    printer: super::diff::PrintDiffs,
     dry_run: bool,
     delete: bool,
     restore_times: bool,
@@ -106,7 +108,7 @@ struct Restorer {
 
 impl diff::Callbacks for Restorer {
     fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()> {
-        ls::print_node("+ ", &node_path, new_node, ls::Recurse::Yes(forest));
+        self.printer.node_added(node_path, new_node, forest)?;
 
         if self.dry_run {
             return Ok(());
@@ -118,7 +120,7 @@ impl diff::Callbacks for Restorer {
         if !self.delete {
             return Ok(());
         }
-        ls::print_node("- ", node_path, old_node, ls::Recurse::Yes(forest));
+        self.printer.node_removed(node_path, old_node, forest)?;
 
         if self.dry_run {
             return Ok(());
@@ -132,15 +134,8 @@ impl diff::Callbacks for Restorer {
         old_node: &Node,
         new_node: &Node,
     ) -> Result<()> {
-        assert!(old_node.kind() == NodeType::File || old_node.kind() == NodeType::Symlink);
-        assert_eq!(old_node.kind(), new_node.kind());
-
-        if old_node.kind() == NodeType::Symlink {
-            ls::print_node("- ", node_path, old_node, ls::Recurse::No);
-            ls::print_node("+ ", node_path, new_node, ls::Recurse::No);
-        } else {
-            ls::print_node("M ", node_path, old_node, ls::Recurse::No);
-        }
+        self.printer
+            .contents_changed(node_path, old_node, new_node)?;
 
         if self.dry_run {
             return Ok(());
@@ -149,7 +144,7 @@ impl diff::Callbacks for Restorer {
     }
 
     fn metadata_changed(&mut self, node_path: &Path, node: &Node) -> Result<()> {
-        ls::print_node("U ", node_path, node, ls::Recurse::No);
+        self.printer.metadata_changed(node_path, node)?;
 
         if self.dry_run {
             return Ok(());
@@ -165,8 +160,8 @@ impl diff::Callbacks for Restorer {
         new_node: &Node,
         new_forest: &Forest,
     ) -> Result<()> {
-        ls::print_node("- ", &node_path, old_node, ls::Recurse::Yes(old_forest));
-        ls::print_node("+ ", &node_path, new_node, ls::Recurse::Yes(new_forest));
+        self.printer
+            .type_changed(node_path, old_node, old_forest, new_node, new_forest)?;
 
         if self.dry_run {
             return Ok(());

@@ -72,7 +72,8 @@ fn load_snapshot2_or_paths(
     }
 }
 
-struct PrintDiffs {}
+#[derive(Debug, Default)]
+pub struct PrintDiffs {}
 
 impl diff::Callbacks for PrintDiffs {
     fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()> {
