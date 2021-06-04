@@ -1,3 +1,5 @@
+use std::fs;
+
 use anyhow::*;
 use tempfile::tempdir;
 
@@ -21,6 +23,19 @@ fn backup_src() -> Result<()> {
         .arg("init")
         .assert()
         .success();
+
+    // We don't currently allow backups of directories with matching names.
+    // (It would complicated the hell out of path mapping for questionable gain.)
+    fs::create_dir(working_path.join("src"))?;
+    let failed_run = cli_run(working_path, backup_path)?
+        .arg("backup")
+        .arg(project_dir.join("src"))
+        .arg(working_path.join("src"))
+        .assert()
+        .failure();
+    assert!(stderr(&failed_run)
+        .contains("Backups of directories with matching names (src/) isn't currently supported"));
+    fs::remove_dir(working_path.join("src"))?;
 
     // Let's backup our own code, and the test references.
     cli_run(working_path, backup_path)?

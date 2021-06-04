@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashSet};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
 use std::sync::Arc;
@@ -45,6 +46,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
                 .with_context(|| format!("Couldn't canonicalize {}", p.display()))
         })
         .collect::<Result<BTreeSet<PathBuf>>>()?;
+
+    reject_matching_directories(&paths)?;
 
     let cached_backend = backend::open(repository)?;
 
@@ -122,6 +125,20 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     drop(backup.tree_tx);
 
     backup.threads.join().unwrap()
+}
+
+fn reject_matching_directories(paths: &BTreeSet<PathBuf>) -> Result<()> {
+    let mut dirnames: HashSet<&OsStr> = HashSet::with_capacity(paths.len());
+    for path in paths {
+        let dirname = path.file_name().expect("empty path");
+        if !dirnames.insert(dirname) {
+            bail!(
+                "Backups of directories with matching names ({}/) isn't currently supported",
+                dirname.to_string_lossy()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn parent_snapshot(
