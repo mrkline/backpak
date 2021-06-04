@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::*;
 use log::*;
@@ -10,7 +13,7 @@ use crate::fs_tree;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::snapshot;
-use crate::tree::{self, Forest, Node};
+use crate::tree::{self, Forest, Node, NodeType};
 
 /// Compare two snapshots
 #[derive(Debug, StructOpt)]
@@ -31,6 +34,9 @@ pub struct Args {
     #[structopt(short = "U", long)]
     atimes: bool,
 
+    #[structopt(short, long)]
+    permissions: bool,
+
     restore_from: String,
 }
 
@@ -45,14 +51,11 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     let (fs_id, fs_forest) = load_fs_tree(&id, &snapshot, &snapshot_forest, &args.output)?;
 
-    let metadata = args.times || args.atimes;
+    let metadata = args.times || args.atimes || args.permissions;
 
     let mut res = Restorer {
         printer: super::diff::PrintDiffs { metadata },
-        dry_run: args.dry_run,
-        delete: args.delete,
-        restore_times: args.times,
-        restore_atimes: args.atimes,
+        args: &args,
         // Do we need to map top-level dirs to snapshot.paths when output is None,
         // so that we can restore to each source folder?
     };
@@ -100,32 +103,32 @@ fn load_fs_tree(
 }
 
 #[derive(Debug)]
-struct Restorer {
+struct Restorer<'a> {
     printer: super::diff::PrintDiffs,
-    dry_run: bool,
-    delete: bool,
-    restore_times: bool,
-    restore_atimes: bool,
+    args: &'a Args,
 }
 
-impl diff::Callbacks for Restorer {
+impl<'a> diff::Callbacks for Restorer<'a> {
     fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()> {
         self.printer.node_added(node_path, new_node, forest)?;
 
-        if self.dry_run {
+        if self.args.dry_run {
             return Ok(());
         }
         Ok(())
     }
 
     fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest) -> Result<()> {
-        if !self.delete {
+        if !self.args.delete {
             return Ok(());
         }
         self.printer.node_removed(node_path, old_node, forest)?;
 
-        if self.dry_run {
+        if self.args.dry_run {
             return Ok(());
+        }
+        if old_node.kind() == NodeType::Directory {
+            fs::remove_dir(node_path)?
         }
         Ok(())
     }
@@ -139,7 +142,7 @@ impl diff::Callbacks for Restorer {
         self.printer
             .contents_changed(node_path, old_node, new_node)?;
 
-        if self.dry_run {
+        if self.args.dry_run {
             return Ok(());
         }
         self.set_metadata(node_path, new_node)
@@ -148,7 +151,7 @@ impl diff::Callbacks for Restorer {
     fn metadata_changed(&mut self, node_path: &Path, node: &Node) -> Result<()> {
         self.printer.metadata_changed(node_path, node)?;
 
-        if self.dry_run {
+        if self.args.dry_run {
             return Ok(());
         }
         self.set_metadata(node_path, node)
@@ -165,7 +168,7 @@ impl diff::Callbacks for Restorer {
         self.printer
             .type_changed(node_path, old_node, old_forest, new_node, new_forest)?;
 
-        if self.dry_run {
+        if self.args.dry_run {
             return Ok(());
         }
 
@@ -176,12 +179,12 @@ impl diff::Callbacks for Restorer {
     }
 }
 
-impl Restorer {
+impl<'a> Restorer<'a> {
     fn set_metadata(&self, _node_path: &Path, _node: &Node) -> Result<()> {
-        if self.restore_times {
+        if self.args.times {
             todo!();
         }
-        if self.restore_atimes {
+        if self.args.atimes {
             todo!();
         }
         Ok(())
