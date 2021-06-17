@@ -65,22 +65,23 @@ fn backup_src() -> Result<()> {
         fs::Permissions::from_mode(0777),
     )?;
 
-    assert_eq!(
-        diffit().split("\n").collect::<Vec<_>>(),
-        &[
-            "+ src/aNewFile",
-            "- src/backend/",
-            "- src/backend/fs.rs",
-            "- src/backend/memory.rs",
-            "- src/diff.rs",
-            "M src/lib.rs",
-            "U src/main.rs",
-            "+ src/wackend/",
-            "+ src/wackend/fs.rs",
-            "+ src/wackend/memory.rs",
-            "U src/"
-        ]
-    );
+    let compare = |expected: &[&str]| {
+        assert_eq!(expected, diffit().split("\n").collect::<Vec<_>>());
+    };
+
+    compare(&[
+        "+ src/aNewFile",
+        "- src/backend/",
+        "- src/backend/fs.rs",
+        "- src/backend/memory.rs",
+        "- src/diff.rs",
+        "M src/lib.rs",
+        "U src/main.rs",
+        "+ src/wackend/",
+        "+ src/wackend/fs.rs",
+        "+ src/wackend/memory.rs",
+        "U src/",
+    ]);
 
     // Wipe the slate.
     cli_run(working_path, backup_path)?
@@ -95,10 +96,7 @@ fn backup_src() -> Result<()> {
     fs::remove_file(working_path.join("src/ls.rs"))?;
     unix::fs::symlink("/dev/null", working_path.join("src/ls.rs"))?;
 
-    assert_eq!(
-        diffit().split("\n").collect::<Vec<_>>(),
-        &["- src/ls.rs", "+ src/ls.rs -> /dev/null", "U src/"]
-    );
+    compare(&["- src/ls.rs", "+ src/ls.rs -> /dev/null", "U src/"]);
 
     // Wipe the slate.
     cli_run(working_path, backup_path)?
@@ -111,14 +109,11 @@ fn backup_src() -> Result<()> {
     fs::remove_file(working_path.join("src/ls.rs"))?;
     unix::fs::symlink("/dev/urandom", working_path.join("src/ls.rs"))?;
 
-    assert_eq!(
-        diffit().split("\n").collect::<Vec<_>>(),
-        &[
-            "- src/ls.rs -> /dev/null",
-            "+ src/ls.rs -> /dev/urandom",
-            "U src/"
-        ]
-    );
+    compare(&[
+        "- src/ls.rs -> /dev/null",
+        "+ src/ls.rs -> /dev/urandom",
+        "U src/",
+    ]);
 
     Ok(())
 }
