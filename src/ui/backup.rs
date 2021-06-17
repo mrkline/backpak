@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::*;
@@ -8,6 +8,7 @@ use std::sync::Arc;
 use anyhow::*;
 use chrono::prelude::*;
 use log::*;
+use rustc_hash::FxHashSet;
 use structopt::StructOpt;
 
 use crate::backend;
@@ -64,7 +65,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let parent_forest = parent
         .map(|p| tree::forest_from_root(&p.tree, &mut tree_cache))
         .transpose()?
-        .unwrap_or_else(tree::Forest::new);
+        .unwrap_or_else(tree::Forest::default);
     drop(tree_cache);
 
     // TODO: Load WIP index and upload any existing packs
@@ -128,7 +129,8 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 }
 
 fn reject_matching_directories(paths: &BTreeSet<PathBuf>) -> Result<()> {
-    let mut dirnames: HashSet<&OsStr> = HashSet::with_capacity(paths.len());
+    let mut dirnames: FxHashSet<&OsStr> =
+        FxHashSet::with_capacity_and_hasher(paths.len(), Default::default());
     for path in paths {
         let dirname = path.file_name().expect("empty path");
         if !dirnames.insert(dirname) {
@@ -160,7 +162,7 @@ pub fn backup_tree(
     paths: &BTreeSet<PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
-    packed_blobs: &mut HashSet<ObjectId>,
+    packed_blobs: &mut FxHashSet<ObjectId>,
     chunk_tx: &mut Sender<Blob>,
     tree_tx: &mut Sender<Blob>,
 ) -> Result<ObjectId> {

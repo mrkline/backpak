@@ -1,6 +1,6 @@
 //! Build, read, and write [indexes](Index) of packs' contents.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::sync::mpsc::{Receiver, SyncSender};
@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use anyhow::*;
 use log::*;
 use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::*;
 use tempfile::NamedTempFile;
 
@@ -225,12 +226,12 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
     })
 }
 
-pub type BlobMap = HashMap<ObjectId, ObjectId>;
+pub type BlobMap = FxHashMap<ObjectId, ObjectId>;
 
 /// Given an index, produce a mapping that relates blobs -> their packs
 pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap> {
     debug!("Building a blob -> pack map");
-    let mut mapping = HashMap::new();
+    let mut mapping = FxHashMap::default();
 
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {
@@ -249,9 +250,9 @@ pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap> {
 }
 
 /// Gather the set of all blobs in a given index.
-pub fn blob_set(index: &Index) -> Result<HashSet<ObjectId>> {
+pub fn blob_set(index: &Index) -> Result<FxHashSet<ObjectId>> {
     debug!("Building a set of all blobs");
-    let mut blobs = HashSet::new();
+    let mut blobs = FxHashSet::default();
 
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {

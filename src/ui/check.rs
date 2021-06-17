@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::*;
 use log::*;
 use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 use structopt::StructOpt;
 
 use crate::backend;
@@ -111,8 +111,8 @@ fn check_pack(
 fn map_chunks_to_snapshots(
     cached_backend: &backend::CachedBackend,
     tree_cache: &mut tree::Cache,
-) -> Result<HashMap<ObjectId, HashSet<ObjectId>>> {
-    let mut chunks_to_snapshots = HashMap::new();
+) -> Result<FxHashMap<ObjectId, FxHashSet<ObjectId>>> {
+    let mut chunks_to_snapshots = FxHashMap::default();
 
     for snapshot_path in cached_backend.list_snapshots()? {
         let snapshot_id = backend::id_from_path(&snapshot_path)?;
@@ -127,7 +127,7 @@ fn map_chunks_to_snapshots(
             for chunk in chunks {
                 let needed_by = chunks_to_snapshots
                     .entry(*chunk)
-                    .or_insert_with(HashSet::new);
+                    .or_insert_with(FxHashSet::default);
                 needed_by.insert(snapshot_id);
             }
         }

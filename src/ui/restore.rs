@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     ffi::OsStr,
     fs,
     path::{Path, PathBuf},
@@ -7,6 +6,7 @@ use std::{
 
 use anyhow::*;
 use log::*;
+use rustc_hash::FxHashMap;
 use structopt::StructOpt;
 
 use crate::{
@@ -76,7 +76,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 struct FsTreeAndMapping<'a> {
     fs_id: ObjectId,
     fs_forest: tree::Forest,
-    path_map: HashMap<&'a OsStr, PathBuf>,
+    path_map: FxHashMap<&'a OsStr, PathBuf>,
 }
 
 fn load_fs_tree_and_mapping<'a>(
@@ -85,7 +85,7 @@ fn load_fs_tree_and_mapping<'a>(
     snapshot_forest: &tree::Forest,
     restore_to: &Option<PathBuf>,
 ) -> Result<FsTreeAndMapping<'a>> {
-    let mut path_map = HashMap::with_capacity(snapshot.paths.len());
+    let mut path_map = FxHashMap::with_capacity_and_hasher(snapshot.paths.len(), Default::default());
 
     if let Some(to) = restore_to {
         info!("Comparing snapshot {} to {}", id, to.display());
@@ -135,7 +135,7 @@ fn load_fs_tree_and_mapping<'a>(
 #[derive(Debug)]
 struct Restorer<'a> {
     printer: super::diff::PrintDiffs,
-    path_map: HashMap<&'a OsStr, PathBuf>,
+    path_map: FxHashMap<&'a OsStr, PathBuf>,
     args: &'a Args,
 }
 

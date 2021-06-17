@@ -1,10 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::*;
 use log::*;
 use rayon::prelude::*;
+use rustc_hash::FxHashSet;
 use structopt::StructOpt;
 
 use crate::backend;
@@ -169,10 +170,10 @@ fn load_snapshots_and_forests(
 /// Collect all file chunks from the provided forests
 fn reachable_chunks<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
     forests: I,
-) -> HashSet<&'a ObjectId> {
+) -> FxHashSet<&'a ObjectId> {
     forests
         .map(|f| tree::chunks_in_forest(f))
-        .reduce(HashSet::new, |mut a, b| {
+        .reduce(FxHashSet::default, |mut a, b| {
             a.extend(b);
             a
         })
@@ -186,7 +187,7 @@ fn reachable_chunks<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
 fn partition_reusable_packs<'a>(
     index: &'a index::Index,
     snapshots_and_forests: &[SnapshotAndForest],
-    reachable_chunks: &HashSet<&ObjectId>,
+    reachable_chunks: &FxHashSet<&ObjectId>,
 ) -> (
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
@@ -209,7 +210,7 @@ fn partition_reusable_packs<'a>(
 fn partition_droppable_packs<'a>(
     packs_to_prune: &BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
     snapshots_and_forests: &[SnapshotAndForest],
-    reachable_chunks: &HashSet<&ObjectId>,
+    reachable_chunks: &FxHashSet<&ObjectId>,
 ) -> (
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
@@ -226,7 +227,7 @@ fn partition_droppable_packs<'a>(
 fn blob_is_reachable(
     blob: &ObjectId,
     snapshots_and_forests: &[SnapshotAndForest],
-    reachable_chunks: &HashSet<&ObjectId>,
+    reachable_chunks: &FxHashSet<&ObjectId>,
 ) -> bool {
     reachable_chunks.contains(blob)
         || snapshots_and_forests
@@ -238,7 +239,7 @@ fn blob_is_reachable(
 fn walk_snapshots(
     snapshots_and_forests: &[SnapshotAndForest],
     reader: &mut read::BlobReader,
-    packed_blobs: &mut HashSet<ObjectId>,
+    packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     for snapshot in snapshots_and_forests.iter().rev() {
@@ -250,7 +251,7 @@ fn walk_snapshots(
 fn walk_snapshot(
     snapshot_and_forest: &SnapshotAndForest,
     reader: &mut read::BlobReader,
-    packed_blobs: &mut HashSet<ObjectId>,
+    packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     debug!(
@@ -271,7 +272,7 @@ fn walk_tree(
     tree_id: &ObjectId,
     forest: &tree::Forest,
     reader: &mut read::BlobReader,
-    packed_blobs: &mut HashSet<ObjectId>,
+    packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     let tree: &tree::Tree = forest

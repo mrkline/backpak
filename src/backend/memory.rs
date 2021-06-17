@@ -1,14 +1,15 @@
 use super::*;
 
-use std::collections::HashMap;
 use std::io;
 use std::sync::Mutex;
+
+use rustc_hash::FxHashMap;
 
 /// A backend that stores everything as path-addressed buffers.
 ///
 /// Great for testing
 pub struct MemoryBackend {
-    files: Mutex<HashMap<String, Vec<u8>>>,
+    files: Mutex<FxHashMap<String, Vec<u8>>>,
 }
 
 impl Backend for MemoryBackend {

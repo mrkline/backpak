@@ -1,6 +1,6 @@
 //! Uniquely ID and store directories and their metadata
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,6 +9,7 @@ use anyhow::*;
 use chrono::prelude::*;
 use log::*;
 use rayon::prelude::*;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::*;
 
 use crate::backend;
@@ -289,13 +290,13 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
 /// A collection of trees (which can reference each other as subtrees),
 /// used to represent a directory hierarchy.
 ///
-/// We use a HashMap because we never serialize a whole forest as a single object,
+/// We use a FxHashMap because we never serialize a whole forest as a single object,
 /// so we'll take constant-time lookup over deterministic order.
 /// We use an Arc<Tree> so that a Forest can be used as a tree cache,
 /// doling out references to its trees.
 /// We use Arc and not Rc so that functions can operate in parallel on all
 /// trees in the forest.
-pub type Forest = HashMap<ObjectId, Arc<Tree>>;
+pub type Forest = FxHashMap<ObjectId, Arc<Tree>>;
 
 /// A read-through cache of trees that extracts them from packs on-demand
 pub struct Cache<'a> {
@@ -322,7 +323,7 @@ impl<'a> Cache<'a> {
             index,
             blob_to_pack_map,
             pack_cache,
-            tree_cache: Forest::new(),
+            tree_cache: Forest::default(),
         }
     }
 
@@ -362,8 +363,8 @@ impl<'a> Cache<'a> {
 /// Reads the given tree and all its subtrees from the given tree cache.
 pub fn forest_from_root(root: &ObjectId, cache: &mut Cache) -> Result<Forest> {
     trace!("Assembling tree from root {}", root);
-    let mut forest = Forest::new();
-    let mut stack_set = HashSet::new();
+    let mut forest = Forest::default();
+    let mut stack_set = FxHashSet::default();
     append_tree(root, &mut forest, cache, &mut stack_set)?;
     Ok(forest)
 }
@@ -372,7 +373,7 @@ fn append_tree(
     tree_id: &ObjectId,
     forest: &mut Forest,
     cache: &mut Cache,
-    stack_set: &mut HashSet<ObjectId>,
+    stack_set: &mut FxHashSet<ObjectId>,
 ) -> Result<()> {
     ensure!(
         stack_set.insert(*tree_id),
@@ -396,27 +397,27 @@ fn append_tree(
 }
 
 /// Collect the set of chunks for the files in the given forest
-pub fn chunks_in_forest(forest: &Forest) -> HashSet<&ObjectId> {
+pub fn chunks_in_forest(forest: &Forest) -> FxHashSet<&ObjectId> {
     forest
         .par_iter()
         .map(|(_id, tree)| chunks_in_tree(&*tree))
-        .reduce(HashSet::new, |mut a, b| {
+        .reduce(FxHashSet::default, |mut a, b| {
             a.extend(b);
             a
         })
 }
 
 /// Collect the set of chunks for the files the given tree
-pub fn chunks_in_tree(tree: &Tree) -> HashSet<&ObjectId> {
+pub fn chunks_in_tree(tree: &Tree) -> FxHashSet<&ObjectId> {
     tree.par_iter()
         .map(|(_, node)| chunks_in_node(node))
-        .fold_with(HashSet::new(), |mut set, node_chunks| {
+        .fold_with(FxHashSet::default(), |mut set, node_chunks| {
             for chunk in node_chunks {
                 set.insert(chunk);
             }
             set
         })
-        .reduce(HashSet::new, |mut a, b| {
+        .reduce(FxHashSet::default, |mut a, b| {
             a.extend(b);
             a
         })
