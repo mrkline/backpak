@@ -245,7 +245,7 @@ mod test {
         let uploader = spawn(async move {
             let mut num_packs = 0;
             while let Some((path, fh)) = upload_rx.recv().await {
-                backend.write(&path, fh)?;
+                backend.write(&path, fh).await?;
                 num_packs += 1;
             }
 

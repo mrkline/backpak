@@ -52,7 +52,7 @@ pub enum Subcommand {
     Snapshot { id_prefix: String },
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub async fn run(repository: &Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
@@ -61,7 +61,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
     match args.subcommand {
         Subcommand::Blob { id } => {
-            let index = index::build_master_index(&cached_backend)?;
+            let index = index::build_master_index(&cached_backend).await?;
             let blob_map = index::blob_to_pack_map(&index)?;
             let containing_pack_id = blob_map
                 .get(&id)
@@ -93,7 +93,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             serde_json::to_writer(io::stdout(), &index)?;
         }
         Subcommand::Snapshot { id_prefix } => {
-            let snapshot = snapshot::find_and_load(&id_prefix, &cached_backend)?;
+            let snapshot = snapshot::find_and_load(&id_prefix, &cached_backend).await?;
             serde_json::to_writer(io::stdout(), &snapshot)?;
         }
     }

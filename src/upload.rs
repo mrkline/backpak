@@ -12,7 +12,7 @@ pub async fn upload(
     mut rx: Receiver<(String, File)>,
 ) -> Result<()> {
     while let Some((path, fh)) = rx.recv().await {
-        cached_backend.write(&path, fh)?;
+        cached_backend.write(&path, fh).await?;
     }
     Ok(())
 }

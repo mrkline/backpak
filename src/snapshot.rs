@@ -73,11 +73,11 @@ fn from_reader<R: Read>(r: &mut R) -> Result<(Snapshot, ObjectId)> {
     Ok((snapshot, id))
 }
 
-pub fn find_and_load(
+pub async fn find_and_load(
     id_prefix: &str,
     cached_backend: &backend::CachedBackend,
 ) -> Result<(Snapshot, ObjectId)> {
-    let id = find(id_prefix, cached_backend)?;
+    let id = find(id_prefix, cached_backend).await?;
     Ok((load(&id, cached_backend)?, id))
 }
 
@@ -97,12 +97,13 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Sn
 }
 
 /// Load all snapshots from the given backend and sort them by date taken.
-pub fn load_chronologically(
+pub async fn load_chronologically(
     cached_backend: &crate::backend::CachedBackend,
 ) -> Result<Vec<(Snapshot, ObjectId)>> {
     debug!("Reading snapshots");
     let mut snapshots = cached_backend
-        .list_snapshots()?
+        .list_snapshots()
+        .await?
         .par_iter()
         .map(|file| {
             let snapshot_id = backend::id_from_path(&file)?;
@@ -114,9 +115,9 @@ pub fn load_chronologically(
     Ok(snapshots)
 }
 
-pub fn find(prefix: &str, cached_backend: &crate::backend::CachedBackend) -> Result<ObjectId> {
+pub async fn find(prefix: &str, cached_backend: &crate::backend::CachedBackend) -> Result<ObjectId> {
     if prefix == "last" {
-        match load_chronologically(cached_backend)?.iter().rev().next() {
+        match load_chronologically(cached_backend).await?.iter().rev().next() {
             None => bail!("No snapshots taken yet"),
             Some((_snap, id)) => return Ok(*id),
         }
@@ -128,7 +129,8 @@ pub fn find(prefix: &str, cached_backend: &crate::backend::CachedBackend) -> Res
     }
 
     let mut matches = cached_backend
-        .list_snapshots()?
+        .list_snapshots()
+        .await?
         .into_iter()
         .filter(|snap| {
             Path::new(snap)

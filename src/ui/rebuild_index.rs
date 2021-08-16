@@ -17,7 +17,8 @@ pub async fn run(repository: &Path) -> Result<()> {
     let cached_backend = backend::open(repository)?;
 
     let superseded = cached_backend
-        .list_indexes()?
+        .list_indexes()
+        .await?
         .iter()
         .map(backend::id_from_path)
         .collect::<Result<BTreeSet<ObjectId>>>()?;
@@ -28,7 +29,8 @@ pub async fn run(repository: &Path) -> Result<()> {
     info!("Reading all packs to build a new index");
 
     cached_backend
-        .list_packs()?
+        .list_packs()
+        .await?
         .par_iter()
         .try_for_each_with::<_, _, Result<()>>(pack_tx, |pack_tx, pack_file| {
             let id = backend::id_from_path(pack_file)?;
@@ -53,7 +55,7 @@ pub async fn run(repository: &Path) -> Result<()> {
     info!("Uploaded a new index; removing previous ones");
     for old_index in superseded {
         debug!("Removing {}", old_index);
-        cached_backend.remove_index(&old_index)?;
+        cached_backend.remove_index(&old_index).await?;
     }
 
     Ok(())

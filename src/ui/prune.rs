@@ -27,13 +27,13 @@ pub struct Args {
 pub async fn run(repository: &Path, args: Args) -> Result<()> {
     // Build the usual suspects.
     let cached_backend = Arc::new(backend::open(repository)?);
-    let index = index::build_master_index(&cached_backend)?;
+    let index = index::build_master_index(&cached_backend).await?;
     let blob_map = index::blob_to_pack_map(&index)?;
 
     let snapshots_and_forests = load_snapshots_and_forests(
         &cached_backend,
         &mut tree::Cache::new(&index, &blob_map, &cached_backend),
-    )?;
+    ).await?;
 
     let reachable_chunks = reachable_chunks(snapshots_and_forests.par_iter().map(|s| &s.forest));
     let (reusable_packs, packs_to_prune) =
@@ -53,7 +53,8 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     // TODO: Should build_master_index() return some set of all packs read
     // so we don't have to traverse the backend twice?
     let superseded = cached_backend
-        .list_indexes()?
+        .list_indexes()
+        .await?
         .iter()
         .map(backend::id_from_path)
         .collect::<Result<BTreeSet<ObjectId>>>()?;
@@ -134,10 +135,10 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
 
     if !args.dry_run {
         for old_index in &superseded {
-            cached_backend.remove_index(old_index)?;
+            cached_backend.remove_index(old_index).await?;
         }
         for old_pack in packs_to_prune.keys() {
-            cached_backend.remove_pack(old_pack)?;
+            cached_backend.remove_pack(old_pack).await?;
         }
     }
 
@@ -150,11 +151,12 @@ struct SnapshotAndForest {
     forest: tree::Forest,
 }
 
-fn load_snapshots_and_forests(
+async fn load_snapshots_and_forests(
     cached_backend: &backend::CachedBackend,
-    tree_cache: &mut tree::Cache,
+    tree_cache: &mut tree::Cache<'_>,
 ) -> Result<Vec<SnapshotAndForest>> {
-    snapshot::load_chronologically(cached_backend)?
+    snapshot::load_chronologically(cached_backend)
+        .await?
         .into_iter()
         .map(|(snapshot, id)| {
             let forest = tree::forest_from_root(&snapshot.tree, tree_cache)?;

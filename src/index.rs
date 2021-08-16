@@ -160,7 +160,7 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
 
 /// Load all indexes from the provided backend and combines them into a master
 /// index, removing any superseded ones.
-pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
+pub async fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
     info!("Building a master index");
 
     #[derive(Debug, Default)]
@@ -173,7 +173,8 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
     let shared = Mutex::new(Results::default());
 
     cached_backend
-        .list_indexes()?
+        .list_indexes()
+        .await?
         .par_iter()
         .try_for_each_with(&shared, |shared, index_file| {
             let index_id = backend::id_from_path(&index_file)?;

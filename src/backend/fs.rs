@@ -4,6 +4,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use async_trait::async_trait;
+
 pub struct FilesystemBackend {
     base_directory: PathBuf,
 }
@@ -62,15 +64,16 @@ impl FilesystemBackend {
     }
 }
 
+#[async_trait]
 impl Backend for FilesystemBackend {
-    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
+    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
         let from = self.base_directory.join(from);
         Ok(Box::new(fs::File::open(&from).with_context(|| {
             format!("Couldn't open {}", from.display())
         })?))
     }
 
-    fn write(&self, from: &mut dyn Read, to: &str) -> Result<()> {
+    async fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
         let to = self.base_directory.join(to);
         let mut fh =
             fs::File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
@@ -78,13 +81,13 @@ impl Backend for FilesystemBackend {
         Ok(())
     }
 
-    fn remove(&self, which: &str) -> Result<()> {
+    async fn remove(&self, which: &str) -> Result<()> {
         let which = self.base_directory.join(which);
         fs::remove_file(&which).with_context(|| format!("Couldn't remove {}", which.display()))?;
         Ok(())
     }
 
-    fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
         let prefix = self.base_directory.join(prefix);
 
         if prefix.is_file() {

@@ -22,7 +22,7 @@ pub struct Args {
     to_forget: Vec<String>,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub async fn run(repository: &Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
@@ -32,9 +32,9 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let cached_backend = backend::open(repository)?;
 
     let success = if args.to_forget == ["duplicates"] {
-        forget_duplicate_snapshots(&cached_backend, args.dry_run)?
+        forget_duplicate_snapshots(&cached_backend, args.dry_run).await?
     } else {
-        forget_snapshot_list(&cached_backend, &args)
+        forget_snapshot_list(&cached_backend, &args).await
     };
 
     if success {
@@ -44,11 +44,11 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     }
 }
 
-fn forget_duplicate_snapshots(
+async fn forget_duplicate_snapshots(
     cached_backend: &backend::CachedBackend,
     dry_run: bool,
 ) -> Result<bool> {
-    let snapshots = snapshot::load_chronologically(cached_backend)?;
+    let snapshots = snapshot::load_chronologically(cached_backend).await?;
 
     let mut success = true;
     let mut last_unique_snapshot_and_tree: Option<(ObjectId, ObjectId)> = None;
@@ -69,16 +69,16 @@ fn forget_duplicate_snapshots(
 
         // Hey, a duplicate tree!
         debug!("Snapshot {} is a duplicate of {}", id, last_unique_snapshot);
-        success &= forget_snapshot(cached_backend, id, dry_run);
+        success &= forget_snapshot(cached_backend, id, dry_run).await;
     }
     Ok(success)
 }
 
-fn forget_snapshot_list(cached_backend: &backend::CachedBackend, args: &Args) -> bool {
+async fn forget_snapshot_list(cached_backend: &backend::CachedBackend, args: &Args) -> bool {
     let mut success = true;
 
     for id_prefix in &args.to_forget {
-        let id = match crate::snapshot::find(id_prefix, cached_backend) {
+        let id = match crate::snapshot::find(id_prefix, cached_backend).await {
             Ok(id) => id,
             Err(e) => {
                 error!("{:?}", e);
@@ -87,18 +87,18 @@ fn forget_snapshot_list(cached_backend: &backend::CachedBackend, args: &Args) ->
             }
         };
 
-        success &= forget_snapshot(cached_backend, &id, args.dry_run);
+        success &= forget_snapshot(cached_backend, &id, args.dry_run).await;
     }
     success
 }
 
-fn forget_snapshot(cached_backend: &backend::CachedBackend, id: &ObjectId, dry_run: bool) -> bool {
+async fn forget_snapshot(cached_backend: &backend::CachedBackend, id: &ObjectId, dry_run: bool) -> bool {
     if dry_run {
         info!("Would remove {}", id);
         return true;
     }
 
-    match cached_backend.remove_snapshot(id) {
+    match cached_backend.remove_snapshot(id).await {
         Ok(()) => {
             info!("Removed snapshot {}", id);
             true

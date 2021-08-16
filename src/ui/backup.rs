@@ -52,11 +52,11 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
 
     let cached_backend = backend::open(repository)?;
 
-    let index = index::build_master_index(&cached_backend)?;
+    let index = index::build_master_index(&cached_backend).await?;
     let blob_map = index::blob_to_pack_map(&index)?;
 
     info!("Finding a parent snapshot");
-    let snapshots = snapshot::load_chronologically(&cached_backend)?;
+    let snapshots = snapshot::load_chronologically(&cached_backend).await?;
     let parent = parent_snapshot(&paths, snapshots);
     let parent = parent.as_ref();
 
