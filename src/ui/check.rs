@@ -1,6 +1,6 @@
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use anyhow::*;
 use futures::prelude::*;
@@ -60,9 +60,11 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
             }));
         }
 
-        checkers.fold::<Result<()>, _, _>(Ok(()), |acc, res| async move {
-            acc.and(res.expect("pack checking task panicked"))
-        }).await?;
+        checkers
+            .fold::<Result<()>, _, _>(Ok(()), |acc, res| async move {
+                acc.and(res.expect("pack checking task panicked"))
+            })
+            .await?;
     } else {
         for (pack_id, _manifest) in &index.packs {
             cached_backend.probe_pack(pack_id).await?;

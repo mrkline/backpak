@@ -92,7 +92,11 @@ async fn forget_snapshot_list(cached_backend: &backend::CachedBackend, args: &Ar
     success
 }
 
-async fn forget_snapshot(cached_backend: &backend::CachedBackend, id: &ObjectId, dry_run: bool) -> bool {
+async fn forget_snapshot(
+    cached_backend: &backend::CachedBackend,
+    id: &ObjectId,
+    dry_run: bool,
+) -> bool {
     if dry_run {
         info!("Would remove {}", id);
         return true;

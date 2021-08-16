@@ -115,9 +115,17 @@ pub async fn load_chronologically(
     Ok(snapshots)
 }
 
-pub async fn find(prefix: &str, cached_backend: &crate::backend::CachedBackend) -> Result<ObjectId> {
+pub async fn find(
+    prefix: &str,
+    cached_backend: &crate::backend::CachedBackend,
+) -> Result<ObjectId> {
     if prefix == "last" {
-        match load_chronologically(cached_backend).await?.iter().rev().next() {
+        match load_chronologically(cached_backend)
+            .await?
+            .iter()
+            .rev()
+            .next()
+        {
             None => bail!("No snapshots taken yet"),
             Some((_snap, id)) => return Ok(*id),
         }

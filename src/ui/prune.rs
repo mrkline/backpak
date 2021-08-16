@@ -33,7 +33,8 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     let snapshots_and_forests = load_snapshots_and_forests(
         &cached_backend,
         &mut tree::Cache::new(&index, &blob_map, &cached_backend),
-    ).await?;
+    )
+    .await?;
 
     let reachable_chunks = reachable_chunks(snapshots_and_forests.par_iter().map(|s| &s.forest));
     let (reusable_packs, packs_to_prune) =

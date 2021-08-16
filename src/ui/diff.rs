@@ -39,7 +39,8 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
         &args.second_snapshot,
         &cached_backend,
         &mut tree_cache,
-    ).await?;
+    )
+    .await?;
 
     diff::compare_trees(
         (&snapshot1.tree, &snapshot1_forest),
