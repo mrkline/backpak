@@ -85,7 +85,8 @@ fn load_fs_tree_and_mapping<'a>(
     snapshot_forest: &tree::Forest,
     restore_to: &Option<PathBuf>,
 ) -> Result<FsTreeAndMapping<'a>> {
-    let mut path_map = FxHashMap::with_capacity_and_hasher(snapshot.paths.len(), Default::default());
+    let mut path_map =
+        FxHashMap::with_capacity_and_hasher(snapshot.paths.len(), Default::default());
 
     if let Some(to) = restore_to {
         info!("Comparing snapshot {} to {}", id, to.display());

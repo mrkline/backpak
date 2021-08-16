@@ -4,12 +4,12 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
-use std::sync::mpsc::*;
 
 use anyhow::*;
 use log::*;
 use serde_derive::*;
 use tempfile::NamedTempFile;
+use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
 
 use crate::backend;
 use crate::blob::{self, Blob};
@@ -47,10 +47,10 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
 }
 
 /// Packs blobs received from the given channel.
-pub fn pack(
-    rx: Receiver<Blob>,
-    to_index: Sender<PackMetadata>,
-    to_upload: SyncSender<(String, File)>,
+pub async fn pack(
+    mut rx: UnboundedReceiver<Blob>,
+    to_index: UnboundedSender<PackMetadata>,
+    to_upload: Sender<(String, File)>,
 ) -> Result<()> {
     let mut writer = PackfileWriter::new()?;
 
@@ -58,7 +58,7 @@ pub fn pack(
     let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
 
     // For each blob...
-    while let Ok(blob) = rx.recv() {
+    while let Some(blob) = rx.recv().await {
         // TODO: We previously checked against a set of already-packed blobs here
         // to avoid double-packing, but to simplify concurrency issues, we moved
         // it to the backup/prune threads.
@@ -91,6 +91,7 @@ pub fn pack(
 
                 to_upload
                     .send((finalized_path, persisted))
+                    .await
                     .context("packer -> uploader channel exited early")?;
                 to_index
                     .send(metadata)
@@ -116,6 +117,7 @@ pub fn pack(
         let finalized_path = format!("{}.pack", metadata.id);
         to_upload
             .send((finalized_path, persisted))
+            .await
             .context("packer -> uploader channel exited early")?;
         to_index
             .send(metadata)
@@ -417,6 +419,9 @@ mod test {
 
     use std::fs;
 
+    use tokio::sync::mpsc::{channel, unbounded_channel};
+    use tokio::task::spawn;
+
     use crate::chunk;
 
     fn init() {
@@ -461,26 +466,26 @@ mod test {
         Ok(())
     }
 
-    #[test]
-    fn smoke() -> Result<()> {
+    #[tokio::test]
+    async fn smoke() -> Result<()> {
         init();
 
         let chunks = chunk::chunk_file("tests/references/sr71.txt")
             .context("Couldn't chunk reference file")?;
-        let (chunk_tx, chunk_rx) = channel();
-        let (pack_tx, pack_rx) = channel();
-        let (upload_tx, upload_rx) = sync_channel(1);
+        let (chunk_tx, chunk_rx) = unbounded_channel();
+        let (pack_tx, mut pack_rx) = unbounded_channel();
+        let (upload_tx, mut upload_rx) = channel(1);
 
-        let chunk_packer = std::thread::spawn(move || pack(chunk_rx, pack_tx, upload_tx));
+        let chunk_packer = spawn(pack(chunk_rx, pack_tx, upload_tx));
 
-        let upload_chucker = std::thread::spawn(move || -> Result<()> {
+        let upload_chucker = spawn(async move {
             // This test doesn't actually care about the files themselves,
             // at least for now. Axe em!
-            while let Ok((to_upload, _)) = upload_rx.recv() {
+            while let Some((to_upload, _)) = upload_rx.recv().await {
                 fs::remove_file(&to_upload)
                     .with_context(|| format!("Couldn't remove completed packfile {}", to_upload))?;
             }
-            Ok(())
+            Result::<()>::Ok(())
         });
 
         for chunk in &chunks {
@@ -489,12 +494,12 @@ mod test {
         drop(chunk_tx);
 
         let mut merged_manifest: PackManifest = Vec::new();
-        while let Ok(mut metadata) = pack_rx.recv() {
+        while let Some(mut metadata) = pack_rx.recv().await {
             merged_manifest.append(&mut metadata.manifest);
         }
 
-        chunk_packer.join().unwrap()?;
-        upload_chucker.join().unwrap()?;
+        chunk_packer.await.unwrap()?;
+        upload_chucker.await.unwrap()?;
 
         assert_eq!(chunks.len(), merged_manifest.len());
         for (chunk, manifest_entry) in chunks.iter().zip(merged_manifest.iter()) {

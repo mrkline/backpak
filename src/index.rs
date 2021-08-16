@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::Mutex;
 
 use anyhow::*;
@@ -12,6 +11,7 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::*;
 use tempfile::NamedTempFile;
+use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 
 use crate::backend;
 use crate::counters;
@@ -44,10 +44,10 @@ impl Index {
 
 /// Gather metadata for completed packs from `rx` into an index file,
 /// and upload the index files when they reach a sufficient size.
-pub fn index(
+pub async fn index(
     starting_index: Index,
-    rx: Receiver<PackMetadata>,
-    to_upload: SyncSender<(String, File)>,
+    mut rx: UnboundedReceiver<PackMetadata>,
+    to_upload: Sender<(String, File)>,
 ) -> Result<bool> {
     let mut index = starting_index;
     let mut index_id = None;
@@ -68,7 +68,7 @@ pub fn index(
     }
 
     // For each pack...
-    while let Ok(PackMetadata { id, manifest }) = rx.recv() {
+    while let Some(PackMetadata { id, manifest }) = rx.recv().await {
         ensure!(
             index.packs.insert(id, manifest).is_none(),
             "Duplicate pack received: {}",
@@ -117,6 +117,7 @@ pub fn index(
 
         to_upload
             .send((index_name, persisted))
+            .await
             .context("indexer -> uploader channel exited early")?;
         Ok(true)
     } else {

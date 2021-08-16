@@ -3,13 +3,13 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::SyncSender;
 
 use anyhow::*;
 use chrono::prelude::*;
 use log::*;
 use rayon::prelude::*;
 use serde_derive::*;
+use tokio::sync::mpsc::Sender;
 
 use crate::backend;
 use crate::file_util::check_magic;
@@ -40,7 +40,7 @@ fn to_file(fh: &mut fs::File, snapshot: &Snapshot) -> Result<ObjectId> {
 }
 
 /// Upload a snapshot, finishing a backup.
-pub fn upload(snapshot: &Snapshot, to_upload: SyncSender<(String, fs::File)>) -> Result<()> {
+pub async fn upload(snapshot: &Snapshot, to_upload: Sender<(String, fs::File)>) -> Result<()> {
     let mut fh = tempfile::Builder::new()
         .prefix("temp-backpak-")
         .suffix(".snapshot")
@@ -57,6 +57,7 @@ pub fn upload(snapshot: &Snapshot, to_upload: SyncSender<(String, fs::File)>) ->
 
     to_upload
         .send((snapshot_name, persisted))
+        .await
         .context("backup -> uploader channel exited early")?;
     Ok(())
 }

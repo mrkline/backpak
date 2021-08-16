@@ -64,14 +64,15 @@ enum Subcommand {
     RebuildIndex,
 }
 
-fn main() {
-    run().unwrap_or_else(|e| {
+#[tokio::main]
+async fn main() {
+    run().await.unwrap_or_else(|e| {
         log::error!("{:?}", e);
         std::process::exit(1);
     });
 }
 
-fn run() -> Result<()> {
+async fn run() -> Result<()> {
     let args = Args::from_args();
     init_logger(&args);
 
@@ -81,17 +82,17 @@ fn run() -> Result<()> {
 
     match args.subcommand {
         Subcommand::Init => init::run(&args.repository),
-        Subcommand::Backup(b) => backup::run(&args.repository, b),
+        Subcommand::Backup(b) => backup::run(&args.repository, b).await,
         Subcommand::Cat(c) => cat::run(&args.repository, c),
         Subcommand::Check(c) => check::run(&args.repository, c),
         Subcommand::Diff(d) => diff::run(&args.repository, d),
         Subcommand::Dump(d) => dump::run(&args.repository, d),
         Subcommand::Forget(f) => forget::run(&args.repository, f),
         Subcommand::Ls(l) => ls::run(&args.repository, l),
-        Subcommand::Prune(p) => prune::run(&args.repository, p),
+        Subcommand::Prune(p) => prune::run(&args.repository, p).await,
         Subcommand::Restore(r) => restore::run(&args.repository, r),
         Subcommand::Snapshots => snapshots::run(&args.repository),
-        Subcommand::RebuildIndex => rebuild_index::run(&args.repository),
+        Subcommand::RebuildIndex => rebuild_index::run(&args.repository).await,
     }?;
 
     counters::log_counts();

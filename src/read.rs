@@ -207,7 +207,9 @@ mod test {
     use super::*;
 
     use std::collections::*;
-    use std::sync::mpsc::*;
+
+    use tokio::sync::mpsc::{channel, unbounded_channel};
+    use tokio::task::spawn;
 
     use crate::blob;
     use crate::chunk;
@@ -216,8 +218,8 @@ mod test {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    #[test]
-    fn smoke() -> Result<()> {
+    #[tokio::test]
+    async fn smoke() -> Result<()> {
         init();
 
         // Create a backend with a single pack from our reference files
@@ -234,21 +236,21 @@ mod test {
         chunks.extend(chunk::chunk_file("tests/references/README.md")?);
         assert_eq!(chunks.len(), 4);
 
-        let (chunk_tx, chunk_rx) = channel();
-        let (pack_tx, pack_rx) = channel();
-        let (upload_tx, upload_rx) = sync_channel(1);
+        let (chunk_tx, chunk_rx) = unbounded_channel();
+        let (pack_tx, mut pack_rx) = unbounded_channel();
+        let (upload_tx, mut upload_rx) = channel(1);
 
-        let chunk_packer = std::thread::spawn(move || pack::pack(chunk_rx, pack_tx, upload_tx));
+        let chunk_packer = spawn(pack::pack(chunk_rx, pack_tx, upload_tx));
 
-        let uploader = std::thread::spawn(move || -> Result<backend::CachedBackend> {
+        let uploader = spawn(async move {
             let mut num_packs = 0;
-            while let Ok((path, fh)) = upload_rx.recv() {
+            while let Some((path, fh)) = upload_rx.recv().await {
                 backend.write(&path, fh)?;
                 num_packs += 1;
             }
 
             assert_eq!(num_packs, 1);
-            Ok(backend)
+            Result::<backend::CachedBackend>::Ok(backend)
         });
 
         for chunk in &chunks {
@@ -259,7 +261,7 @@ mod test {
         // Instead of writing out an index file with index::index()
         // and reading it back in, let's just synthesize the needed info.
         let index = {
-            let metadata = pack_rx.recv()?;
+            let metadata = pack_rx.recv().await.expect("pack tx hung up");
             let supersedes = BTreeSet::new();
             let mut packs = index::PackMap::new();
             packs.insert(metadata.id, metadata.manifest);
@@ -268,8 +270,8 @@ mod test {
         };
         let blob_map = index::blob_to_pack_map(&index)?;
 
-        chunk_packer.join().unwrap()?;
-        let mut backend = uploader.join().unwrap()?;
+        chunk_packer.await.unwrap()?;
+        let mut backend = uploader.await.unwrap()?;
 
         // With all that fun over with,
         // (Should we wrap that in some utility function(s) for testing?

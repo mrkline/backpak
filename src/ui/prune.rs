@@ -24,7 +24,7 @@ pub struct Args {
     pub dry_run: bool,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub async fn run(repository: &Path, args: Args) -> Result<()> {
     // Build the usual suspects.
     let cached_backend = Arc::new(backend::open(repository)?);
     let index = index::build_master_index(&cached_backend)?;
@@ -116,7 +116,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let mut packed_blobs = index::blob_set(&new_index)?;
 
     let mut backup =
-        (!args.dry_run).then(|| backup::spawn_backup_threads(cached_backend.clone(), new_index));
+        (!args.dry_run).then(|| backup::spawn_backup_tasks(cached_backend.clone(), new_index));
 
     // Get a reader to load the chunks we're repacking.
     let mut reader = read::BlobReader::new(&cached_backend, &index, &blob_map);
@@ -129,7 +129,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     )?;
 
     if let Some(b) = backup {
-        b.join()?;
+        b.join().await?;
     }
 
     if !args.dry_run {
