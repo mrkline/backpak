@@ -271,13 +271,13 @@ mod test {
         let blob_map = index::blob_to_pack_map(&index)?;
 
         chunk_packer.await.unwrap()?;
-        let mut backend = uploader.await.unwrap()?;
+        let backend = uploader.await.unwrap()?;
 
         // With all that fun over with,
         // (Should we wrap that in some utility function(s) for testing?
         // Or is each test bespoke enough that it wouldn't be helpful?)
         // let's test our reader.
-        let mut reader = BlobReader::new(&mut backend, &index, &blob_map);
+        let mut reader = BlobReader::new(&backend, &index, &blob_map);
 
         // Read the first chunk:
         readback(&chunks[0], &mut reader)?;

@@ -35,7 +35,7 @@ pub fn print_node(prefix: &str, path: &Path, node: &tree::Node, should_recurse: 
                 println!();
             }
             if let Recurse::Yes(forest) = should_recurse {
-                print_tree(prefix, &path, subtree, forest);
+                print_tree(prefix, path, subtree, forest);
             }
         }
         tree::NodeContents::File { .. } => {

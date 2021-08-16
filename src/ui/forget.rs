@@ -78,7 +78,7 @@ fn forget_snapshot_list(cached_backend: &backend::CachedBackend, args: &Args) ->
     let mut success = true;
 
     for id_prefix in &args.to_forget {
-        let id = match crate::snapshot::find(id_prefix, &cached_backend) {
+        let id = match crate::snapshot::find(id_prefix, cached_backend) {
             Ok(id) => id,
             Err(e) => {
                 error!("{:?}", e);
@@ -98,7 +98,7 @@ fn forget_snapshot(cached_backend: &backend::CachedBackend, id: &ObjectId, dry_r
         return true;
     }
 
-    match cached_backend.remove_snapshot(&id) {
+    match cached_backend.remove_snapshot(id) {
         Ok(()) => {
             info!("Removed snapshot {}", id);
             true

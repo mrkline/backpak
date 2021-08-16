@@ -41,7 +41,7 @@ impl Blob {
     /// Convenience method to get at the blob's contents as a byte slice
     pub fn bytes(&self) -> &[u8] {
         match &self.contents {
-            Contents::Buffer(v) => &v,
+            Contents::Buffer(v) => v,
             Contents::Span(s) => s.as_ref(),
         }
     }

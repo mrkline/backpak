@@ -32,8 +32,8 @@ pub enum LoadedFile {
 impl LoadedFile {
     pub fn bytes(&self) -> &[u8] {
         match self {
-            LoadedFile::Buffered(vec) => &vec,
-            LoadedFile::Mapped(map) => &map,
+            LoadedFile::Buffered(vec) => vec,
+            LoadedFile::Mapped(map) => map,
         }
     }
 }

@@ -120,7 +120,7 @@ pub fn compare_nodes(
         }
         _ => {
             callbacks
-                .type_changed(&path, node1, forest1, node2, forest2)
+                .type_changed(path, node1, forest1, node2, forest2)
                 .unwrap_or_else(|e| error!("{:?}", e));
         }
     }

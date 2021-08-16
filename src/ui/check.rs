@@ -116,7 +116,7 @@ fn map_chunks_to_snapshots(
 
     for snapshot_path in cached_backend.list_snapshots()? {
         let snapshot_id = backend::id_from_path(&snapshot_path)?;
-        let snapshot = snapshot::load(&snapshot_id, &cached_backend)?;
+        let snapshot = snapshot::load(&snapshot_id, cached_backend)?;
 
         let snapshot_tree = tree::forest_from_root(&snapshot.tree, tree_cache)?;
 

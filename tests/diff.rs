@@ -62,11 +62,11 @@ fn backup_src() -> Result<()> {
     fs::write(working_path.join("src/lib.rs"), "I want some butts!")?;
     fs::set_permissions(
         working_path.join("src/main.rs"),
-        fs::Permissions::from_mode(0777),
+        fs::Permissions::from_mode(0o777),
     )?;
 
     let compare = |expected: &[&str]| {
-        assert_eq!(expected, diffit().split("\n").collect::<Vec<_>>());
+        assert_eq!(expected, diffit().split('\n').collect::<Vec<_>>());
     };
 
     compare(&[

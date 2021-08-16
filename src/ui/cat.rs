@@ -69,9 +69,9 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             info!("Blob {} found in pack {}", id, containing_pack_id);
             let index_manifest = index.packs.get(containing_pack_id).unwrap();
 
-            let mut reader = cached_backend.read_pack(&containing_pack_id)?;
+            let mut reader = cached_backend.read_pack(containing_pack_id)?;
 
-            let (manifest_entry, blob) = pack::extract_blob(&mut reader, &id, &index_manifest)?;
+            let (manifest_entry, blob) = pack::extract_blob(&mut reader, &id, index_manifest)?;
 
             debug_assert!(manifest_entry.id == id);
             assert!(!blob.is_empty());

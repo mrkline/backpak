@@ -99,7 +99,7 @@ where
 {
     let mut intermediate = Intermediate::default();
 
-    let previous_tree = previous_tree.and_then(|id| previous_forest.get(&id));
+    let previous_tree = previous_tree.and_then(|id| previous_forest.get(id));
 
     for path in paths {
         let entry_name = path.file_name().expect("Given path ended in ..");

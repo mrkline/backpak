@@ -84,7 +84,7 @@ impl CachedBackend {
                 }
                 // Otherwise, copy the file.
                 from_fh.seek(std::io::SeekFrom::Start(0))?;
-                self.backend.write(&mut from_fh, &to)?;
+                self.backend.write(&mut from_fh, to)?;
                 log::debug!("Backed up {}. Removing temp copy", from);
                 std::fs::remove_file(&from).with_context(|| format!("Couldn't remove {}", from))?;
             }

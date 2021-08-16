@@ -211,7 +211,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
 
     // Strip out superseded indexes.
     for superseded in &shared.superseded_indexes {
-        if shared.loaded_indexes.remove(&superseded).is_some() {
+        if shared.loaded_indexes.remove(superseded).is_some() {
             debug!("Index {} is superseded and can be deleted.", superseded);
         }
     }

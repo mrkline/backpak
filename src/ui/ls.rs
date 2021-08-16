@@ -26,7 +26,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     info!("Listing files for snapshot {}", id);
 
     let snapshot_tree = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
-    ls::print_tree("", &Path::new(""), &snapshot.tree, &snapshot_tree);
+    ls::print_tree("", Path::new(""), &snapshot.tree, &snapshot_tree);
 
     Ok(())
 }

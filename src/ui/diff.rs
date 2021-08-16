@@ -62,7 +62,7 @@ fn load_snapshot2_or_paths(
     tree_cache: &mut tree::Cache,
 ) -> Result<(ObjectId, tree::Forest)> {
     if let Some(second_snapshot) = second_snapshot {
-        let (snapshot2, id2) = snapshot::find_and_load(&second_snapshot, &cached_backend)?;
+        let (snapshot2, id2) = snapshot::find_and_load(second_snapshot, cached_backend)?;
         let snapshot2_forest = tree::forest_from_root(&snapshot2.tree, tree_cache)?;
 
         info!("Comparing snapshot {} to {}", id1, id2);
@@ -84,12 +84,12 @@ pub struct PrintDiffs {
 
 impl diff::Callbacks for PrintDiffs {
     fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()> {
-        ls::print_node("+ ", &node_path, new_node, ls::Recurse::Yes(forest));
+        ls::print_node("+ ", node_path, new_node, ls::Recurse::Yes(forest));
         Ok(())
     }
 
     fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest) -> Result<()> {
-        ls::print_node("- ", &node_path, old_node, ls::Recurse::Yes(forest));
+        ls::print_node("- ", node_path, old_node, ls::Recurse::Yes(forest));
         Ok(())
     }
 
@@ -128,8 +128,8 @@ impl diff::Callbacks for PrintDiffs {
     ) -> Result<()> {
         // If we changed from one type to another,
         // just - the old and + the new
-        ls::print_node("- ", &node_path, old_node, ls::Recurse::Yes(old_forest));
-        ls::print_node("+ ", &node_path, new_node, ls::Recurse::Yes(new_forest));
+        ls::print_node("- ", node_path, old_node, ls::Recurse::Yes(old_forest));
+        ls::print_node("+ ", node_path, new_node, ls::Recurse::Yes(new_forest));
         Ok(())
     }
 }

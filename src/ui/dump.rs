@@ -84,7 +84,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
             }
             tree::NodeContents::File { chunks } => {
                 if is_last_component {
-                    dump_file(&chunks, &cached_backend, &index, &blob_map, &args.output)?;
+                    dump_file(chunks, &cached_backend, &index, &blob_map, &args.output)?;
                 } else {
                     bail!("{} is a file, not a directory", path_so_far.display());
                 }
@@ -143,7 +143,7 @@ fn dump_file(
     blob_map: &index::BlobMap,
     output_path: &Option<PathBuf>,
 ) -> Result<()> {
-    let mut reader = read::BlobReader::new(&cached_backend, &index, &blob_map);
+    let mut reader = read::BlobReader::new(cached_backend, index, blob_map);
     let mut writer = open_writer(output_path)?;
 
     for chunk_id in chunks {

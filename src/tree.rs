@@ -53,7 +53,7 @@ impl NodeContents {
     #[inline]
     pub fn target(&self) -> &Path {
         match self {
-            NodeContents::Symlink { target } => &target,
+            NodeContents::Symlink { target } => target,
             _ => panic!("Expected a symlink"),
         }
     }
@@ -344,14 +344,14 @@ impl<'a> Cache<'a> {
             .ok_or_else(|| anyhow!("No pack contains tree {}", id))?;
 
         trace!("Reading pack {} to get tree {}", pack_id, id);
-        let mut pack_containing_tree = self.pack_cache.read_pack(&pack_id)?;
+        let mut pack_containing_tree = self.pack_cache.read_pack(pack_id)?;
         let manifest = self
             .index
             .packs
-            .get(&pack_id)
+            .get(pack_id)
             .expect("Pack ID in blob -> pack map but not the index");
 
-        pack::append_to_forest(&mut pack_containing_tree, &manifest, &mut self.tree_cache)?;
+        pack::append_to_forest(&mut pack_containing_tree, manifest, &mut self.tree_cache)?;
 
         self.tree_cache
             .get(id)

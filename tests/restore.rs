@@ -68,12 +68,12 @@ fn backup_src() -> Result<()> {
     fs::write(working_path.join("src/lib.rs"), "I want some butts!")?;
     fs::set_permissions(
         working_path.join("src/main.rs"),
-        fs::Permissions::from_mode(0777),
+        fs::Permissions::from_mode(0o777),
     )?;
 
     let compare = |expected: &[&str]| {
         let got = restoreit()
-            .split("\n")
+            .split('\n')
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
         let expected = expected
