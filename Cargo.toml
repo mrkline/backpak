@@ -46,7 +46,7 @@ features = ["test", "termcolor"]
 
 [dependencies.tokio]
 version = "1.0"
-features = ["rt-multi-thread", "macros", "sync", "fs"]
+features = ["rt-multi-thread", "macros", "sync", "fs", "parking_lot" ]
 
 [dependencies.zstd]
 version = "0.5"
