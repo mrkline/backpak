@@ -47,7 +47,7 @@ pub fn read_file(path: &Path) -> Result<Arc<LoadedFile>> {
 
     let file = if file_length < 10 * MEGA {
         trace!("{} is < 10MB, reading to buffer", path.display());
-        let mut buffer = Vec::new();
+        let mut buffer = Vec::with_capacity(file_length as usize);
         fh.read_to_end(&mut buffer)?;
         counters::bump(counters::Op::FileToBuffer);
         LoadedFile::Buffered(buffer)
