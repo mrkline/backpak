@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::*;
+use anyhow::{Context, Result};
 use simplelog::*;
 use structopt::clap::arg_enum;
 use structopt::StructOpt;

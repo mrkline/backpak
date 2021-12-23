@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::*;
+use anyhow::{bail, Result};
 use log::*;
 use structopt::StructOpt;
 

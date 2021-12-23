@@ -4,7 +4,7 @@ use std::io::prelude::*;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 
-use anyhow::*;
+use anyhow::Result;
 use assert_cmd::Command;
 use walkdir::WalkDir;
 

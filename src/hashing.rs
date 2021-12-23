@@ -4,7 +4,7 @@ use std::fmt;
 use std::io;
 use std::io::prelude::*;
 
-use anyhow::*;
+use anyhow::{ensure, Result};
 use sha2::{digest::generic_array::GenericArray, Digest, Sha224};
 
 /// The hash (a SHA224) used to identify all objects in our system.
