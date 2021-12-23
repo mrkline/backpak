@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
 
-use anyhow::{Context, ensure, Result};
+use anyhow::{ensure, Context, Result};
 use log::*;
 use serde_derive::*;
 use tempfile::NamedTempFile;

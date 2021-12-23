@@ -5,7 +5,7 @@ use std::fs::{self, File};
 use std::io::prelude::*;
 use std::sync::Mutex;
 
-use anyhow::{bail, Context, ensure, Result};
+use anyhow::{bail, ensure, Context, Result};
 use log::*;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};

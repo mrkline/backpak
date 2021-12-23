@@ -65,7 +65,7 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     let parent_forest = parent
         .map(|p| tree::forest_from_root(&p.tree, &mut tree_cache))
         .transpose()?
-        .unwrap_or_else(tree::Forest::default);
+        .unwrap_or_default();
     drop(tree_cache);
 
     // TODO: Load WIP index and upload any existing packs

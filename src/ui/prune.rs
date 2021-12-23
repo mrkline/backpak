@@ -175,7 +175,7 @@ fn reachable_chunks<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
     forests: I,
 ) -> FxHashSet<&'a ObjectId> {
     forests
-        .map(|f| tree::chunks_in_forest(f))
+        .map(tree::chunks_in_forest)
         .reduce(FxHashSet::default, |mut a, b| {
             a.extend(b);
             a

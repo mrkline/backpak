@@ -45,7 +45,7 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
 
     if args.read_packs {
         for (pack_id, manifest) in &index.packs {
-            let pack_id = pack_id.clone();
+            let pack_id = *pack_id;
             let manifest = manifest.clone();
             let cached_backend = cached_backend.clone();
             let borked_packs = borked_packs.clone();
@@ -66,7 +66,7 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
             })
             .await?;
     } else {
-        for (pack_id, _manifest) in &index.packs {
+        for pack_id in index.packs.keys() {
             cached_backend.probe_pack(pack_id).await?;
             debug!("Pack {} found", pack_id);
         }
