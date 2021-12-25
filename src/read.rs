@@ -209,7 +209,7 @@ mod test {
     use std::collections::*;
 
     use tokio::sync::mpsc::{channel, unbounded_channel};
-    use tokio::task::spawn;
+    use tokio::task::{spawn, spawn_blocking};
 
     use crate::blob;
     use crate::chunk;
@@ -240,7 +240,7 @@ mod test {
         let (pack_tx, mut pack_rx) = unbounded_channel();
         let (upload_tx, mut upload_rx) = channel(1);
 
-        let chunk_packer = spawn(pack::pack(chunk_rx, pack_tx, upload_tx));
+        let chunk_packer = spawn_blocking(|| pack::pack(chunk_rx, pack_tx, upload_tx));
 
         let uploader = spawn(async move {
             let mut num_packs = 0;

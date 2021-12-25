@@ -47,7 +47,7 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
 }
 
 /// Packs blobs received from the given channel.
-pub async fn pack(
+pub fn pack(
     mut rx: UnboundedReceiver<Blob>,
     to_index: UnboundedSender<PackMetadata>,
     to_upload: Sender<(String, File)>,
@@ -58,7 +58,7 @@ pub async fn pack(
     let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
 
     // For each blob...
-    while let Some(blob) = rx.recv().await {
+    while let Some(blob) = rx.blocking_recv() {
         // TODO: We previously checked against a set of already-packed blobs here
         // to avoid double-packing, but to simplify concurrency issues, we moved
         // it to the backup/prune threads.
@@ -90,8 +90,7 @@ pub async fn pack(
                 let finalized_path = format!("{}.pack", metadata.id);
 
                 to_upload
-                    .send((finalized_path, persisted))
-                    .await
+                    .blocking_send((finalized_path, persisted))
                     .context("packer -> uploader channel exited early")?;
                 to_index
                     .send(metadata)
@@ -116,8 +115,7 @@ pub async fn pack(
         let (metadata, persisted) = writer.finalize()?;
         let finalized_path = format!("{}.pack", metadata.id);
         to_upload
-            .send((finalized_path, persisted))
-            .await
+            .blocking_send((finalized_path, persisted))
             .context("packer -> uploader channel exited early")?;
         to_index
             .send(metadata)
@@ -420,7 +418,7 @@ mod test {
     use std::fs;
 
     use tokio::sync::mpsc::{channel, unbounded_channel};
-    use tokio::task::spawn;
+    use tokio::task::spawn_blocking;
 
     use crate::chunk;
 
@@ -476,12 +474,12 @@ mod test {
         let (pack_tx, mut pack_rx) = unbounded_channel();
         let (upload_tx, mut upload_rx) = channel(1);
 
-        let chunk_packer = spawn(pack(chunk_rx, pack_tx, upload_tx));
+        let chunk_packer = spawn_blocking(|| pack(chunk_rx, pack_tx, upload_tx));
 
-        let upload_chucker = spawn(async move {
+        let upload_chucker = spawn_blocking(move || {
             // This test doesn't actually care about the files themselves,
             // at least for now. Axe em!
-            while let Some((to_upload, _)) = upload_rx.recv().await {
+            while let Some((to_upload, _)) = upload_rx.blocking_recv() {
                 fs::remove_file(&to_upload)
                     .with_context(|| format!("Couldn't remove completed packfile {}", to_upload))?;
             }

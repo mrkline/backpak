@@ -11,7 +11,7 @@ use log::*;
 use tokio::sync::mpsc::{
     channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender,
 };
-use tokio::task::{spawn, JoinHandle};
+use tokio::task::{spawn, spawn_blocking, JoinHandle};
 
 use crate::backend;
 use crate::blob::Blob;
@@ -78,11 +78,11 @@ async fn backup_master_task(
     let tree_pack_upload_tx = chunk_pack_upload_tx.clone();
     let index_upload_tx = chunk_pack_upload_tx.clone();
 
-    let chunk_packer = spawn(pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx));
+    let chunk_packer = spawn_blocking(|| pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx));
 
-    let tree_packer = spawn(pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx));
+    let tree_packer = spawn_blocking(|| pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx));
 
-    let indexer = spawn(index::index(starting_index, pack_rx, index_upload_tx));
+    let indexer = spawn_blocking(|| index::index(starting_index, pack_rx, index_upload_tx));
 
     let uploader = spawn(async move { upload::upload(&*cached_backend, upload_rx).await });
 

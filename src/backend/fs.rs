@@ -1,6 +1,5 @@
 use super::*;
 
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -12,7 +11,7 @@ pub struct FilesystemBackend {
 
 #[inline]
 fn create_dir(d: &Path) -> Result<()> {
-    fs::create_dir(d).with_context(|| format!("Couldn't create {}", d.display()))
+    std::fs::create_dir(d).with_context(|| format!("Couldn't create {}", d.display()))
 }
 
 #[inline]
@@ -25,7 +24,7 @@ impl FilesystemBackend {
     pub fn initialize(repository: &Path) -> Result<()> {
         if repository.exists() {
             ensure!(
-                fs::read_dir(repository)
+                std::fs::read_dir(repository)
                     .with_context(|| format!("Couldn't read {}", repository.display()))?
                     .count()
                     == 0,
@@ -68,22 +67,25 @@ impl FilesystemBackend {
 impl Backend for FilesystemBackend {
     async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
         let from = self.base_directory.join(from);
-        Ok(Box::new(fs::File::open(&from).with_context(|| {
+        Ok(Box::new(std::fs::File::open(&from).with_context(|| {
             format!("Couldn't open {}", from.display())
         })?))
     }
 
-    async fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+    async fn write(&self, from: &mut (dyn AsyncRead + Unpin + Send), to: &str) -> Result<()> {
         let to = self.base_directory.join(to);
-        let mut fh =
-            fs::File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
-        io::copy(from, &mut fh)?;
+        let mut fh = tokio::fs::File::create(&to)
+            .await
+            .with_context(|| format!("Couldn't create {}", to.display()))?;
+        tokio::io::copy(from, &mut fh).await?;
         Ok(())
     }
 
     async fn remove(&self, which: &str) -> Result<()> {
         let which = self.base_directory.join(which);
-        fs::remove_file(&which).with_context(|| format!("Couldn't remove {}", which.display()))?;
+        tokio::fs::remove_file(&which)
+            .await
+            .with_context(|| format!("Couldn't remove {}", which.display()))?;
         Ok(())
     }
 
@@ -106,7 +108,7 @@ impl Backend for FilesystemBackend {
 
 fn walk_dir(dir: &Path) -> io::Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
-    for entry in fs::read_dir(dir)? {
+    for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {

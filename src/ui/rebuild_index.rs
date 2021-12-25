@@ -5,7 +5,7 @@ use anyhow::*;
 use log::*;
 use rayon::prelude::*;
 use tokio::sync::mpsc::{channel, unbounded_channel};
-use tokio::task::spawn;
+use tokio::task::spawn_blocking;
 
 use crate::backend;
 use crate::hashing::ObjectId;
@@ -46,7 +46,7 @@ pub async fn run(repository: &Path) -> Result<()> {
         supersedes: superseded.clone(),
         ..Default::default()
     };
-    let indexer = spawn(index::index(replacing, pack_rx, upload_tx));
+    let indexer = spawn_blocking(|| index::index(replacing, pack_rx, upload_tx));
 
     upload::upload(&cached_backend, upload_rx).await?;
 

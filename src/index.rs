@@ -44,7 +44,7 @@ impl Index {
 
 /// Gather metadata for completed packs from `rx` into an index file,
 /// and upload the index files when they reach a sufficient size.
-pub async fn index(
+pub fn index(
     starting_index: Index,
     mut rx: UnboundedReceiver<PackMetadata>,
     to_upload: Sender<(String, File)>,
@@ -68,7 +68,7 @@ pub async fn index(
     }
 
     // For each pack...
-    while let Some(PackMetadata { id, manifest }) = rx.recv().await {
+    while let Some(PackMetadata { id, manifest }) = rx.blocking_recv() {
         ensure!(
             index.packs.insert(id, manifest).is_none(),
             "Duplicate pack received: {}",
@@ -116,8 +116,7 @@ pub async fn index(
         );
 
         to_upload
-            .send((index_name, persisted))
-            .await
+            .blocking_send((index_name, persisted))
             .context("indexer -> uploader channel exited early")?;
         Ok(true)
     } else {

@@ -1,7 +1,6 @@
 use super::*;
 
-use std::io;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use async_trait::async_trait;
 use rustc_hash::FxHashMap;
@@ -19,22 +18,22 @@ impl Backend for MemoryBackend {
         let buf: Vec<u8> = self
             .files
             .lock()
-            .unwrap()
+            .await
             .get(from)
             .ok_or_else(|| anyhow!("No file {}", from))?
             .clone();
-        Ok(Box::new(io::Cursor::new(buf)))
+        Ok(Box::new(std::io::Cursor::new(buf)))
     }
 
-    async fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+    async fn write(&self, from: &mut (dyn AsyncRead + Unpin + Send), to: &str) -> Result<()> {
         let mut vec = Vec::new();
-        io::copy(from, &mut vec)?;
-        self.files.lock().unwrap().insert(to.to_owned(), vec);
+        tokio::io::copy(from, &mut vec).await?;
+        self.files.lock().await.insert(to.to_owned(), vec);
         Ok(())
     }
 
     async fn remove(&self, which: &str) -> Result<()> {
-        self.files.lock().unwrap().remove(which);
+        self.files.lock().await.remove(which);
         Ok(())
     }
 
@@ -42,7 +41,7 @@ impl Backend for MemoryBackend {
         let paths: Vec<String> = self
             .files
             .lock()
-            .unwrap()
+            .await
             .keys()
             .filter(|f| f.starts_with(prefix))
             .cloned()

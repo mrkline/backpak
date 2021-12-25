@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use async_trait::async_trait;
 use log::*;
+use tokio::io::{AsyncRead, AsyncSeekExt};
 
 use crate::hashing::ObjectId;
 
@@ -34,7 +35,7 @@ trait Backend {
     async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>>;
 
     /// Write the given read stream to the given key
-    async fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()>;
+    async fn write(&self, from: &mut (dyn AsyncRead + Unpin + Send), to: &str) -> Result<()>;
 
     async fn remove(&self, which: &str) -> Result<()>;
 
@@ -73,19 +74,20 @@ impl CachedBackend {
     /// Take the completed file and its `<id>.<type>` name and
     /// store it to an object with the appropriate key per
     /// [`destination()`](destination)
-    pub async fn write(&self, from: &str, mut from_fh: File) -> Result<()> {
+    pub async fn write(&self, from: &str, from_fh: File) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let to = base_directory.join(destination(from));
                 let to = to.to_str().unwrap();
                 // On Windows, we can't move an open file. Boo, Windows.
                 // Don't bother closing, moving, and reopening if moving fails.
-                if cfg!(target_family = "unix") && std::fs::rename(from, to).is_ok() {
+                if cfg!(target_family = "unix") && tokio::fs::rename(from, to).await.is_ok() {
                     log::debug!("Renamed {} to {}", from, to);
                     return Ok(());
                 }
                 // Otherwise, copy the file.
-                from_fh.seek(std::io::SeekFrom::Start(0))?;
+                let mut from_fh = tokio::fs::File::from_std(from_fh);
+                from_fh.seek(std::io::SeekFrom::Start(0)).await?;
                 self.backend.write(&mut from_fh, to).await?;
                 log::debug!("Backed up {}. Removing temp copy", from);
                 std::fs::remove_file(&from).with_context(|| format!("Couldn't remove {}", from))?;
