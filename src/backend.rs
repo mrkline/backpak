@@ -3,7 +3,6 @@
 
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
@@ -32,7 +31,7 @@ fn determine_type(_repository: &Path) -> BackendType {
 #[async_trait]
 trait Backend {
     /// Read from the given key
-    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>>;
+    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn AsyncRead + Send + 'a>>;
 
     /// Write the given read stream to the given key
     async fn write(&self, from: &mut (dyn AsyncRead + Unpin + Send), to: &str) -> Result<()>;

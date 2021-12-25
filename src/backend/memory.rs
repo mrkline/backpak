@@ -14,7 +14,7 @@ pub struct MemoryBackend {
 
 #[async_trait]
 impl Backend for MemoryBackend {
-    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
+    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn AsyncRead + Send + 'a>> {
         let buf: Vec<u8> = self
             .files
             .lock()

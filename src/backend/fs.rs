@@ -65,11 +65,11 @@ impl FilesystemBackend {
 
 #[async_trait]
 impl Backend for FilesystemBackend {
-    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
+    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn AsyncRead + Send + 'a>> {
         let from = self.base_directory.join(from);
-        Ok(Box::new(std::fs::File::open(&from).with_context(|| {
-            format!("Couldn't open {}", from.display())
-        })?))
+        Ok(Box::new(tokio::fs::File::open(&from).await.with_context(
+            || format!("Couldn't open {}", from.display()),
+        )?))
     }
 
     async fn write(&self, from: &mut (dyn AsyncRead + Unpin + Send), to: &str) -> Result<()> {
