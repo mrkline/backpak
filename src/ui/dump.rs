@@ -2,7 +2,7 @@ use std::io;
 use std::io::prelude::*;
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::*;
+use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
 use log::*;
 use structopt::StructOpt;

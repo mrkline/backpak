@@ -4,11 +4,11 @@
 //! and send them to this machinery.
 
 use std::fs::File;
-use std::sync::mpsc::*;
+use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
 use std::sync::Arc;
 use std::thread;
 
-use anyhow::*;
+use anyhow::{bail, Result};
 use log::*;
 
 use crate::backend;

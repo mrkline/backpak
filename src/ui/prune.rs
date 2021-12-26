@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::*;
+use anyhow::{anyhow, ensure, Context, Result};
 use log::*;
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;

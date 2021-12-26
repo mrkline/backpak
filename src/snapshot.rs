@@ -5,11 +5,11 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::SyncSender;
 
-use anyhow::*;
+use anyhow::{bail, ensure, Context, Result};
 use chrono::prelude::*;
 use log::*;
 use rayon::prelude::*;
-use serde_derive::*;
+use serde_derive::{Deserialize, Serialize};
 
 use crate::backend;
 use crate::file_util::check_magic;

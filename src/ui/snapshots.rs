@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::*;
+use anyhow::Result;
 
 use crate::backend;
 use crate::snapshot;

@@ -2,10 +2,10 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::*;
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
-use anyhow::*;
+use anyhow::{bail, ensure, Context, Result};
 use chrono::prelude::*;
 use log::*;
 use rustc_hash::FxHashSet;

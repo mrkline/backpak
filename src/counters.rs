@@ -1,8 +1,8 @@
 //! Performance counters: Count how many times we do various important operations.
 
-use std::sync::atomic::*;
+use std::sync::atomic::{fence, AtomicUsize, Ordering};
 
-use enum_map::*;
+use enum_map::{enum_map, Enum, EnumMap};
 use lazy_static::lazy_static;
 use log::*;
 

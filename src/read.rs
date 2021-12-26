@@ -206,8 +206,8 @@ fn index_of(
 mod test {
     use super::*;
 
-    use std::collections::*;
-    use std::sync::mpsc::*;
+    use std::collections::BTreeSet;
+    use std::sync::mpsc::{channel, sync_channel};
 
     use crate::blob;
     use crate::chunk;

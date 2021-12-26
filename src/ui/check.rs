@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use anyhow::*;
+use anyhow::{bail, Result};
 use log::*;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};

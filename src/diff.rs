@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use anyhow::*;
+use anyhow::{anyhow, Result};
 use log::*;
 
 use crate::hashing::ObjectId;

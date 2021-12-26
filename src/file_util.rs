@@ -4,7 +4,7 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::*;
+use anyhow::{ensure, Result};
 use log::*;
 
 use crate::counters;

@@ -1,9 +1,9 @@
 use std::collections::BTreeSet;
 use std::path::Path;
-use std::sync::mpsc::*;
+use std::sync::mpsc::{channel, sync_channel};
 use std::thread;
 
-use anyhow::*;
+use anyhow::{ensure, Context, Result};
 use log::*;
 use rayon::prelude::*;
 

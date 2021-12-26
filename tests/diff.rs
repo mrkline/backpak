@@ -4,7 +4,7 @@ use std::{
     process::Command,
 };
 
-use anyhow::*;
+use anyhow::Result;
 use tempfile::tempdir;
 
 mod common;

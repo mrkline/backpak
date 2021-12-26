@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use anyhow::*;
+use anyhow::Result;
 use tempfile::tempdir;
 
 mod common;

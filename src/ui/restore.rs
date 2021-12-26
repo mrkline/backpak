@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::*;
+use anyhow::Result;
 use log::*;
 use rustc_hash::FxHashMap;
 use structopt::StructOpt;

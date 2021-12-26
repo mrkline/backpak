@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::*;
+use anyhow::{Context, Result};
 use fastcdc::FastCDC;
 use log::*;
 use rayon::prelude::*;

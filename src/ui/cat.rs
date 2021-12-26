@@ -2,7 +2,7 @@ use std::io;
 use std::io::prelude::*;
 use std::path::Path;
 
-use anyhow::*;
+use anyhow::{anyhow, Context, Result};
 use log::*;
 use structopt::StructOpt;
 

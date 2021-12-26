@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use anyhow::*;
+use anyhow::anyhow;
 
 use crate::hashing::ObjectId;
 use crate::tree;

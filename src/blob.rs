@@ -1,6 +1,6 @@
 //! Defines [`Blob`], our fundamental unit of backup.
 
-use serde_derive::*;
+use serde_derive::{Deserialize, Serialize};
 
 use crate::chunk::FileSpan;
 use crate::hashing::ObjectId;

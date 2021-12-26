@@ -6,7 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use anyhow::*;
+use anyhow::{ensure, Context, Result};
 use log::*;
 
 use crate::chunk;

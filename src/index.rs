@@ -10,7 +10,7 @@ use anyhow::{bail, ensure, Context, Result};
 use log::*;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
-use serde_derive::*;
+use serde_derive::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
 use crate::backend;
@@ -302,7 +302,7 @@ mod test {
     use tempfile::tempfile;
 
     use crate::blob;
-    use crate::pack::*;
+    use crate::pack::PackManifestEntry;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
