@@ -1,9 +1,8 @@
 use super::*;
 
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-
-use async_trait::async_trait;
 
 pub struct FilesystemBackend {
     base_directory: PathBuf,
@@ -11,7 +10,7 @@ pub struct FilesystemBackend {
 
 #[inline]
 fn create_dir(d: &Path) -> Result<()> {
-    std::fs::create_dir(d).with_context(|| format!("Couldn't create {}", d.display()))
+    fs::create_dir(d).with_context(|| format!("Couldn't create {}", d.display()))
 }
 
 #[inline]
@@ -24,7 +23,7 @@ impl FilesystemBackend {
     pub fn initialize(repository: &Path) -> Result<()> {
         if repository.exists() {
             ensure!(
-                std::fs::read_dir(repository)
+                fs::read_dir(repository)
                     .with_context(|| format!("Couldn't read {}", repository.display()))?
                     .count()
                     == 0,
@@ -63,33 +62,29 @@ impl FilesystemBackend {
     }
 }
 
-#[async_trait]
 impl Backend for FilesystemBackend {
-    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn AsyncRead + Send + 'a>> {
+    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
         let from = self.base_directory.join(from);
-        Ok(Box::new(tokio::fs::File::open(&from).await.with_context(
-            || format!("Couldn't open {}", from.display()),
-        )?))
+        Ok(Box::new(fs::File::open(&from).with_context(|| {
+            format!("Couldn't open {}", from.display())
+        })?))
     }
 
-    async fn write(&self, from: &mut (dyn AsyncRead + Unpin + Send), to: &str) -> Result<()> {
+    fn write(&self, from: &mut dyn Read, to: &str) -> Result<()> {
         let to = self.base_directory.join(to);
-        let mut fh = tokio::fs::File::create(&to)
-            .await
-            .with_context(|| format!("Couldn't create {}", to.display()))?;
-        tokio::io::copy(from, &mut fh).await?;
+        let mut fh =
+            fs::File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
+        io::copy(from, &mut fh)?;
         Ok(())
     }
 
-    async fn remove(&self, which: &str) -> Result<()> {
+    fn remove(&self, which: &str) -> Result<()> {
         let which = self.base_directory.join(which);
-        tokio::fs::remove_file(&which)
-            .await
-            .with_context(|| format!("Couldn't remove {}", which.display()))?;
+        fs::remove_file(&which).with_context(|| format!("Couldn't remove {}", which.display()))?;
         Ok(())
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    fn list(&self, prefix: &str) -> Result<Vec<String>> {
         let prefix = self.base_directory.join(prefix);
 
         if prefix.is_file() {
@@ -108,7 +103,7 @@ impl Backend for FilesystemBackend {
 
 fn walk_dir(dir: &Path) -> io::Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
+    for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {

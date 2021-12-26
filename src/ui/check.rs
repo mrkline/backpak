@@ -1,14 +1,11 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 use anyhow::*;
-use futures::prelude::*;
-use futures::stream::FuturesUnordered;
 use log::*;
+use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use structopt::StructOpt;
-use tokio::task::spawn;
 
 use crate::backend;
 use crate::hashing::ObjectId;
@@ -31,47 +28,21 @@ pub struct Args {
     pub read_packs: bool,
 }
 
-pub async fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Path, args: Args) -> Result<()> {
     let mut trouble = false;
 
-    let cached_backend = Arc::new(backend::open(repository)?);
+    let cached_backend = backend::open(repository)?;
 
-    let index = index::build_master_index(&*cached_backend).await?;
+    let index = index::build_master_index(&cached_backend)?;
 
     info!("Checking all packs listed in indexes");
-    let borked_packs = Arc::new(AtomicUsize::new(0));
-
-    let checkers = FuturesUnordered::new();
-
-    if args.read_packs {
-        for (pack_id, manifest) in &index.packs {
-            let pack_id = *pack_id;
-            let manifest = manifest.clone();
-            let cached_backend = cached_backend.clone();
-            let borked_packs = borked_packs.clone();
-            checkers.push(spawn(async move {
-                let mut pack = cached_backend.read_pack(&pack_id)?;
-                if let Err(e) = pack::verify(&mut pack, &manifest) {
-                    error!("Problem with pack {}: {:?}", pack_id, e);
-                    borked_packs.fetch_add(1, Ordering::Relaxed);
-                }
-                debug!("Pack {} verified", pack_id);
-                Result::<()>::Ok(())
-            }));
+    let borked_packs = AtomicUsize::new(0);
+    index.packs.par_iter().for_each(|(pack_id, manifest)| {
+        if let Err(e) = check_pack(&cached_backend, pack_id, manifest, args.read_packs) {
+            error!("Problem with pack {}: {:?}", pack_id, e);
+            borked_packs.fetch_add(1, Ordering::Relaxed);
         }
-
-        checkers
-            .fold::<Result<()>, _, _>(Ok(()), |acc, res| async move {
-                acc.and(res.expect("pack checking task panicked"))
-            })
-            .await?;
-    } else {
-        for pack_id in index.packs.keys() {
-            cached_backend.probe_pack(pack_id).await?;
-            debug!("Pack {} found", pack_id);
-        }
-    }
-
+    });
     let borked_packs = borked_packs.load(Ordering::SeqCst);
     if borked_packs != 0 {
         error!("{} broken packs", borked_packs);
@@ -83,7 +54,7 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
     // Map the chunks that belong in each snapshot.
-    let chunks_to_snapshots = map_chunks_to_snapshots(&cached_backend, &mut tree_cache).await?;
+    let chunks_to_snapshots = map_chunks_to_snapshots(&cached_backend, &mut tree_cache)?;
 
     let mut missing_chunks = 0;
     for (chunk, snapshots) in &chunks_to_snapshots {
@@ -118,14 +89,32 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     }
 }
 
-/// Maps all reachable chunks to the set of snapshots that use them
-async fn map_chunks_to_snapshots(
+#[inline]
+fn check_pack(
     cached_backend: &backend::CachedBackend,
-    tree_cache: &mut tree::Cache<'_>,
+    pack_id: &ObjectId,
+    manifest: &[pack::PackManifestEntry],
+    read_packs: bool,
+) -> Result<()> {
+    if read_packs {
+        let mut pack = cached_backend.read_pack(pack_id)?;
+        pack::verify(&mut pack, manifest)?;
+        debug!("Pack {} verified", pack_id);
+    } else {
+        cached_backend.probe_pack(pack_id)?;
+        debug!("Pack {} found", pack_id);
+    }
+    Ok(())
+}
+
+/// Maps all reachable chunks to the set of snapshots that use them
+fn map_chunks_to_snapshots(
+    cached_backend: &backend::CachedBackend,
+    tree_cache: &mut tree::Cache,
 ) -> Result<FxHashMap<ObjectId, FxHashSet<ObjectId>>> {
     let mut chunks_to_snapshots = FxHashMap::default();
 
-    for snapshot_path in cached_backend.list_snapshots().await? {
+    for snapshot_path in cached_backend.list_snapshots()? {
         let snapshot_id = backend::id_from_path(&snapshot_path)?;
         let snapshot = snapshot::load(&snapshot_id, cached_backend)?;
 

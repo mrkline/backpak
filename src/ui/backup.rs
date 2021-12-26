@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::*;
 use std::sync::Arc;
 
 use anyhow::*;
@@ -9,7 +10,6 @@ use chrono::prelude::*;
 use log::*;
 use rustc_hash::FxHashSet;
 use structopt::StructOpt;
-use tokio::sync::mpsc::UnboundedSender;
 
 use crate::backend;
 use crate::blob::{self, Blob};
@@ -36,7 +36,7 @@ pub struct Args {
     pub paths: Vec<PathBuf>,
 }
 
-pub async fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Path, args: Args) -> Result<()> {
     // Let's canonicalize our paths (and make sure they're real!)
     // before we spin up a bunch of supporting infrastructure.
     let paths: BTreeSet<PathBuf> = args
@@ -52,11 +52,11 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
 
     let cached_backend = backend::open(repository)?;
 
-    let index = index::build_master_index(&cached_backend).await?;
+    let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
 
     info!("Finding a parent snapshot");
-    let snapshots = snapshot::load_chronologically(&cached_backend).await?;
+    let snapshots = snapshot::load_chronologically(&cached_backend)?;
     let parent = parent_snapshot(&paths, snapshots);
     let parent = parent.as_ref();
 
@@ -72,7 +72,7 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     // before we start new ones.
 
     let mut backup =
-        crate::backup::spawn_backup_tasks(Arc::new(cached_backend), index::Index::default());
+        crate::backup::spawn_backup_threads(Arc::new(cached_backend), index::Index::default());
 
     info!(
         "Backing up {}",
@@ -120,12 +120,12 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
         tree: root,
     };
 
-    snapshot::upload(&snapshot, backup.upload_tx).await?;
+    snapshot::upload(&snapshot, backup.upload_tx)?;
 
     drop(backup.chunk_tx);
     drop(backup.tree_tx);
 
-    backup.tasks.await.unwrap()
+    backup.threads.join().unwrap()
 }
 
 fn reject_matching_directories(paths: &BTreeSet<PathBuf>) -> Result<()> {
@@ -163,8 +163,8 @@ pub fn backup_tree(
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
     packed_blobs: &mut FxHashSet<ObjectId>,
-    chunk_tx: &mut UnboundedSender<Blob>,
-    tree_tx: &mut UnboundedSender<Blob>,
+    chunk_tx: &mut Sender<Blob>,
+    tree_tx: &mut Sender<Blob>,
 ) -> Result<ObjectId> {
     use fs_tree::DirectoryEntry;
 

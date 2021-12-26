@@ -41,13 +41,13 @@ pub struct Args {
     restore_from: String,
 }
 
-pub async fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Path, args: Args) -> Result<()> {
     let cached_backend = backend::open(repository)?;
-    let index = index::build_master_index(&cached_backend).await?;
+    let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
-    let (snapshot, id) = snapshot::find_and_load(&args.restore_from, &cached_backend).await?;
+    let (snapshot, id) = snapshot::find_and_load(&args.restore_from, &cached_backend)?;
     let snapshot_forest = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
 
     let tree_and_mapping =

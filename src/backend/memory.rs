@@ -1,8 +1,8 @@
 use super::*;
 
-use tokio::sync::Mutex;
+use std::io;
+use std::sync::Mutex;
 
-use async_trait::async_trait;
 use rustc_hash::FxHashMap;
 
 /// A backend that stores everything as path-addressed buffers.
@@ -12,36 +12,35 @@ pub struct MemoryBackend {
     files: Mutex<FxHashMap<String, Vec<u8>>>,
 }
 
-#[async_trait]
 impl Backend for MemoryBackend {
-    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn AsyncRead + Send + 'a>> {
+    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
         let buf: Vec<u8> = self
             .files
             .lock()
-            .await
+            .unwrap()
             .get(from)
             .ok_or_else(|| anyhow!("No file {}", from))?
             .clone();
-        Ok(Box::new(std::io::Cursor::new(buf)))
+        Ok(Box::new(io::Cursor::new(buf)))
     }
 
-    async fn write(&self, from: &mut (dyn AsyncRead + Unpin + Send), to: &str) -> Result<()> {
+    fn write(&self, from: &mut dyn Read, to: &str) -> Result<()> {
         let mut vec = Vec::new();
-        tokio::io::copy(from, &mut vec).await?;
-        self.files.lock().await.insert(to.to_owned(), vec);
+        io::copy(from, &mut vec)?;
+        self.files.lock().unwrap().insert(to.to_owned(), vec);
         Ok(())
     }
 
-    async fn remove(&self, which: &str) -> Result<()> {
-        self.files.lock().await.remove(which);
+    fn remove(&self, which: &str) -> Result<()> {
+        self.files.lock().unwrap().remove(which);
         Ok(())
     }
 
-    async fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    fn list(&self, prefix: &str) -> Result<Vec<String>> {
         let paths: Vec<String> = self
             .files
             .lock()
-            .await
+            .unwrap()
             .keys()
             .filter(|f| f.starts_with(prefix))
             .cloned()

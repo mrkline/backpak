@@ -23,14 +23,14 @@ pub struct Args {
     path: PathBuf,
 }
 
-pub async fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
 
     let cached_backend = backend::open(repository)?;
-    let (snapshot, id) = snapshot::find_and_load(&args.snapshot, &cached_backend).await?;
-    let index = index::build_master_index(&cached_backend).await?;
+    let (snapshot, id) = snapshot::find_and_load(&args.snapshot, &cached_backend)?;
+    let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
     let mut current_tree_id = snapshot.tree;

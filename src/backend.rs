@@ -3,12 +3,11 @@
 
 use std::ffi::OsStr;
 use std::fs::File;
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use async_trait::async_trait;
 use log::*;
-use tokio::io::{AsyncRead, AsyncSeekExt};
 
 use crate::hashing::ObjectId;
 
@@ -28,18 +27,17 @@ fn determine_type(_repository: &Path) -> BackendType {
 
 // TODO: Should we make these async? Some backends (such as S3 via Rusoto)
 // are going to be async, but we could `block_on()` for each request...
-#[async_trait]
 trait Backend {
     /// Read from the given key
-    async fn read<'a>(&'a self, from: &str) -> Result<Box<dyn AsyncRead + Send + 'a>>;
+    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>>;
 
     /// Write the given read stream to the given key
-    async fn write(&self, from: &mut (dyn AsyncRead + Unpin + Send), to: &str) -> Result<()>;
+    fn write(&self, from: &mut dyn Read, to: &str) -> Result<()>;
 
-    async fn remove(&self, which: &str) -> Result<()>;
+    fn remove(&self, which: &str) -> Result<()>;
 
     /// Lists all keys with the given prefix
-    async fn list(&self, prefix: &str) -> Result<Vec<String>>;
+    fn list(&self, prefix: &str) -> Result<Vec<String>>;
 }
 
 // Use an enum instead of trait objects because we don't forsee ever having
@@ -73,21 +71,20 @@ impl CachedBackend {
     /// Take the completed file and its `<id>.<type>` name and
     /// store it to an object with the appropriate key per
     /// [`destination()`](destination)
-    pub async fn write(&self, from: &str, from_fh: File) -> Result<()> {
+    pub fn write(&self, from: &str, mut from_fh: File) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let to = base_directory.join(destination(from));
                 let to = to.to_str().unwrap();
                 // On Windows, we can't move an open file. Boo, Windows.
                 // Don't bother closing, moving, and reopening if moving fails.
-                if cfg!(target_family = "unix") && tokio::fs::rename(from, to).await.is_ok() {
+                if cfg!(target_family = "unix") && std::fs::rename(from, to).is_ok() {
                     log::debug!("Renamed {} to {}", from, to);
                     return Ok(());
                 }
                 // Otherwise, copy the file.
-                let mut from_fh = tokio::fs::File::from_std(from_fh);
-                from_fh.seek(std::io::SeekFrom::Start(0)).await?;
-                self.backend.write(&mut from_fh, to).await?;
+                from_fh.seek(std::io::SeekFrom::Start(0))?;
+                self.backend.write(&mut from_fh, to)?;
                 log::debug!("Backed up {}. Removing temp copy", from);
                 std::fs::remove_file(&from).with_context(|| format!("Couldn't remove {}", from))?;
             }
@@ -95,11 +92,11 @@ impl CachedBackend {
         Ok(())
     }
 
-    async fn remove(&self, to_remove: &str) -> Result<()> {
+    fn remove(&self, to_remove: &str) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { .. } => {
                 // Just unlink the file!
-                self.backend.remove(to_remove).await
+                self.backend.remove(to_remove)
             } // On a remote backend, we'd have to unlink any cached file,
               // _then_ remove it from the remote side.
         }
@@ -108,25 +105,24 @@ impl CachedBackend {
     // Let's put all the layout-specific stuff here so that we don't have paths
     // spread throughout the codebase.
 
-    pub async fn list_indexes(&self) -> Result<Vec<String>> {
-        self.backend.list("indexes/").await
+    pub fn list_indexes(&self) -> Result<Vec<String>> {
+        self.backend.list("indexes/")
     }
 
-    pub async fn list_snapshots(&self) -> Result<Vec<String>> {
-        self.backend.list("snapshots/").await
+    pub fn list_snapshots(&self) -> Result<Vec<String>> {
+        self.backend.list("snapshots/")
     }
 
-    pub async fn list_packs(&self) -> Result<Vec<String>> {
-        self.backend.list("packs/").await
+    pub fn list_packs(&self) -> Result<Vec<String>> {
+        self.backend.list("packs/")
     }
 
-    pub async fn probe_pack(&self, id: &ObjectId) -> Result<()> {
+    pub fn probe_pack(&self, id: &ObjectId) -> Result<()> {
         let hex = id.to_string();
         let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
         let found_packs = self
             .backend
             .list(&pack_path)
-            .await
             .with_context(|| format!("Couldn't find {}", pack_path))?;
         match found_packs.len() {
             0 => bail!("Couldn't find pack {}", hex),
@@ -157,20 +153,20 @@ impl CachedBackend {
             .with_context(|| format!("Couldn't open {}", snapshot_path))
     }
 
-    pub async fn remove_pack(&self, id: &ObjectId) -> Result<()> {
+    pub fn remove_pack(&self, id: &ObjectId) -> Result<()> {
         let hex = id.to_string();
         let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
-        self.remove(&pack_path).await
+        self.remove(&pack_path)
     }
 
-    pub async fn remove_index(&self, id: &ObjectId) -> Result<()> {
+    pub fn remove_index(&self, id: &ObjectId) -> Result<()> {
         let index_path = format!("indexes/{}.index", id);
-        self.remove(&index_path).await
+        self.remove(&index_path)
     }
 
-    pub async fn remove_snapshot(&self, id: &ObjectId) -> Result<()> {
+    pub fn remove_snapshot(&self, id: &ObjectId) -> Result<()> {
         let snapshot_path = format!("snapshots/{}.snapshot", id);
-        self.remove(&snapshot_path).await
+        self.remove(&snapshot_path)
     }
 }
 

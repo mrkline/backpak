@@ -64,15 +64,14 @@ enum Subcommand {
     RebuildIndex,
 }
 
-#[tokio::main]
-async fn main() {
-    run().await.unwrap_or_else(|e| {
+fn main() {
+    run().unwrap_or_else(|e| {
         log::error!("{:?}", e);
         std::process::exit(1);
     });
 }
 
-async fn run() -> Result<()> {
+fn run() -> Result<()> {
     let args = Args::from_args();
     init_logger(&args);
 
@@ -82,17 +81,17 @@ async fn run() -> Result<()> {
 
     match args.subcommand {
         Subcommand::Init => init::run(&args.repository),
-        Subcommand::Backup(b) => backup::run(&args.repository, b).await,
-        Subcommand::Cat(c) => cat::run(&args.repository, c).await,
-        Subcommand::Check(c) => check::run(&args.repository, c).await,
-        Subcommand::Diff(d) => diff::run(&args.repository, d).await,
-        Subcommand::Dump(d) => dump::run(&args.repository, d).await,
-        Subcommand::Forget(f) => forget::run(&args.repository, f).await,
-        Subcommand::Ls(l) => ls::run(&args.repository, l).await,
-        Subcommand::Prune(p) => prune::run(&args.repository, p).await,
-        Subcommand::Restore(r) => restore::run(&args.repository, r).await,
-        Subcommand::Snapshots => snapshots::run(&args.repository).await,
-        Subcommand::RebuildIndex => rebuild_index::run(&args.repository).await,
+        Subcommand::Backup(b) => backup::run(&args.repository, b),
+        Subcommand::Cat(c) => cat::run(&args.repository, c),
+        Subcommand::Check(c) => check::run(&args.repository, c),
+        Subcommand::Diff(d) => diff::run(&args.repository, d),
+        Subcommand::Dump(d) => dump::run(&args.repository, d),
+        Subcommand::Forget(f) => forget::run(&args.repository, f),
+        Subcommand::Ls(l) => ls::run(&args.repository, l),
+        Subcommand::Prune(p) => prune::run(&args.repository, p),
+        Subcommand::Restore(r) => restore::run(&args.repository, r),
+        Subcommand::Snapshots => snapshots::run(&args.repository),
+        Subcommand::RebuildIndex => rebuild_index::run(&args.repository),
     }?;
 
     counters::log_counts();

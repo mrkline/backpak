@@ -24,17 +24,16 @@ pub struct Args {
     pub dry_run: bool,
 }
 
-pub async fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Path, args: Args) -> Result<()> {
     // Build the usual suspects.
     let cached_backend = Arc::new(backend::open(repository)?);
-    let index = index::build_master_index(&cached_backend).await?;
+    let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
 
     let snapshots_and_forests = load_snapshots_and_forests(
         &cached_backend,
         &mut tree::Cache::new(&index, &blob_map, &cached_backend),
-    )
-    .await?;
+    )?;
 
     let reachable_chunks = reachable_chunks(snapshots_and_forests.par_iter().map(|s| &s.forest));
     let (reusable_packs, packs_to_prune) =
@@ -54,8 +53,7 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     // TODO: Should build_master_index() return some set of all packs read
     // so we don't have to traverse the backend twice?
     let superseded = cached_backend
-        .list_indexes()
-        .await?
+        .list_indexes()?
         .iter()
         .map(backend::id_from_path)
         .collect::<Result<BTreeSet<ObjectId>>>()?;
@@ -118,7 +116,7 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     let mut packed_blobs = index::blob_set(&new_index)?;
 
     let mut backup =
-        (!args.dry_run).then(|| backup::spawn_backup_tasks(cached_backend.clone(), new_index));
+        (!args.dry_run).then(|| backup::spawn_backup_threads(cached_backend.clone(), new_index));
 
     // Get a reader to load the chunks we're repacking.
     let mut reader = read::BlobReader::new(&cached_backend, &index, &blob_map);
@@ -131,15 +129,15 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     )?;
 
     if let Some(b) = backup {
-        b.join().await?;
+        b.join()?;
     }
 
     if !args.dry_run {
         for old_index in &superseded {
-            cached_backend.remove_index(old_index).await?;
+            cached_backend.remove_index(old_index)?;
         }
         for old_pack in packs_to_prune.keys() {
-            cached_backend.remove_pack(old_pack).await?;
+            cached_backend.remove_pack(old_pack)?;
         }
     }
 
@@ -152,12 +150,11 @@ struct SnapshotAndForest {
     forest: tree::Forest,
 }
 
-async fn load_snapshots_and_forests(
+fn load_snapshots_and_forests(
     cached_backend: &backend::CachedBackend,
-    tree_cache: &mut tree::Cache<'_>,
+    tree_cache: &mut tree::Cache,
 ) -> Result<Vec<SnapshotAndForest>> {
-    snapshot::load_chronologically(cached_backend)
-        .await?
+    snapshot::load_chronologically(cached_backend)?
         .into_iter()
         .map(|(snapshot, id)| {
             let forest = tree::forest_from_root(&snapshot.tree, tree_cache)?;

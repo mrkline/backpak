@@ -23,13 +23,13 @@ pub struct Args {
     second_snapshot: Option<String>,
 }
 
-pub async fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Path, args: Args) -> Result<()> {
     let cached_backend = backend::open(repository)?;
-    let index = index::build_master_index(&cached_backend).await?;
+    let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
-    let (snapshot1, id1) = snapshot::find_and_load(&args.first_snapshot, &cached_backend).await?;
+    let (snapshot1, id1) = snapshot::find_and_load(&args.first_snapshot, &cached_backend)?;
     let snapshot1_forest = tree::forest_from_root(&snapshot1.tree, &mut tree_cache)?;
 
     let (id2, forest2) = load_snapshot2_or_paths(
@@ -39,8 +39,7 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
         &args.second_snapshot,
         &cached_backend,
         &mut tree_cache,
-    )
-    .await?;
+    )?;
 
     diff::compare_trees(
         (&snapshot1.tree, &snapshot1_forest),
@@ -54,16 +53,16 @@ pub async fn run(repository: &Path, args: Args) -> Result<()> {
     Ok(())
 }
 
-async fn load_snapshot2_or_paths(
+fn load_snapshot2_or_paths(
     id1: &ObjectId,
     snapshot1: &snapshot::Snapshot,
     snapshot1_forest: &tree::Forest,
     second_snapshot: &Option<String>,
     cached_backend: &backend::CachedBackend,
-    tree_cache: &mut tree::Cache<'_>,
+    tree_cache: &mut tree::Cache,
 ) -> Result<(ObjectId, tree::Forest)> {
     if let Some(second_snapshot) = second_snapshot {
-        let (snapshot2, id2) = snapshot::find_and_load(second_snapshot, cached_backend).await?;
+        let (snapshot2, id2) = snapshot::find_and_load(second_snapshot, cached_backend)?;
         let snapshot2_forest = tree::forest_from_root(&snapshot2.tree, tree_cache)?;
 
         info!("Comparing snapshot {} to {}", id1, id2);

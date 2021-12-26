@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
+use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::Mutex;
 
 use anyhow::{bail, ensure, Context, Result};
@@ -11,7 +12,6 @@ use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::*;
 use tempfile::NamedTempFile;
-use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 
 use crate::backend;
 use crate::counters;
@@ -46,8 +46,8 @@ impl Index {
 /// and upload the index files when they reach a sufficient size.
 pub fn index(
     starting_index: Index,
-    mut rx: UnboundedReceiver<PackMetadata>,
-    to_upload: Sender<(String, File)>,
+    rx: Receiver<PackMetadata>,
+    to_upload: SyncSender<(String, File)>,
 ) -> Result<bool> {
     let mut index = starting_index;
     let mut index_id = None;
@@ -68,7 +68,7 @@ pub fn index(
     }
 
     // For each pack...
-    while let Some(PackMetadata { id, manifest }) = rx.blocking_recv() {
+    while let Ok(PackMetadata { id, manifest }) = rx.recv() {
         ensure!(
             index.packs.insert(id, manifest).is_none(),
             "Duplicate pack received: {}",
@@ -116,7 +116,7 @@ pub fn index(
         );
 
         to_upload
-            .blocking_send((index_name, persisted))
+            .send((index_name, persisted))
             .context("indexer -> uploader channel exited early")?;
         Ok(true)
     } else {
@@ -159,7 +159,7 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
 
 /// Load all indexes from the provided backend and combines them into a master
 /// index, removing any superseded ones.
-pub async fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
+pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
     info!("Building a master index");
 
     #[derive(Debug, Default)]
@@ -172,8 +172,7 @@ pub async fn build_master_index(cached_backend: &backend::CachedBackend) -> Resu
     let shared = Mutex::new(Results::default());
 
     cached_backend
-        .list_indexes()
-        .await?
+        .list_indexes()?
         .par_iter()
         .try_for_each_with(&shared, |shared, index_file| {
             let index_id = backend::id_from_path(&index_file)?;

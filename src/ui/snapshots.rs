@@ -5,13 +5,13 @@ use anyhow::*;
 use crate::backend;
 use crate::snapshot;
 
-pub async fn run(repository: &Path) -> Result<()> {
+pub fn run(repository: &Path) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
 
     let cached_backend = backend::open(repository)?;
-    let snapshots = snapshot::load_chronologically(&cached_backend).await?;
+    let snapshots = snapshot::load_chronologically(&cached_backend)?;
 
     for (snapshot, id) in snapshots.into_iter().rev() {
         print!("snapshot {}", id);

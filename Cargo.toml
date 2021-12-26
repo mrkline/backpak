@@ -14,10 +14,8 @@ debug = true
 [dependencies]
 atty = "0.2"
 anyhow = "1.0"
-async-trait = "0.1"
 enum-map = "0.6"
 fastcdc = "1.0"
-futures = "0.3"
 hex = "0.4"
 hostname = "0.3"
 lazy_static = "1.0"
@@ -42,11 +40,6 @@ features = ["serde"]
 [dependencies.simplelog]
 version = "0.10"
 features = ["test", "termcolor"]
-
-[dependencies.tokio]
-version = "1.0"
-default-features = false
-features = ["rt-multi-thread", "macros", "sync", "fs", "io-util", "parking_lot" ]
 
 [dependencies.zstd]
 version = "0.5"

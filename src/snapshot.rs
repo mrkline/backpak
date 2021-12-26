@@ -3,13 +3,13 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::SyncSender;
 
 use anyhow::*;
 use chrono::prelude::*;
 use log::*;
 use rayon::prelude::*;
 use serde_derive::*;
-use tokio::sync::mpsc::Sender;
 
 use crate::backend;
 use crate::file_util::check_magic;
@@ -40,7 +40,7 @@ fn to_file(fh: &mut fs::File, snapshot: &Snapshot) -> Result<ObjectId> {
 }
 
 /// Upload a snapshot, finishing a backup.
-pub async fn upload(snapshot: &Snapshot, to_upload: Sender<(String, fs::File)>) -> Result<()> {
+pub fn upload(snapshot: &Snapshot, to_upload: SyncSender<(String, fs::File)>) -> Result<()> {
     let mut fh = tempfile::Builder::new()
         .prefix("temp-backpak-")
         .suffix(".snapshot")
@@ -57,7 +57,6 @@ pub async fn upload(snapshot: &Snapshot, to_upload: Sender<(String, fs::File)>) 
 
     to_upload
         .send((snapshot_name, persisted))
-        .await
         .context("backup -> uploader channel exited early")?;
     Ok(())
 }
@@ -73,11 +72,11 @@ fn from_reader<R: Read>(r: &mut R) -> Result<(Snapshot, ObjectId)> {
     Ok((snapshot, id))
 }
 
-pub async fn find_and_load(
+pub fn find_and_load(
     id_prefix: &str,
     cached_backend: &backend::CachedBackend,
 ) -> Result<(Snapshot, ObjectId)> {
-    let id = find(id_prefix, cached_backend).await?;
+    let id = find(id_prefix, cached_backend)?;
     Ok((load(&id, cached_backend)?, id))
 }
 
@@ -97,13 +96,12 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Sn
 }
 
 /// Load all snapshots from the given backend and sort them by date taken.
-pub async fn load_chronologically(
+pub fn load_chronologically(
     cached_backend: &crate::backend::CachedBackend,
 ) -> Result<Vec<(Snapshot, ObjectId)>> {
     debug!("Reading snapshots");
     let mut snapshots = cached_backend
-        .list_snapshots()
-        .await?
+        .list_snapshots()?
         .par_iter()
         .map(|file| {
             let snapshot_id = backend::id_from_path(&file)?;
@@ -115,17 +113,9 @@ pub async fn load_chronologically(
     Ok(snapshots)
 }
 
-pub async fn find(
-    prefix: &str,
-    cached_backend: &crate::backend::CachedBackend,
-) -> Result<ObjectId> {
+pub fn find(prefix: &str, cached_backend: &crate::backend::CachedBackend) -> Result<ObjectId> {
     if prefix == "last" {
-        match load_chronologically(cached_backend)
-            .await?
-            .iter()
-            .rev()
-            .next()
-        {
+        match load_chronologically(cached_backend)?.iter().rev().next() {
             None => bail!("No snapshots taken yet"),
             Some((_snap, id)) => return Ok(*id),
         }
@@ -137,8 +127,7 @@ pub async fn find(
     }
 
     let mut matches = cached_backend
-        .list_snapshots()
-        .await?
+        .list_snapshots()?
         .into_iter()
         .filter(|snap| {
             Path::new(snap)
