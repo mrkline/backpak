@@ -124,8 +124,8 @@ pub fn pack(
     Ok(())
 }
 
-type ZstdEncoder<W> = zstd::stream::write::Encoder<W>;
-type ZstdDecoder<R> = zstd::stream::read::Decoder<R>;
+type ZstdEncoder<W> = zstd::stream::write::Encoder<'static, W>;
+type ZstdDecoder<R> = zstd::stream::read::Decoder<'static, R>;
 
 struct PackfileWriter {
     writer: ZstdEncoder<NamedTempFile>,

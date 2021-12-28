@@ -5,12 +5,14 @@ use std::io;
 use std::io::prelude::*;
 
 use anyhow::{ensure, Result};
-use sha2::{digest::generic_array::GenericArray, Digest, Sha224};
+use sha2::{digest::Output, Digest, Sha224};
+
+type Sha224Digest = Output<Sha224>;
 
 /// The hash (a SHA224) used to identify all objects in our system.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct ObjectId {
-    digest: GenericArray<u8, <Sha224 as Digest>::OutputSize>,
+    digest: Sha224Digest,
 }
 
 impl ObjectId {
@@ -21,7 +23,7 @@ impl ObjectId {
         }
     }
 
-    fn from_digest(digest: GenericArray<u8, <Sha224 as Digest>::OutputSize>) -> Self {
+    fn from_digest(digest: Sha224Digest) -> Self {
         Self { digest }
     }
 
@@ -55,7 +57,7 @@ impl std::str::FromStr for ObjectId {
             bytes.len() == <Sha224 as Digest>::output_size(),
             "Expected SHA224 hex"
         );
-        Ok(ObjectId::from_digest(*GenericArray::from_slice(&bytes)))
+        Ok(ObjectId::from_digest(*Sha224Digest::from_slice(&bytes)))
     }
 }
 
@@ -90,7 +92,7 @@ impl<'de> serde::Deserialize<'de> for ObjectId {
         D: serde::Deserializer<'de>,
     {
         let bytes: Vec<u8> = serde_bytes::deserialize(deserializer)?;
-        Ok(ObjectId::from_digest(*GenericArray::from_slice(&bytes)))
+        Ok(ObjectId::from_digest(*Sha224Digest::from_slice(&bytes)))
     }
 }
 

@@ -18,7 +18,7 @@ pub enum Op {
 }
 
 lazy_static! {
-    static ref COUNTER_MAP: EnumMap<Op, AtomicUsize> = EnumMap::new();
+    static ref COUNTER_MAP: EnumMap<Op, AtomicUsize> = EnumMap::default();
 }
 
 #[inline]

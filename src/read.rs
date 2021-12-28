@@ -14,7 +14,7 @@ use crate::hashing::{HashingReader, ObjectId};
 use crate::index;
 use crate::pack;
 
-type ZstdDecoder<R> = zstd::stream::read::Decoder<R>;
+type ZstdDecoder<R> = zstd::stream::read::Decoder<'static, R>;
 
 /// Info about the currently-loaded packfile.
 ///
