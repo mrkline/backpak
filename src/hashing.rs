@@ -155,3 +155,35 @@ impl<W: Write> Write for HashingWriter<W> {
         self.inner.flush()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    const DEVELOPERS: &[u8] = b"Developers, developers, developers, developers!".as_slice();
+
+    const EXPECTED: &[u8] =
+        &hex_literal::hex!("354e63924f01c3b921222ab4d5b4a77ef67d04bedf437eef66d2e0d6");
+
+    #[test]
+    fn smoke() {
+        let id = ObjectId::hash(DEVELOPERS);
+        assert_eq!(id.digest.as_slice(), EXPECTED);
+    }
+
+    #[test]
+    fn reader() -> Result<()> {
+        let mut r = HashingReader::new(DEVELOPERS);
+        io::copy(&mut r, &mut io::sink())?;
+        assert_eq!(r.finalize().0.digest.as_slice(), EXPECTED);
+        Ok(())
+    }
+
+    #[test]
+    fn writer() -> Result<()> {
+        let mut w = HashingWriter::new(io::sink());
+        w.write_all(DEVELOPERS)?;
+        assert_eq!(w.finalize().0.digest.as_slice(), EXPECTED);
+        Ok(())
+    }
+}
