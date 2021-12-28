@@ -15,6 +15,8 @@ pub enum Recurse<'a> {
 // https://users.rust-lang.org/t/trailing-in-paths/43166/2
 #[cfg(windows)]
 fn has_trailing_slash(p: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+
     let last = p.as_os_str().encode_wide().last();
     last == Some(b'\\' as u16) || last == Some(b'/' as u16)
 }
