@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Error, Result};
 use log::*;
 
 use crate::hashing::ObjectId;
@@ -78,9 +78,20 @@ impl CachedBackend {
                 let to = to.to_str().unwrap();
                 // On Windows, we can't move an open file. Boo, Windows.
                 // Don't bother closing, moving, and reopening if moving fails.
-                if cfg!(target_family = "unix") && std::fs::rename(from, to).is_ok() {
-                    log::debug!("Renamed {} to {}", from, to);
-                    return Ok(());
+                if cfg!(unix) {
+                    match std::fs::rename(from, to) {
+                        Ok(()) => {
+                            log::debug!("Renamed {} to {}", from, to);
+                            return Ok(());
+                        },
+                        // Once stabilized: e.kind() == ErrorKind::CrossesDevices
+                        Err(e) if e.raw_os_error() == Some(18) /* EXDEV */ => {
+                            // Continue below.
+                        },
+                        Err(e) => {
+                            return Err(Error::from(e).context(format!("Couldn't rename {} to {}", from, to)))
+                        }
+                    }
                 }
                 // Otherwise, copy the file.
                 from_fh.seek(std::io::SeekFrom::Start(0))?;

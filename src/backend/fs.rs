@@ -74,7 +74,7 @@ impl Backend for FilesystemBackend {
         let to = self.base_directory.join(to);
         let mut fh =
             fs::File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
-        io::copy(from, &mut fh)?;
+        io::copy(from, &mut fh).with_context(|| format!("Couldn't write to {}", to.display()))?;
         Ok(())
     }
 
