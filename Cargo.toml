@@ -14,6 +14,7 @@ debug = true
 [dependencies]
 atty = "0.2"
 anyhow = { version = "1.0", features = ["backtrace"] }
+chrono = { version = "0.4", features = ["serde"] }
 enum-map = "1.1"
 fastcdc = "1.0"
 hex = "0.4"
@@ -30,20 +31,10 @@ serde_cbor = "0.11"
 serde_derive = "1.0"
 serde_json = "1.0"
 sha2 = "0.10"
+simplelog = { version = "0.10", features = ["test", "termcolor"] }
 structopt = "0.3.8"
 tempfile = "3.0"
-
-[dependencies.chrono]
-version = "0.4"
-features = ["serde"]
-
-[dependencies.simplelog]
-version = "0.10"
-features = ["test", "termcolor"]
-
-[dependencies.zstd]
-version = "0.9"
-features = ["zstdmt"]
+zstd = { version = "0.9", features = ["zstdmt"] }
 
 [dev-dependencies]
 assert_cmd = "1.0"
