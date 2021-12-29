@@ -120,12 +120,9 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         tree: root,
     };
 
-    snapshot::upload(&snapshot, backup.upload_tx)?;
+    snapshot::upload(&snapshot, &mut backup.upload_tx)?;
 
-    drop(backup.chunk_tx);
-    drop(backup.tree_tx);
-
-    backup.threads.join().unwrap()
+    backup.join()
 }
 
 fn reject_matching_directories(paths: &BTreeSet<PathBuf>) -> Result<()> {

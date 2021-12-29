@@ -40,7 +40,7 @@ fn to_file(fh: &mut fs::File, snapshot: &Snapshot) -> Result<ObjectId> {
 }
 
 /// Upload a snapshot, finishing a backup.
-pub fn upload(snapshot: &Snapshot, to_upload: SyncSender<(String, fs::File)>) -> Result<()> {
+pub fn upload(snapshot: &Snapshot, to_upload: &mut SyncSender<(String, fs::File)>) -> Result<()> {
     let mut fh = tempfile::Builder::new()
         .prefix("temp-backpak-")
         .suffix(".snapshot")
