@@ -71,8 +71,9 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     // TODO: Load WIP index and upload any existing packs
     // before we start new ones.
 
+    let cached_backend = Arc::new(cached_backend);
     let mut backup =
-        crate::backup::spawn_backup_threads(Arc::new(cached_backend), index::Index::default());
+        crate::backup::spawn_backup_threads(cached_backend.clone(), index::Index::default());
 
     info!(
         "Backing up {}",
@@ -95,6 +96,12 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     )?;
     drop(parent_forest);
     drop(packed_blobs);
+
+    // Important: make sure all blobs and indexes are written BEFORE
+    // we upload the snapshot.
+    // It's meaningless unless everything else is there first!
+    backup.join()?;
+
     debug!("Root tree packed as {}", root);
 
     let author = match args.author {
@@ -120,9 +127,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         tree: root,
     };
 
-    snapshot::upload(&snapshot, &mut backup.upload_tx)?;
-
-    backup.join()
+    snapshot::upload(&snapshot, &*cached_backend)
 }
 
 fn reject_matching_directories(paths: &BTreeSet<PathBuf>) -> Result<()> {

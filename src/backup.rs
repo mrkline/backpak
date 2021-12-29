@@ -108,10 +108,10 @@ fn backup_master_thread(
         }
     };
 
-    append_error(uploader.join().unwrap().err());
     append_error(chunk_packer.join().unwrap().err());
     append_error(tree_packer.join().unwrap().err());
     append_error(indexer.join().unwrap().err());
+    append_error(uploader.join().unwrap().err());
 
     if errors.is_empty() {
         Ok(())
