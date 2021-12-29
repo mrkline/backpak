@@ -75,7 +75,8 @@ impl Backend for FilesystemBackend {
         let mut fh =
             fs::File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
         io::copy(from, &mut fh).with_context(|| format!("Couldn't write to {}", to.display()))?;
-        fh.sync_all().with_context(|| format!("Couldn't sync {}", to.display()))?;
+        fh.sync_all()
+            .with_context(|| format!("Couldn't sync {}", to.display()))?;
         Ok(())
     }
 

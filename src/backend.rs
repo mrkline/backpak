@@ -3,13 +3,13 @@
 
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::{self, prelude::*};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, ensure, Context, Error, Result};
 use log::*;
 
-use crate::hashing::ObjectId;
+use crate::{counters, file_util, hashing::ObjectId};
 
 mod fs;
 mod memory;
@@ -48,7 +48,15 @@ enum WritethroughCache {
     /// Just keep track of the base directory and pass file handles directly.
     /// Nice.
     Local { base_directory: PathBuf },
-    // Remote // TODO LOL
+    #[allow(unused)]
+    Remote {
+        cache_directory: PathBuf,
+        max_size: usize,
+    },
+}
+
+fn prune_cache(_cache_directory: &Path, _max_size: usize) -> Result<()> {
+    todo!()
 }
 
 pub struct CachedBackend {
@@ -65,39 +73,50 @@ impl CachedBackend {
                 Ok(File::open(&from)
                     .with_context(|| format!("Couldn't open {}", from.display()))?)
             }
+            WritethroughCache::Remote {
+                cache_directory,
+                max_size,
+            } => {
+                let cached = cache_directory.join(from);
+                match File::open(&cached) {
+                    Ok(f) => {
+                        counters::bump(counters::Op::FileCacheHit);
+                        Ok(f)
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                        counters::bump(counters::Op::FileCacheMiss);
+                        let backend_reader = self.backend.read(from)?;
+                        file_util::safe_copy_to_file(backend_reader, &cached)?;
+                        let f = File::open(&cached)?;
+                        prune_cache(cache_directory, *max_size)?;
+                        Ok(f)
+                    }
+                    Err(e) => {
+                        return Err(Error::from(e).context(format!("Couldn't open {}", from)));
+                    }
+                }
+            }
         }
     }
 
     /// Take the completed file and its `<id>.<type>` name and
     /// store it to an object with the appropriate key per
     /// [`destination()`](destination)
-    pub fn write(&self, from: &str, mut from_fh: File) -> Result<()> {
+    pub fn write(&self, from: &str, from_fh: File) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let to = base_directory.join(destination(from));
-                let to = to.to_str().unwrap();
-                // On Windows, we can't move an open file. Boo, Windows.
-                // Don't bother closing, moving, and reopening if moving fails.
-                if cfg!(unix) {
-                    match std::fs::rename(from, to) {
-                        Ok(()) => {
-                            log::debug!("Renamed {} to {}", from, to);
-                            return Ok(());
-                        },
-                        // Once stabilized: e.kind() == ErrorKind::CrossesDevices
-                        Err(e) if e.raw_os_error() == Some(18) /* EXDEV */ => {
-                            // Continue below.
-                        },
-                        Err(e) => {
-                            return Err(Error::from(e).context(format!("Couldn't rename {} to {}", from, to)))
-                        }
-                    }
-                }
-                // Otherwise, copy the file.
-                from_fh.seek(std::io::SeekFrom::Start(0))?;
-                self.backend.write(&mut from_fh, to)?;
-                log::debug!("Backed up {}. Removing temp copy", from);
-                std::fs::remove_file(&from).with_context(|| format!("Couldn't remove {}", from))?;
+                file_util::move_opened(from, from_fh, &to)?;
+            }
+            WritethroughCache::Remote {
+                cache_directory,
+                max_size,
+            } => {
+                let cached = cache_directory.join(from);
+                file_util::move_opened(from, from_fh, &cached)?;
+                let mut f = File::open(cached)?;
+                self.backend.write(&mut f, from)?;
+                prune_cache(cache_directory, *max_size)?;
             }
         }
         Ok(())
@@ -106,11 +125,24 @@ impl CachedBackend {
     fn remove(&self, to_remove: &str) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { .. } => {
-                // Just unlink the file!
-                self.backend.remove(to_remove)
-            } // On a remote backend, we'd have to unlink any cached file,
-              // _then_ remove it from the remote side.
+                // Let backend.remove() unlink the file below
+            }
+            WritethroughCache::Remote {
+                cache_directory, ..
+            } => {
+                let cached = cache_directory.join(to_remove);
+                match std::fs::remove_file(&cached) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                    Err(e) => {
+                        return Err(
+                            Error::from(e).context(format!("Couldn't remove {}", cached.display()))
+                        );
+                    }
+                }
+            }
         }
+        self.backend.remove(to_remove)
     }
 
     // Let's put all the layout-specific stuff here so that we don't have paths
