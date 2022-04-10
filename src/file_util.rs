@@ -62,8 +62,14 @@ pub fn read_file(path: &Path) -> Result<Arc<LoadedFile>> {
     Ok(Arc::new(file))
 }
 
+/// Move the given file `from -> to`, renaming if possible.
+///
+/// If a rename isn't possible, write out a copy.
+/// Uses `from_fh` to write the copy as-needed.
+///
+/// Returns a file handle (assume at EOF) for `to`.
 #[cfg(unix)]
-pub fn move_opened<P, Q>(from: P, from_fh: File, to: Q) -> Result<()>
+pub fn move_opened<P, Q>(from: P, from_fh: File, to: Q) -> Result<File>
 where
     P: AsRef<Path>,
     Q: AsRef<Path>,
@@ -75,7 +81,7 @@ where
     match std::fs::rename(&from, &to) {
         Ok(()) => {
             debug!("Renamed {} to {}", from.display(), to.display());
-            Ok(())
+            Ok(from_fh)
         },
         // Once stabilized: e.kind() == ErrorKind::CrossesDevices
         Err(e) if e.raw_os_error() == Some(18) /* EXDEV */ => {
@@ -85,8 +91,9 @@ where
     }
 }
 
+/// Move the given file `from -> to` via copy (boo, Windows).
 #[cfg(windows)]
-pub fn move_opened<P, Q>(from: P, from_fh: File, to: Q) -> Result<()>
+pub fn move_opened<P, Q>(from: P, from_fh: File, to: Q) -> Result<File>
 where
     P: AsRef<Path>,
     Q: AsRef<Path>,
@@ -95,20 +102,21 @@ where
     move_by_copy(from.as_ref(), from_fh, to.as_ref())
 }
 
-fn move_by_copy(from: &Path, mut from_fh: File, to: &Path) -> Result<()> {
+fn move_by_copy(from: &Path, mut from_fh: File, to: &Path) -> Result<File> {
     from_fh.seek(std::io::SeekFrom::Start(0))?;
-    safe_copy_to_file(from_fh, to)?;
+    let to_fh = safe_copy_to_file(from_fh, to)?;
 
     // Axe /src/foo
     std::fs::remove_file(&from).with_context(|| format!("Couldn't remove {}", from.display()))?;
     debug!("Moved {} to {}", from.display(), to.display());
-    Ok(())
+    Ok(to_fh)
 }
 
 /// Copies the reader to a new file at `to + ".part"`, then renames to `to`.
 ///
 /// This should guarantee that `to` never contains a partial file.
-pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Path) -> Result<()> {
+/// Returns an open file handle for `to` (assume at EOF)
+pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Path) -> Result<File> {
     // To make things more atomic, copy to /dest/foo.part,
     // then rename to /dest/foo.
     let mut to_part = to.to_owned().into_os_string();
@@ -129,9 +137,23 @@ pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Path) -> Result<()> {
     to_fh
         .sync_all()
         .with_context(|| format!("Couldn't sync {}", to_part.display()))?;
-    drop(to_fh);
 
-    // Rename to /dest/foo
-    std::fs::rename(&to_part, to)
-        .with_context(|| format!("Couldn't rename {} to {}", to_part.display(), to.display()))
+    if cfg!(unix) {
+        // Rename to /dest/foo and return our handle
+        std::fs::rename(&to_part, to).with_context(|| {
+            format!("Couldn't rename {} to {}", to_part.display(), to.display())
+        })?;
+
+        Ok(to_fh)
+    } else {
+        // Windows is sad, we have to close to rename.
+        // Is this a soundness/atomicity hole in the making?
+        // Maybe; help me Windows friends.
+        drop(to_fh);
+        std::fs::rename(&to_part, to).with_context(|| {
+            format!("Couldn't rename {} to {}", to_part.display(), to.display())
+        })?;
+
+        File::open(to).with_context(|| format!("Couldn't open {} after moving to it", to.display()))
+    }
 }

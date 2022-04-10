@@ -79,15 +79,18 @@ impl CachedBackend {
             } => {
                 let cached = cache_directory.join(from);
                 match File::open(&cached) {
+                    // If it's in the cache, awesome!
                     Ok(f) => {
                         counters::bump(counters::Op::FileCacheHit);
                         Ok(f)
                     }
+                    // Otherwise, first copy it into the cache,
+                    // prune the cache, then serve up that cached copy.
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {
                         counters::bump(counters::Op::FileCacheMiss);
                         let backend_reader = self.backend.read(from)?;
-                        file_util::safe_copy_to_file(backend_reader, &cached)?;
-                        let f = File::open(&cached)?;
+                        let mut f = file_util::safe_copy_to_file(backend_reader, &cached)?;
+                        f.seek(std::io::SeekFrom::Start(0))?;
                         prune_cache(cache_directory, *max_size)?;
                         Ok(f)
                     }
@@ -108,13 +111,15 @@ impl CachedBackend {
                 let to = base_directory.join(destination(from));
                 file_util::move_opened(from, from_fh, &to)?;
             }
+            // Write through! Write it into the cache,
+            // copy the cached version to the backend, and prune the cache.
             WritethroughCache::Remote {
                 cache_directory,
                 max_size,
             } => {
                 let cached = cache_directory.join(from);
-                file_util::move_opened(from, from_fh, &cached)?;
-                let mut f = File::open(cached)?;
+                let mut f = file_util::move_opened(from, from_fh, &cached)?;
+                f.seek(std::io::SeekFrom::Start(0))?;
                 self.backend.write(&mut f, from)?;
                 prune_cache(cache_directory, *max_size)?;
             }
@@ -130,6 +135,7 @@ impl CachedBackend {
             WritethroughCache::Remote {
                 cache_directory, ..
             } => {
+                // Remove it from the cache too. No worries if it isn't there.
                 let cached = cache_directory.join(to_remove);
                 match std::fs::remove_file(&cached) {
                     Ok(()) => {}
