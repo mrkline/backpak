@@ -243,7 +243,7 @@ pub fn open(repository: &Path) -> Result<CachedBackend> {
 }
 
 /// Returns the desitnation path for the given temp file based on its extension
-pub fn destination(src: &str) -> String {
+fn destination(src: &str) -> String {
     match Path::new(src).extension().and_then(OsStr::to_str) {
         Some("pack") => format!("packs/{}/{}", &src[0..2], src),
         Some("index") => format!("indexes/{}", src),
