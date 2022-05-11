@@ -2,9 +2,9 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;
-use std::path::{Path, PathBuf};
 
 use anyhow::{bail, ensure, Context, Result};
+use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
 use log::*;
 use rayon::prelude::*;
@@ -19,7 +19,7 @@ pub struct Snapshot {
     pub time: DateTime<FixedOffset>,
     pub author: String,
     pub tags: BTreeSet<String>,
-    pub paths: BTreeSet<PathBuf>,
+    pub paths: BTreeSet<Utf8PathBuf>,
     pub tree: ObjectId,
 }
 
@@ -125,14 +125,7 @@ pub fn find(prefix: &str, cached_backend: &crate::backend::CachedBackend) -> Res
     let mut matches = cached_backend
         .list_snapshots()?
         .into_iter()
-        .filter(|snap| {
-            Path::new(snap)
-                .file_stem()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .starts_with(prefix)
-        })
+        .filter(|snap| Utf8Path::new(snap).file_stem().unwrap().starts_with(prefix))
         .collect::<Vec<_>>();
 
     match matches.len() {
@@ -162,7 +155,7 @@ mod test {
                 .collect::<BTreeSet<_>>(),
             paths: ["moon/orbit", "moon/tranquility-base"]
                 .iter()
-                .map(PathBuf::from)
+                .map(Utf8PathBuf::from)
                 .collect::<BTreeSet<_>>(),
             tree: ObjectId::hash(b"One small step"),
         }

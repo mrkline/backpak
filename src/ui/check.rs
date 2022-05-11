@@ -1,11 +1,10 @@
-use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{bail, Result};
+use clap::Parser;
 use log::*;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
-use clap::Parser;
 
 use crate::backend;
 use crate::hashing::ObjectId;
@@ -28,7 +27,7 @@ pub struct Args {
     pub read_packs: bool,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let mut trouble = false;
 
     let cached_backend = backend::open(repository)?;

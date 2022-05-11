@@ -73,6 +73,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "atty",
+ "camino",
  "chrono",
  "clap",
  "enum-map",
@@ -139,6 +140,15 @@ dependencies = [
  "lazy_static",
  "memchr",
  "regex-automata",
+]
+
+[[package]]
+name = "camino"
+version = "1.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07fd178c5af4d59e83498ef15cf3f154e1a6f9d091270cb86283c65ef44e9ef0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -753,6 +763,9 @@ name = "serde"
 version = "1.0.137"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61ea8d54c77f8315140a05f4c7237403bf38b72704d031543aa1d16abbf517d1"
+dependencies = [
+ "serde_derive",
+]
 
 [[package]]
 name = "serde_bytes"

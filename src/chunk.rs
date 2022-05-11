@@ -1,9 +1,9 @@
 //! Cut files into content-based chunks.
 
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use camino::Utf8Path;
 use fastcdc::FastCDC;
 use log::*;
 use rayon::prelude::*;
@@ -60,20 +60,19 @@ pub type ChunkedFile = Vec<Blob>;
 /// ASAP.
 ///
 /// See <https://crates.io/crates/fastcdc>
-pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
+pub fn chunk_file<P: AsRef<Utf8Path>>(path: P) -> Result<ChunkedFile> {
     const MIN_SIZE: usize = 1024 * 512;
     const TARGET_SIZE: usize = 1024 * 1024;
     const MAX_SIZE: usize = 1024 * 1024 * 2;
 
-    let path: &Path = path.as_ref();
+    let path: &Utf8Path = path.as_ref();
 
-    let file =
-        file_util::read_file(path).with_context(|| format!("Couldn't read {}", path.display()))?;
+    let file = file_util::read_file(path).with_context(|| format!("Couldn't read {path}"))?;
     let file_bytes: &[u8] = file.bytes();
 
-    trace!("Finding cut points for {}", path.display());
+    trace!("Finding cut points for {path}");
     let chunks: Vec<_> = FastCDC::new(file_bytes, MIN_SIZE, TARGET_SIZE, MAX_SIZE).collect();
-    debug!("Chunking {} into {} chunks", path.display(), chunks.len());
+    debug!("Chunking {} into {} chunks", path, chunks.len());
 
     let chunks: Vec<Blob> = chunks
         .par_iter()
@@ -85,7 +84,7 @@ pub fn chunk_file<P: AsRef<Path>>(path: P) -> Result<ChunkedFile> {
 
             let id = ObjectId::hash(span.as_ref());
 
-            trace!("{}: [{}..{}] {}", path.display(), start, end, id);
+            trace!("{}: [{}..{}] {}", path, start, end, id);
 
             Blob {
                 contents: blob::Contents::Span(span),

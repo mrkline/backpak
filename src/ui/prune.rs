@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, ensure, Context, Result};
+use camino::Utf8Path;
+use clap::Parser;
 use log::*;
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
-use clap::Parser;
 
 use crate::backend;
 use crate::backup;
@@ -24,7 +24,7 @@ pub struct Args {
     pub dry_run: bool,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Build the usual suspects.
     let cached_backend = Arc::new(backend::open(repository)?);
     let index = index::build_master_index(&cached_backend)?;
@@ -310,11 +310,11 @@ fn walk_tree(
 
 fn repack_chunk(
     id: &ObjectId,
-    path: &Path,
+    path: &Utf8Path,
     reader: &mut read::BlobReader,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
-    trace!("Repacking chunk {} from {}", id, path.display());
+    trace!("Repacking chunk {id} from {path}");
     if let Some(b) = backup {
         let contents = blob::Contents::Buffer(reader.read_blob(id)?);
         b.chunk_tx.send(blob::Blob {

@@ -209,6 +209,8 @@ mod test {
     use std::collections::BTreeSet;
     use std::sync::mpsc::{channel, sync_channel};
 
+    use camino::Utf8Path;
+
     use crate::blob;
     use crate::chunk;
 
@@ -222,7 +224,7 @@ mod test {
 
         // Create a backend with a single pack from our reference files
         let backup_dir = tempfile::tempdir().expect("Failed to create temp test directory");
-        let backup_path = backup_dir.path();
+        let backup_path = Utf8Path::from_path(backup_dir.path()).unwrap();
         backend::initialize(backup_path)?;
         let backend = backend::open(backup_path)?;
 

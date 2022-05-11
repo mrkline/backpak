@@ -1,10 +1,7 @@
-use std::{
-    ffi::OsStr,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::fs;
 
 use anyhow::Result;
+use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use log::*;
 use rustc_hash::FxHashMap;
@@ -20,7 +17,7 @@ use crate::{
 #[derive(Debug, Parser)]
 pub struct Args {
     #[clap(short, long)]
-    output: Option<PathBuf>,
+    output: Option<Utf8PathBuf>,
 
     #[clap(short = 'n', long)]
     dry_run: bool,
@@ -41,7 +38,7 @@ pub struct Args {
     restore_from: String,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let cached_backend = backend::open(repository)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
@@ -66,7 +63,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     diff::compare_trees(
         (&tree_and_mapping.fs_id, &tree_and_mapping.fs_forest),
         (&snapshot.tree, &snapshot_forest),
-        Path::new(""),
+        Utf8Path::new(""),
         &mut res,
     );
 
@@ -76,20 +73,20 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 struct FsTreeAndMapping<'a> {
     fs_id: ObjectId,
     fs_forest: tree::Forest,
-    path_map: FxHashMap<&'a OsStr, PathBuf>,
+    path_map: FxHashMap<&'a str, Utf8PathBuf>,
 }
 
 fn load_fs_tree_and_mapping<'a>(
     id: &ObjectId,
     snapshot: &'a snapshot::Snapshot,
     snapshot_forest: &tree::Forest,
-    restore_to: &Option<PathBuf>,
+    restore_to: &Option<Utf8PathBuf>,
 ) -> Result<FsTreeAndMapping<'a>> {
     let mut path_map =
         FxHashMap::with_capacity_and_hasher(snapshot.paths.len(), Default::default());
 
     if let Some(to) = restore_to {
-        info!("Comparing snapshot {} to {}", id, to.display());
+        info!("Comparing snapshot {id} to {to}");
 
         let paths = snapshot
             .paths
@@ -136,12 +133,12 @@ fn load_fs_tree_and_mapping<'a>(
 #[derive(Debug)]
 struct Restorer<'a> {
     printer: super::diff::PrintDiffs,
-    path_map: FxHashMap<&'a OsStr, PathBuf>,
+    path_map: FxHashMap<&'a str, Utf8PathBuf>,
     args: &'a Args,
 }
 
 impl Restorer<'_> {
-    fn translate_path(&self, node_path: &Path) -> PathBuf {
+    fn translate_path(&self, node_path: &Utf8Path) -> Utf8PathBuf {
         let first_component = node_path.iter().next().unwrap();
         self.path_map
             .get(first_component)
@@ -151,7 +148,7 @@ impl Restorer<'_> {
 }
 
 impl diff::Callbacks for Restorer<'_> {
-    fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()> {
+    fn node_added(&mut self, node_path: &Utf8Path, new_node: &Node, forest: &Forest) -> Result<()> {
         let node_path = self.translate_path(node_path);
 
         self.printer.node_added(&node_path, new_node, forest)?;
@@ -162,7 +159,12 @@ impl diff::Callbacks for Restorer<'_> {
         Ok(())
     }
 
-    fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest) -> Result<()> {
+    fn node_removed(
+        &mut self,
+        node_path: &Utf8Path,
+        old_node: &Node,
+        forest: &Forest,
+    ) -> Result<()> {
         if !self.args.delete {
             return Ok(());
         }
@@ -182,7 +184,7 @@ impl diff::Callbacks for Restorer<'_> {
 
     fn contents_changed(
         &mut self,
-        node_path: &Path,
+        node_path: &Utf8Path,
         old_node: &Node,
         new_node: &Node,
     ) -> Result<()> {
@@ -197,7 +199,7 @@ impl diff::Callbacks for Restorer<'_> {
         self.set_metadata(&node_path, new_node)
     }
 
-    fn metadata_changed(&mut self, node_path: &Path, node: &Node) -> Result<()> {
+    fn metadata_changed(&mut self, node_path: &Utf8Path, node: &Node) -> Result<()> {
         let node_path = self.translate_path(node_path);
 
         self.printer.metadata_changed(&node_path, node)?;
@@ -210,7 +212,7 @@ impl diff::Callbacks for Restorer<'_> {
 
     fn type_changed(
         &mut self,
-        node_path: &Path,
+        node_path: &Utf8Path,
         old_node: &Node,
         old_forest: &Forest,
         new_node: &Node,
@@ -233,7 +235,7 @@ impl diff::Callbacks for Restorer<'_> {
 }
 
 impl<'a> Restorer<'a> {
-    fn set_metadata(&self, _node_path: &Path, _node: &Node) -> Result<()> {
+    fn set_metadata(&self, _node_path: &Utf8Path, _node: &Node) -> Result<()> {
         if self.args.times {
             todo!();
         }

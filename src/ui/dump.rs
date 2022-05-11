@@ -1,11 +1,11 @@
 use std::io;
 use std::io::prelude::*;
-use std::path::{Component, Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
+use clap::Parser;
 use lazy_static::lazy_static;
 use log::*;
-use clap::Parser;
 
 use crate::backend;
 use crate::index;
@@ -17,13 +17,13 @@ use crate::tree;
 #[derive(Debug, Parser)]
 pub struct Args {
     #[clap(short, long)]
-    output: Option<PathBuf>,
+    output: Option<Utf8PathBuf>,
 
     snapshot: String,
-    path: PathBuf,
+    path: Utf8PathBuf,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
@@ -34,26 +34,26 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
     let mut current_tree_id = snapshot.tree;
-    let mut path_so_far = PathBuf::new();
+    let mut path_so_far = Utf8PathBuf::new();
 
-    info!("Printing {} from snapshot {}", args.path.display(), id);
+    info!("Printing {} from snapshot {}", args.path, id);
 
     let mut components = args.path.components().peekable();
     while let Some(component) = components.next() {
         let is_last_component = components.peek().is_none();
         let component = match component {
-            Component::CurDir => continue,
-            Component::Normal(c) => Path::new(c),
+            Utf8Component::CurDir => continue,
+            Utf8Component::Normal(c) => Utf8Path::new(c),
             _ => bail!("dump doesn't support absolute paths, .., etc."),
         };
 
         debug!(
             "Looking for {} in {} (tree {})",
-            component.display(),
-            if path_so_far.as_os_str().is_empty() {
-                Path::new("root tree").display()
+            component,
+            if path_so_far.as_str().is_empty() {
+                Utf8Path::new("root tree")
             } else {
-                path_so_far.display()
+                &path_so_far
             },
             current_tree_id
         );
@@ -62,10 +62,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         let current_tree = tree_cache.read(&current_tree_id)?;
         let node = match current_tree.get(component) {
             None => {
-                bail!(
-                    "Couldn't find {} in the given snapshot",
-                    path_so_far.display()
-                );
+                bail!("Couldn't find {} in the given snapshot", path_so_far);
             }
             Some(n) => n,
         };
@@ -86,7 +83,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
                 if is_last_component {
                     dump_file(chunks, &cached_backend, &index, &blob_map, &args.output)?;
                 } else {
-                    bail!("{} is a file, not a directory", path_so_far.display());
+                    bail!("{path_so_far} is a file, not a directory");
                 }
             }
         };
@@ -96,23 +93,18 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
 
 fn dump_dir(
     tree_to_dump: &tree::Tree,
-    path_so_far: &Path,
-    output_path: &Option<PathBuf>,
+    path_so_far: &Utf8Path,
+    output_path: &Option<Utf8PathBuf>,
 ) -> Result<()> {
     let mut writer = open_writer(output_path)?;
-    writeln!(
-        writer,
-        "{}{}",
-        path_so_far.display(),
-        std::path::MAIN_SEPARATOR
-    )?;
+    writeln!(writer, "{}{}", path_so_far, std::path::MAIN_SEPARATOR)?;
     for (path, node) in tree_to_dump {
         write!(
             writer,
             "{}{}{}",
-            path_so_far.display(),
+            path_so_far,
             std::path::MAIN_SEPARATOR,
-            path.display()
+            path
         )?;
         match &node.contents {
             tree::NodeContents::Directory { .. } => {
@@ -120,7 +112,7 @@ fn dump_dir(
                 writeln!(writer, "{}", std::path::MAIN_SEPARATOR)
             }
             tree::NodeContents::Symlink { target } => {
-                writeln!(writer, "-> {}", target.display())
+                writeln!(writer, "-> {target}")
             }
             tree::NodeContents::File { .. } => writeln!(writer),
         }?;
@@ -129,9 +121,13 @@ fn dump_dir(
     Ok(())
 }
 
-fn dump_symlink(target: &Path, path_so_far: &Path, output_path: &Option<PathBuf>) -> Result<()> {
+fn dump_symlink(
+    target: &Utf8Path,
+    path_so_far: &Utf8Path,
+    output_path: &Option<Utf8PathBuf>,
+) -> Result<()> {
     let mut writer = open_writer(output_path)?;
-    writeln!(writer, "{} -> {}", path_so_far.display(), target.display())?;
+    writeln!(writer, "{path_so_far} -> {target}")?;
     writer.flush()?;
     Ok(())
 }
@@ -141,7 +137,7 @@ fn dump_file(
     cached_backend: &backend::CachedBackend,
     index: &index::Index,
     blob_map: &index::BlobMap,
-    output_path: &Option<PathBuf>,
+    output_path: &Option<Utf8PathBuf>,
 ) -> Result<()> {
     let mut reader = read::BlobReader::new(cached_backend, index, blob_map);
     let mut writer = open_writer(output_path)?;
@@ -154,19 +150,19 @@ fn dump_file(
     Ok(())
 }
 
-fn open_writer(output_path: &Option<PathBuf>) -> Result<io::BufWriter<Box<dyn Write>>> {
+fn open_writer(output_path: &Option<Utf8PathBuf>) -> Result<io::BufWriter<Box<dyn Write>>> {
     lazy_static! {
         static ref STDOUT: io::Stdout = io::stdout();
     }
 
     let writer: Box<dyn Write> = match output_path {
         Some(p) => {
-            if p.to_str() == Some("-") {
+            if p == "-" {
                 Box::new(STDOUT.lock())
             } else {
                 Box::new(
                     std::fs::File::create(p)
-                        .with_context(|| format!("Couldn't create file {}", p.display()))?,
+                        .with_context(|| format!("Couldn't create file {p}"))?,
                 )
             }
         }

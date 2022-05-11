@@ -2,10 +2,10 @@
 
 use std::fs::File;
 use std::io::prelude::*;
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{ensure, Context, Result};
+use camino::Utf8Path;
 use log::*;
 
 use crate::counters;
@@ -40,20 +40,20 @@ impl LoadedFile {
 }
 
 /// Reads an entire file if it's small enough, memory maps it otherwise.
-pub fn read_file(path: &Path) -> Result<Arc<LoadedFile>> {
+pub fn read_file(path: &Utf8Path) -> Result<Arc<LoadedFile>> {
     const MEGA: u64 = 1024 * 1024;
 
     let mut fh = File::open(path)?;
     let file_length = fh.metadata()?.len();
 
     let file = if file_length < 10 * MEGA {
-        trace!("{} is < 10MB, reading to buffer", path.display());
+        trace!("{path} is < 10MB, reading to buffer");
         let mut buffer = Vec::with_capacity(file_length as usize);
         fh.read_to_end(&mut buffer)?;
         counters::bump(counters::Op::FileToBuffer);
         LoadedFile::Buffered(buffer)
     } else {
-        trace!("{} is > 10MB, memory mapping", path.display());
+        trace!("{path} is > 10MB, memory mapping");
         let mapping = unsafe { memmap::Mmap::map(&fh)? };
         counters::bump(counters::Op::FileToMmap);
         LoadedFile::Mapped(mapping)
@@ -71,8 +71,8 @@ pub fn read_file(path: &Path) -> Result<Arc<LoadedFile>> {
 #[cfg(unix)]
 pub fn move_opened<P, Q>(from: P, from_fh: File, to: Q) -> Result<File>
 where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
+    P: AsRef<Utf8Path>,
+    Q: AsRef<Utf8Path>,
 {
     let from = from.as_ref();
     let to = to.as_ref();
@@ -80,7 +80,7 @@ where
     // POSIX lets us rename opened files. Neat!
     match std::fs::rename(&from, &to) {
         Ok(()) => {
-            debug!("Renamed {} to {}", from.display(), to.display());
+            debug!("Renamed {from} to {to}");
             Ok(from_fh)
         },
         // Once stabilized: e.kind() == ErrorKind::CrossesDevices
@@ -95,20 +95,20 @@ where
 #[cfg(windows)]
 pub fn move_opened<P, Q>(from: P, from_fh: File, to: Q) -> Result<File>
 where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
+    P: AsRef<Utf8Path>,
+    Q: AsRef<Utf8Path>,
 {
     // On Windows, we can't move an open file. Boo, Windows.
     move_by_copy(from.as_ref(), from_fh, to.as_ref())
 }
 
-fn move_by_copy(from: &Path, mut from_fh: File, to: &Path) -> Result<File> {
+fn move_by_copy(from: &Utf8Path, mut from_fh: File, to: &Utf8Path) -> Result<File> {
     from_fh.seek(std::io::SeekFrom::Start(0))?;
     let to_fh = safe_copy_to_file(from_fh, to)?;
 
     // Axe /src/foo
-    std::fs::remove_file(&from).with_context(|| format!("Couldn't remove {}", from.display()))?;
-    debug!("Moved {} to {}", from.display(), to.display());
+    std::fs::remove_file(&from).with_context(|| format!("Couldn't remove {from}"))?;
+    debug!("Moved {from} to {to}");
     Ok(to_fh)
 }
 
@@ -116,33 +116,31 @@ fn move_by_copy(from: &Path, mut from_fh: File, to: &Path) -> Result<File> {
 ///
 /// This should guarantee that `to` never contains a partial file.
 /// Returns an open file handle for `to` (assume at EOF)
-pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Path) -> Result<File> {
+pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Utf8Path) -> Result<File> {
     // To make things more atomic, copy to /dest/foo.part,
     // then rename to /dest/foo.
-    let mut to_part = to.to_owned().into_os_string();
-    to_part.push(".part");
-    let to_part = Path::new(&to_part);
+    let mut to_part: String = to.as_str().to_owned();
+    to_part.push_str(".part");
+    let to_part = Utf8Path::new(&to_part);
 
     // Copy the file to /dest/foo.part.
     let mut to_fh = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .open(&to_part)
-        .with_context(|| format!("Couldn't open {}", to_part.display()))?;
+        .with_context(|| format!("Couldn't open {to_part}"))?;
 
-    std::io::copy(&mut from, &mut to_fh)
-        .with_context(|| format!("Couldn't write {}", to_part.display()))?;
+    std::io::copy(&mut from, &mut to_fh).with_context(|| format!("Couldn't write {to_part}"))?;
     drop(from);
 
     to_fh
         .sync_all()
-        .with_context(|| format!("Couldn't sync {}", to_part.display()))?;
+        .with_context(|| format!("Couldn't sync {to_part}"))?;
 
     if cfg!(unix) {
         // Rename to /dest/foo and return our handle
-        std::fs::rename(&to_part, to).with_context(|| {
-            format!("Couldn't rename {} to {}", to_part.display(), to.display())
-        })?;
+        std::fs::rename(&to_part, to)
+            .with_context(|| format!("Couldn't rename {to_part} to {to}"))?;
 
         Ok(to_fh)
     } else {
@@ -150,10 +148,9 @@ pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Path) -> Result<File> {
         // Is this a soundness/atomicity hole in the making?
         // Maybe; help me Windows friends.
         drop(to_fh);
-        std::fs::rename(&to_part, to).with_context(|| {
-            format!("Couldn't rename {} to {}", to_part.display(), to.display())
-        })?;
+        std::fs::rename(&to_part, to)
+            .with_context(|| format!("Couldn't rename {to_part} to {to}"))?;
 
-        File::open(to).with_context(|| format!("Couldn't open {} after moving to it", to.display()))
+        File::open(to).with_context(|| format!("Couldn't open {to} after moving to it"))
     }
 }

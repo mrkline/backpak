@@ -1,8 +1,6 @@
-use std::path::Path;
-
 use anyhow::{bail, Result};
-use log::*;
 use clap::Parser;
+use log::*;
 
 use crate::backend;
 use crate::hashing::ObjectId;
@@ -22,7 +20,7 @@ pub struct Args {
     to_forget: Vec<String>,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }

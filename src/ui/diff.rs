@@ -1,8 +1,7 @@
-use std::path::Path;
-
 use anyhow::*;
-use log::*;
+use camino::Utf8Path;
 use clap::Parser;
+use log::*;
 
 use crate::backend;
 use crate::diff;
@@ -23,7 +22,7 @@ pub struct Args {
     second_snapshot: Option<String>,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let cached_backend = backend::open(repository)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
@@ -44,7 +43,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     diff::compare_trees(
         (&snapshot1.tree, &snapshot1_forest),
         (&id2, &forest2),
-        Path::new(""),
+        Utf8Path::new(""),
         &mut PrintDiffs {
             metadata: args.metadata,
         },
@@ -83,19 +82,24 @@ pub struct PrintDiffs {
 }
 
 impl diff::Callbacks for PrintDiffs {
-    fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()> {
+    fn node_added(&mut self, node_path: &Utf8Path, new_node: &Node, forest: &Forest) -> Result<()> {
         ls::print_node("+ ", node_path, new_node, ls::Recurse::Yes(forest));
         Ok(())
     }
 
-    fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest) -> Result<()> {
+    fn node_removed(
+        &mut self,
+        node_path: &Utf8Path,
+        old_node: &Node,
+        forest: &Forest,
+    ) -> Result<()> {
         ls::print_node("- ", node_path, old_node, ls::Recurse::Yes(forest));
         Ok(())
     }
 
     fn contents_changed(
         &mut self,
-        node_path: &Path,
+        node_path: &Utf8Path,
         old_node: &Node,
         new_node: &Node,
     ) -> Result<()> {
@@ -111,7 +115,7 @@ impl diff::Callbacks for PrintDiffs {
         Ok(())
     }
 
-    fn metadata_changed(&mut self, node_path: &Path, node: &Node) -> Result<()> {
+    fn metadata_changed(&mut self, node_path: &Utf8Path, node: &Node) -> Result<()> {
         if self.metadata {
             ls::print_node("U ", node_path, node, ls::Recurse::No);
         }
@@ -120,7 +124,7 @@ impl diff::Callbacks for PrintDiffs {
 
     fn type_changed(
         &mut self,
-        node_path: &Path,
+        node_path: &Utf8Path,
         old_node: &Node,
         old_forest: &Forest,
         new_node: &Node,

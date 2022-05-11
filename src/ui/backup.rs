@@ -1,15 +1,14 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
 use anyhow::{bail, ensure, Context, Result};
+use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
+use clap::Parser;
 use log::*;
 use rustc_hash::FxHashSet;
-use clap::Parser;
 
 use crate::backend;
 use crate::blob::{self, Blob};
@@ -33,20 +32,20 @@ pub struct Args {
 
     /// The paths to back up
     #[clap(required = true)]
-    pub paths: Vec<PathBuf>,
+    pub paths: Vec<Utf8PathBuf>,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Let's canonicalize our paths (and make sure they're real!)
     // before we spin up a bunch of supporting infrastructure.
-    let paths: BTreeSet<PathBuf> = args
+    let paths: BTreeSet<Utf8PathBuf> = args
         .paths
         .into_iter()
         .map(|p| {
-            p.canonicalize()
-                .with_context(|| format!("Couldn't canonicalize {}", p.display()))
+            p.canonicalize_utf8()
+                .with_context(|| format!("Couldn't canonicalize {p}"))
         })
-        .collect::<Result<BTreeSet<PathBuf>>>()?;
+        .collect::<Result<BTreeSet<Utf8PathBuf>>>()?;
 
     reject_matching_directories(&paths)?;
 
@@ -79,7 +78,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
         "Backing up {}",
         paths
             .iter()
-            .map(|p| p.to_string_lossy())
+            .map(|p| p.to_string())
             .collect::<Vec<_>>()
             .join(", ")
     );
@@ -130,15 +129,14 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     snapshot::upload(&snapshot, &*cached_backend)
 }
 
-fn reject_matching_directories(paths: &BTreeSet<PathBuf>) -> Result<()> {
-    let mut dirnames: FxHashSet<&OsStr> =
+fn reject_matching_directories(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
+    let mut dirnames: FxHashSet<&str> =
         FxHashSet::with_capacity_and_hasher(paths.len(), Default::default());
     for path in paths {
         let dirname = path.file_name().expect("empty path");
         if !dirnames.insert(dirname) {
             bail!(
-                "Backups of directories with matching names ({}/) isn't currently supported",
-                dirname.to_string_lossy()
+                "Backups of directories with matching names ({dirname}/) isn't currently supported",
             );
         }
     }
@@ -146,7 +144,7 @@ fn reject_matching_directories(paths: &BTreeSet<PathBuf>) -> Result<()> {
 }
 
 fn parent_snapshot(
-    paths: &BTreeSet<PathBuf>,
+    paths: &BTreeSet<Utf8PathBuf>,
     snapshots: Vec<(Snapshot, ObjectId)>,
 ) -> Option<Snapshot> {
     let parent = snapshots
@@ -161,7 +159,7 @@ fn parent_snapshot(
 }
 
 pub fn backup_tree(
-    paths: &BTreeSet<PathBuf>,
+    paths: &BTreeSet<Utf8PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
     packed_blobs: &mut FxHashSet<ObjectId>,
@@ -174,7 +172,7 @@ pub fn backup_tree(
     let packed_blobs = RefCell::new(packed_blobs);
 
     let mut visit = |tree: &mut tree::Tree,
-                     path: &Path,
+                     path: &Utf8Path,
                      metadata: tree::NodeMetadata,
                      previous_node: Option<&tree::Node>,
                      entry: DirectoryEntry<ObjectId>|
@@ -183,11 +181,11 @@ pub fn backup_tree(
             DirectoryEntry::Directory(subtree) => {
                 trace!(
                     "{}{} packed as {}",
-                    path.display(),
+                    path,
                     std::path::MAIN_SEPARATOR,
                     subtree
                 );
-                info!("finished {}{}", path.display(), std::path::MAIN_SEPARATOR);
+                info!("finished {}{}", path, std::path::MAIN_SEPARATOR);
 
                 tree::Node {
                     metadata,
@@ -195,7 +193,7 @@ pub fn backup_tree(
                 }
             }
             DirectoryEntry::Symlink { target } => {
-                info!("{:>8} {}", "symlink", path.display());
+                info!("{:>8} {}", "symlink", path);
 
                 tree::Node {
                     metadata,
@@ -203,7 +201,7 @@ pub fn backup_tree(
                 }
             }
             DirectoryEntry::UnchangedFile => {
-                info!("{:>8} {}", "skip", path.display());
+                info!("{:>8} {}", "skip", path);
 
                 tree::Node {
                     metadata,
@@ -225,7 +223,7 @@ pub fn backup_tree(
                         trace!("chunk {} already packed", chunk.id);
                     }
                 }
-                info!("{:>8} {}", "backup", path.display());
+                info!("{:>8} {}", "backup", path);
 
                 tree::Node {
                     metadata,
@@ -234,7 +232,7 @@ pub fn backup_tree(
             }
         };
         ensure!(
-            tree.insert(PathBuf::from(path.file_name().unwrap()), subnode)
+            tree.insert(Utf8PathBuf::from(path.file_name().unwrap()), subnode)
                 .is_none(),
             "Duplicate tree entries"
         );

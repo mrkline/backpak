@@ -1,12 +1,11 @@
 //! Walk filesystem trees and indicate if files have changed.
 
 use std::collections::BTreeSet;
-use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{ensure, Context, Result};
+use camino::{Utf8Path, Utf8PathBuf};
 use log::*;
 
 use crate::chunk;
@@ -16,21 +15,21 @@ use crate::tree;
 /// Compares the FS entry with the given path and metadata to previous_node
 /// and returns true if it's changed.
 pub fn file_changed(
-    path: &Path,
+    path: &Utf8Path,
     metadata: &tree::NodeMetadata,
     previous_node: Option<&tree::Node>,
 ) -> bool {
     assert_eq!(metadata.kind(), tree::NodeType::File);
 
     if previous_node.is_none() {
-        trace!("No previous node for {}", path.display());
+        trace!("No previous node for {path}");
         return true;
     }
     let previous_node = previous_node.unwrap();
     if previous_node.kind() != metadata.kind() {
         trace!(
             "{} was a {} before and is a file now",
-            path.display(),
+            path,
             format!("{:?}", previous_node.kind()).to_lowercase(),
         );
         return true;
@@ -38,19 +37,16 @@ pub fn file_changed(
 
     let previous_metadata = &previous_node.metadata;
     if metadata.modification_time() != previous_metadata.modification_time() {
-        trace!("{} was changed since its backup", path.display());
+        trace!("{path} was changed since its backup");
         return true;
     }
 
     if metadata.size() != previous_metadata.size() {
-        trace!("{} is a different size than its backup", path.display());
+        trace!("{path} is a different size than its backup");
         return true;
     }
 
-    trace!(
-        "{} matches its previous size and modification time. Reuse previous chunks",
-        path.display()
-    );
+    trace!("{path} matches its previous size and modification time. Reuse previous chunks");
     false
 }
 
@@ -60,7 +56,7 @@ pub enum DirectoryEntry<T> {
     /// A directory with the data [`walk_fs()`] gathered from it.
     Directory(T),
     Symlink {
-        target: PathBuf,
+        target: Utf8PathBuf,
     },
     UnchangedFile,
     ChangedFile,
@@ -80,7 +76,7 @@ pub enum DirectoryEntry<T> {
 ///
 /// See [`forest_from_fs`] or [`backup_tree`](crate::ui::backup::backup_tree) for examples.
 pub fn walk_fs<T, Intermediate, Visit, Finalize>(
-    paths: &BTreeSet<PathBuf>,
+    paths: &BTreeSet<Utf8PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
     visit: &mut Visit,
@@ -89,7 +85,7 @@ pub fn walk_fs<T, Intermediate, Visit, Finalize>(
 where
     Visit: FnMut(
         &mut Intermediate,
-        &Path,
+        &Utf8Path,
         tree::NodeMetadata,
         Option<&tree::Node>,
         DirectoryEntry<T>,
@@ -106,7 +102,7 @@ where
 
         let previous_node = previous_tree
             .as_ref()
-            .and_then(|tree| tree.get(Path::new(entry_name)));
+            .and_then(|tree| tree.get(Utf8Path::new(entry_name)));
 
         let metadata = tree::get_metadata(path)?;
 
@@ -114,23 +110,20 @@ where
             tree::NodeType::Directory => {
                 // Gather the dir entries in `path`, recurse into it,
                 // and add the subtree to the tree.
-                let subpaths = fs::read_dir(path)?
-                    .map(|entry| entry.map(|e| e.path()))
-                    .collect::<io::Result<BTreeSet<PathBuf>>>()
-                    .with_context(|| format!("Failed iterating subdirectory {}", path.display()))?;
+                let subpaths = Utf8Path::read_dir_utf8(path)?
+                    .map(|entry| entry.map(|e| e.path().to_owned()))
+                    .collect::<io::Result<BTreeSet<Utf8PathBuf>>>()
+                    .with_context(|| format!("Failed iterating subdirectory {path}"))?;
 
                 let previous_subtree = previous_node.and_then(|n| match &n.contents {
                     tree::NodeContents::Directory { subtree } => Some(subtree),
                     tree::NodeContents::File { .. } => {
-                        trace!("{} was a file, but is now a directory", path.display());
+                        trace!("{path} was a file, but is now a directory");
                         None
                     }
                     tree::NodeContents::Symlink { target } => {
-                        trace!(
-                            "{} was a file, but is now a symlink to {}",
-                            path.display(),
-                            target.display()
-                        );
+                        trace!("{path} was a file, but is now a symlink to {target}");
+
                         None
                     }
                 });
@@ -142,12 +135,13 @@ where
                     visit,
                     finalize,
                 )
-                .with_context(|| format!("Failed to walk subdirectory {}", path.display()))?;
+                .with_context(|| format!("Failed to walk subdirectory {path}"))?;
 
                 DirectoryEntry::Directory(sub_result)
             }
             tree::NodeType::Symlink => {
-                let target = fs::read_link(&path).context("Couldn't get symlink target")?;
+                let target =
+                    Utf8Path::read_link_utf8(path).context("Couldn't get symlink target")?;
                 DirectoryEntry::Symlink { target }
             }
             tree::NodeType::File => {
@@ -167,13 +161,13 @@ where
 /// Hashes the forest for the given paths,
 /// reusing chunks from the previous tree when able.
 pub fn forest_from_fs(
-    paths: &BTreeSet<PathBuf>,
+    paths: &BTreeSet<Utf8PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
 ) -> Result<(ObjectId, tree::Forest)> {
     fn visit(
         (tree, forest): &mut (tree::Tree, tree::Forest),
-        path: &Path,
+        path: &Utf8Path,
         metadata: tree::NodeMetadata,
         previous_node: Option<&tree::Node>,
         entry: DirectoryEntry<(ObjectId, tree::Forest)>,
@@ -184,11 +178,11 @@ pub fn forest_from_fs(
 
                 trace!(
                     "{}{} hashed to {}",
-                    path.display(),
+                    path,
                     std::path::MAIN_SEPARATOR,
                     subtree
                 );
-                info!("finished {}{}", path.display(), std::path::MAIN_SEPARATOR);
+                info!("finished {}{}", path, std::path::MAIN_SEPARATOR);
 
                 tree::Node {
                     metadata,
@@ -196,14 +190,14 @@ pub fn forest_from_fs(
                 }
             }
             DirectoryEntry::Symlink { target } => {
-                info!("{:>8} {}", "symlink", path.display());
+                info!("{:>8} {}", "symlink", path);
                 tree::Node {
                     metadata,
                     contents: tree::NodeContents::Symlink { target },
                 }
             }
             DirectoryEntry::UnchangedFile => {
-                info!("{:>8} {}", "skip", path.display());
+                info!("{:>8} {}", "skip", path);
                 tree::Node {
                     metadata,
                     contents: previous_node.unwrap().contents.clone(),
@@ -216,7 +210,7 @@ pub fn forest_from_fs(
                 for chunk in chunks {
                     chunk_ids.push(chunk.id);
                 }
-                info!("{:>8} {}", "hash", path.display());
+                info!("{:>8} {}", "hash", path);
 
                 tree::Node {
                     metadata,
@@ -225,7 +219,7 @@ pub fn forest_from_fs(
             }
         };
         ensure!(
-            tree.insert(PathBuf::from(path.file_name().unwrap()), node)
+            tree.insert(Utf8PathBuf::from(path.file_name().unwrap()), node)
                 .is_none(),
             "Duplicate tree entries"
         );

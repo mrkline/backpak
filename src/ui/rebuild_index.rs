@@ -1,5 +1,4 @@
 use std::collections::BTreeSet;
-use std::path::Path;
 use std::sync::mpsc::{channel, sync_channel};
 use std::thread;
 
@@ -13,7 +12,7 @@ use crate::index;
 use crate::pack;
 use crate::upload;
 
-pub fn run(repository: &Path) -> Result<()> {
+pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     let cached_backend = backend::open(repository)?;
 
     let superseded = cached_backend

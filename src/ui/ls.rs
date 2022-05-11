@@ -1,8 +1,7 @@
-use std::path::Path;
-
 use anyhow::Result;
-use log::*;
+use camino::Utf8Path;
 use clap::Parser;
+use log::*;
 
 use crate::backend;
 use crate::index;
@@ -16,7 +15,7 @@ pub struct Args {
     snapshot_prefix: String,
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let cached_backend = backend::open(repository)?;
     let (snapshot, id) = snapshot::find_and_load(&args.snapshot_prefix, &cached_backend)?;
     let index = index::build_master_index(&cached_backend)?;
@@ -26,7 +25,7 @@ pub fn run(repository: &Path, args: Args) -> Result<()> {
     info!("Listing files for snapshot {}", id);
 
     let snapshot_tree = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
-    ls::print_tree("", Path::new(""), &snapshot.tree, &snapshot_tree);
+    ls::print_tree("", Utf8Path::new(""), &snapshot.tree, &snapshot_tree);
 
     Ok(())
 }

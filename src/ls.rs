@@ -1,8 +1,7 @@
 //! Print [trees](crate::tree)
 
-use std::path::Path;
-
 use anyhow::anyhow;
+use camino::Utf8Path;
 
 use crate::hashing::ObjectId;
 use crate::tree;
@@ -12,23 +11,19 @@ pub enum Recurse<'a> {
     No,
 }
 
-// https://users.rust-lang.org/t/trailing-in-paths/43166/2
 #[cfg(windows)]
-fn has_trailing_slash(p: &Path) -> bool {
-    use std::os::windows::ffi::OsStrExt;
-
-    let last = p.as_os_str().encode_wide().last();
-    last == Some(b'\\' as u16) || last == Some(b'/' as u16)
+fn has_trailing_slash(p: &Utf8Path) -> bool {
+    let last = p.as_str().as_bytes().last();
+    last == Some(b'\\') || last == Some(b'/')
 }
 
 #[cfg(unix)]
-fn has_trailing_slash(p: &Path) -> bool {
-    use std::os::unix::ffi::OsStrExt;
-    p.as_os_str().as_bytes().last() == Some(&b'/')
+fn has_trailing_slash(p: &Utf8Path) -> bool {
+    p.as_str().as_bytes().last() == Some(&b'/')
 }
 
-pub fn print_node(prefix: &str, path: &Path, node: &tree::Node, should_recurse: Recurse) {
-    print!("{}{}", prefix, path.display());
+pub fn print_node(prefix: &str, path: &Utf8Path, node: &tree::Node, should_recurse: Recurse) {
+    print!("{prefix}{path}");
     match &node.contents {
         tree::NodeContents::Directory { subtree } => {
             if !has_trailing_slash(path) {
@@ -44,15 +39,15 @@ pub fn print_node(prefix: &str, path: &Path, node: &tree::Node, should_recurse: 
             println!();
         }
         tree::NodeContents::Symlink { target } => {
-            println!(" -> {}", target.display());
+            println!(" -> {target}");
         }
     };
 }
 
-pub fn print_tree(prefix: &str, tree_path: &Path, tree_id: &ObjectId, forest: &tree::Forest) {
+pub fn print_tree(prefix: &str, tree_path: &Utf8Path, tree_id: &ObjectId, forest: &tree::Forest) {
     let tree: &tree::Tree = forest
         .get(tree_id)
-        .ok_or_else(|| anyhow!("Missing tree {}", tree_id))
+        .ok_or_else(|| anyhow!("Missing tree {tree_id}"))
         .unwrap();
 
     for (path, node) in tree {

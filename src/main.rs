@@ -1,6 +1,5 @@
-use std::path::PathBuf;
-
 use anyhow::{Context, Result};
+use camino::Utf8PathBuf;
 use clap::{Parser, Subcommand};
 use simplelog::*;
 
@@ -23,10 +22,10 @@ struct Args {
 
     /// Change to the given directory before doing anything else
     #[clap(short = 'C', long, name = "path")]
-    working_directory: Option<PathBuf>,
+    working_directory: Option<Utf8PathBuf>,
 
     #[clap(short, long)]
-    repository: PathBuf,
+    repository: Utf8PathBuf,
 
     #[clap(subcommand)]
     subcommand: Command,
@@ -36,7 +35,7 @@ struct Args {
 enum Color {
     Auto,
     Always,
-    Never
+    Never,
 }
 
 #[derive(Debug, Subcommand)]

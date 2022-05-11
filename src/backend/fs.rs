@@ -2,33 +2,33 @@ use super::*;
 
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+
+use camino::{Utf8Path, Utf8PathBuf};
 
 pub struct FilesystemBackend {
-    base_directory: PathBuf,
+    base_directory: Utf8PathBuf,
 }
 
 #[inline]
-fn create_dir(d: &Path) -> Result<()> {
-    fs::create_dir(d).with_context(|| format!("Couldn't create {}", d.display()))
+fn create_dir(d: &Utf8Path) -> Result<()> {
+    fs::create_dir(d).with_context(|| format!("Couldn't create {d}"))
 }
 
 #[inline]
-fn ensure_exists(e: &Path) -> Result<()> {
-    ensure!(e.exists(), "{} doesn't exist", e.display());
+fn ensure_exists(e: &Utf8Path) -> Result<()> {
+    ensure!(e.exists(), "{e} doesn't exist");
     Ok(())
 }
 
 impl FilesystemBackend {
-    pub fn initialize(repository: &Path) -> Result<()> {
+    pub fn initialize(repository: &Utf8Path) -> Result<()> {
         if repository.exists() {
             ensure!(
                 fs::read_dir(repository)
-                    .with_context(|| format!("Couldn't read {}", repository.display()))?
+                    .with_context(|| format!("Couldn't read {repository}"))?
                     .count()
                     == 0,
-                "The directory {} already exists and isn't empty",
-                repository.display()
+                "The directory {repository} already exists and isn't empty"
             );
         } else {
             create_dir(repository)?;
@@ -47,8 +47,8 @@ impl FilesystemBackend {
         Ok(())
     }
 
-    pub fn open(repository: &Path) -> Result<Self> {
-        let base_directory = PathBuf::from(repository);
+    pub fn open(repository: &Utf8Path) -> Result<Self> {
+        let base_directory = Utf8PathBuf::from(repository);
         ensure_exists(&base_directory)?;
 
         for b in 0..=255 {
@@ -65,24 +65,23 @@ impl FilesystemBackend {
 impl Backend for FilesystemBackend {
     fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
         let from = self.base_directory.join(from);
-        Ok(Box::new(fs::File::open(&from).with_context(|| {
-            format!("Couldn't open {}", from.display())
-        })?))
+        Ok(Box::new(
+            fs::File::open(&from).with_context(|| format!("Couldn't open {from}"))?,
+        ))
     }
 
     fn write(&self, from: &mut dyn Read, to: &str) -> Result<()> {
         let to = self.base_directory.join(to);
-        let mut fh =
-            fs::File::create(&to).with_context(|| format!("Couldn't create {}", to.display()))?;
-        io::copy(from, &mut fh).with_context(|| format!("Couldn't write to {}", to.display()))?;
+        let mut fh = fs::File::create(&to).with_context(|| format!("Couldn't create {to}"))?;
+        io::copy(from, &mut fh).with_context(|| format!("Couldn't write to {to}"))?;
         fh.sync_all()
-            .with_context(|| format!("Couldn't sync {}", to.display()))?;
+            .with_context(|| format!("Couldn't sync {to}"))?;
         Ok(())
     }
 
     fn remove(&self, which: &str) -> Result<()> {
         let which = self.base_directory.join(which);
-        fs::remove_file(&which).with_context(|| format!("Couldn't remove {}", which.display()))?;
+        fs::remove_file(&which).with_context(|| format!("Couldn't remove {which}"))?;
         Ok(())
     }
 
@@ -90,28 +89,28 @@ impl Backend for FilesystemBackend {
         let prefix = self.base_directory.join(prefix);
 
         if prefix.is_file() {
-            return Ok(vec![prefix.to_str().expect("non-UTF-8 prefix").to_owned()]);
+            return Ok(vec![prefix.to_string()]);
         }
 
         let paths: Vec<String> = walk_dir(&prefix)?
             .iter()
             .map(|p| p.strip_prefix(&self.base_directory).unwrap())
-            .map(|p| p.to_str().expect("non-UTF-8 path in fs backend").to_owned())
+            .map(|p| p.to_string())
             .collect();
 
         Ok(paths)
     }
 }
 
-fn walk_dir(dir: &Path) -> io::Result<Vec<PathBuf>> {
+fn walk_dir(dir: &Utf8Path) -> io::Result<Vec<Utf8PathBuf>> {
     let mut paths = Vec::new();
-    for entry in fs::read_dir(dir)? {
+    for entry in Utf8Path::read_dir_utf8(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            paths.append(&mut walk_dir(&path)?);
+            paths.append(&mut walk_dir(path)?);
         } else {
-            paths.push(path);
+            paths.push(path.to_owned());
         }
     }
     Ok(paths)

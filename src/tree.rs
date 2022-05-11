@@ -2,10 +2,10 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{anyhow, ensure, Context, Result};
+use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
 use log::*;
 use rayon::prelude::*;
@@ -28,7 +28,7 @@ use crate::prettify;
 pub enum NodeContents {
     File { chunks: Vec<ObjectId> },
     Directory { subtree: ObjectId },
-    Symlink { target: PathBuf },
+    Symlink { target: Utf8PathBuf },
 }
 
 impl NodeContents {
@@ -51,7 +51,7 @@ impl NodeContents {
     }
 
     #[inline]
-    pub fn target(&self) -> &Path {
+    pub fn target(&self) -> &Utf8Path {
         match self {
             NodeContents::Symlink { target } => target,
             _ => panic!("Expected a symlink"),
@@ -178,11 +178,10 @@ impl NodeMetadata {
 }
 
 #[cfg(target_family = "unix")]
-pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
+pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
     use std::os::unix::fs::MetadataExt;
 
-    let meta =
-        fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
+    let meta = fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {path}"))?;
     let mode = meta.mode();
     let size = meta.size();
     let user_id = meta.uid();
@@ -203,11 +202,10 @@ pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
 }
 
 #[cfg(target_family = "windows")]
-pub fn get_metadata(path: &Path) -> Result<NodeMetadata> {
+pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
     use std::os::windows::fs::MetadataExt;
 
-    let meta =
-        fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {}", path.display()))?;
+    let meta = fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {path}"))?;
     let attributes = meta.file_attributes();
     let size = meta.file_size();
 
@@ -277,7 +275,7 @@ impl Node {
 
 /// A tree represents a single directory of files (with contents),
 /// directories (with subtrees), and their metadata, addressed by entry name.
-pub type Tree = BTreeMap<PathBuf, Node>;
+pub type Tree = BTreeMap<Utf8PathBuf, Node>;
 
 /// Serialize the tree into its on-disk CBOR representation and return its
 /// ID (hash)
@@ -447,7 +445,7 @@ mod test {
 
         let mut tree = BTreeMap::new();
         tree.insert(
-            PathBuf::from("UnixFileNode"),
+            Utf8PathBuf::from("UnixFileNode"),
             Node {
                 contents: NodeContents::File {
                     chunks: vec![
@@ -474,7 +472,7 @@ mod test {
             },
         );
         tree.insert(
-            PathBuf::from("WindowsDirNode"),
+            Utf8PathBuf::from("WindowsDirNode"),
             Node {
                 contents: NodeContents::Directory {
                     subtree: ObjectId::hash(b"some subdirectory"),

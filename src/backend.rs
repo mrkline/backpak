@@ -1,12 +1,11 @@
 //! Places where we can make a backup repository - the local filesystem,
 //! (eventually) cloud hosts, etc.
 
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{self, prelude::*};
-use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, ensure, Context, Error, Result};
+use camino::{Utf8Path, Utf8PathBuf};
 use log::*;
 
 use crate::{counters, file_util, hashing::ObjectId};
@@ -20,7 +19,7 @@ enum BackendType {
 }
 
 /// Determine the repo type based on its name.
-fn determine_type(_repository: &Path) -> BackendType {
+fn determine_type(_repository: &Utf8Path) -> BackendType {
     // We're just starting with filesystem
     BackendType::Filesystem
 }
@@ -47,15 +46,15 @@ enum WritethroughCache {
     /// we don't need to make and store copies, worry about eviction, ...
     /// Just keep track of the base directory and pass file handles directly.
     /// Nice.
-    Local { base_directory: PathBuf },
+    Local { base_directory: Utf8PathBuf },
     #[allow(unused)]
     Remote {
-        cache_directory: PathBuf,
+        cache_directory: Utf8PathBuf,
         max_size: usize,
     },
 }
 
-fn prune_cache(_cache_directory: &Path, _max_size: usize) -> Result<()> {
+fn prune_cache(_cache_directory: &Utf8Path, _max_size: usize) -> Result<()> {
     todo!()
 }
 
@@ -70,8 +69,7 @@ impl CachedBackend {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let from = base_directory.join(from);
-                Ok(File::open(&from)
-                    .with_context(|| format!("Couldn't open {}", from.display()))?)
+                Ok(File::open(&from).with_context(|| format!("Couldn't open {from}"))?)
             }
             WritethroughCache::Remote {
                 cache_directory,
@@ -141,9 +139,7 @@ impl CachedBackend {
                     Ok(()) => {}
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {}
                     Err(e) => {
-                        return Err(
-                            Error::from(e).context(format!("Couldn't remove {}", cached.display()))
-                        );
+                        return Err(Error::from(e).context(format!("Couldn't remove {cached}")));
                     }
                 }
             }
@@ -220,19 +216,19 @@ impl CachedBackend {
 }
 
 /// Initializes the appropriate type of backend from the repository path
-pub fn initialize(repository: &Path) -> Result<()> {
+pub fn initialize(repository: &Utf8Path) -> Result<()> {
     match determine_type(repository) {
         BackendType::Filesystem => fs::FilesystemBackend::initialize(repository),
     }
 }
 
 /// Factory function to open the appropriate type of backend from the repository path
-pub fn open(repository: &Path) -> Result<CachedBackend> {
-    info!("Opening repository '{}'", repository.display());
+pub fn open(repository: &Utf8Path) -> Result<CachedBackend> {
+    info!("Opening repository '{repository}'");
     let cached_backend = match determine_type(repository) {
         BackendType::Filesystem => {
             let backend = Box::new(fs::FilesystemBackend::open(repository)?);
-            let base_directory = PathBuf::from(repository);
+            let base_directory = Utf8PathBuf::from(repository);
             CachedBackend {
                 cache: WritethroughCache::Local { base_directory },
                 backend,
@@ -244,7 +240,7 @@ pub fn open(repository: &Path) -> Result<CachedBackend> {
 
 /// Returns the desitnation path for the given temp file based on its extension
 fn destination(src: &str) -> String {
-    match Path::new(src).extension().and_then(OsStr::to_str) {
+    match Utf8Path::new(src).extension() {
         Some("pack") => format!("packs/{}/{}", &src[0..2], src),
         Some("index") => format!("indexes/{}", src),
         Some("snapshot") => format!("snapshots/{}", src),
@@ -254,10 +250,10 @@ fn destination(src: &str) -> String {
 
 /// Returns the ID of the object given its name
 /// (assumed to be its `some/compontents/<Object ID>.<extension>`)
-pub fn id_from_path<P: AsRef<Path>>(path: P) -> Result<ObjectId> {
+pub fn id_from_path<P: AsRef<Utf8Path>>(path: P) -> Result<ObjectId> {
     use std::str::FromStr;
     path.as_ref()
         .file_stem()
-        .ok_or_else(|| anyhow!("Couldn't determine ID from {}", path.as_ref().display()))
-        .and_then(|stem| ObjectId::from_str(stem.to_str().unwrap()))
+        .ok_or_else(|| anyhow!("Couldn't determine ID from {}", path.as_ref()))
+        .and_then(ObjectId::from_str)
 }

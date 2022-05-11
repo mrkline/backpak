@@ -1,11 +1,9 @@
-use std::path::Path;
-
 use anyhow::Result;
 
 use crate::backend;
 use crate::snapshot;
 
-pub fn run(repository: &Path) -> Result<()> {
+pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
@@ -26,7 +24,7 @@ pub fn run(repository: &Path) -> Result<()> {
         println!("Author: {}", snapshot.author);
         println!("Date:   {}", snapshot.time.format("%a %F %H:%M:%S %z"));
         for path in snapshot.paths {
-            println!("    - {}", path.display());
+            println!("    - {path}");
         }
 
         println!();

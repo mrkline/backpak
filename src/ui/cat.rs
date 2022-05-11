@@ -1,10 +1,9 @@
 use std::io;
 use std::io::prelude::*;
-use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use log::*;
 use clap::Parser;
+use log::*;
 
 use crate::backend;
 use crate::blob;
@@ -52,7 +51,7 @@ pub enum Subcommand {
     Snapshot { id_prefix: String },
 }
 
-pub fn run(repository: &Path, args: Args) -> Result<()> {
+pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }

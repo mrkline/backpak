@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use anyhow::{anyhow, Result};
+use camino::Utf8Path;
 use log::*;
 
 use crate::hashing::ObjectId;
@@ -9,32 +9,37 @@ use crate::tree::{Forest, Node, NodeType, Tree};
 
 pub trait Callbacks {
     /// A tree node with the given path was added
-    fn node_added(&mut self, node_path: &Path, new_node: &Node, forest: &Forest) -> Result<()>;
+    fn node_added(&mut self, node_path: &Utf8Path, new_node: &Node, forest: &Forest) -> Result<()>;
 
     /// A tree node at the given path was removed
-    fn node_removed(&mut self, node_path: &Path, old_node: &Node, forest: &Forest) -> Result<()>;
+    fn node_removed(
+        &mut self,
+        node_path: &Utf8Path,
+        old_node: &Node,
+        forest: &Forest,
+    ) -> Result<()>;
 
     /// The contents of a file or symlink changed (not called on directories).
     /// Presume metadata also changed.
     fn contents_changed(
         &mut self,
-        node_path: &Path,
+        node_path: &Utf8Path,
         old_node: &Node,
         new_node: &Node,
     ) -> Result<()>;
 
     /// A node's metadata was changed.
-    fn metadata_changed(&mut self, node_path: &Path, node: &Node) -> Result<()>;
+    fn metadata_changed(&mut self, node_path: &Utf8Path, node: &Node) -> Result<()>;
 
     /// A node didn't change.
-    fn nothing_changed(&mut self, _node_path: &Path, _node: &Node) -> Result<()> {
+    fn nothing_changed(&mut self, _node_path: &Utf8Path, _node: &Node) -> Result<()> {
         Ok(())
     }
 
     /// Called when the type of a node changed.
     fn type_changed(
         &mut self,
-        node_path: &Path,
+        node_path: &Utf8Path,
         old_node: &Node,
         old_forest: &Forest,
         new_node: &Node,
@@ -45,7 +50,7 @@ pub trait Callbacks {
 pub fn compare_trees(
     (id1, forest1): (&ObjectId, &Forest),
     (id2, forest2): (&ObjectId, &Forest),
-    tree_path: &Path,
+    tree_path: &Utf8Path,
     callbacks: &mut dyn Callbacks,
 ) {
     let tree1: &Tree = forest1
@@ -78,7 +83,7 @@ pub fn compare_trees(
 pub fn compare_nodes(
     (node1, forest1): (&Node, &Forest),
     (node2, forest2): (&Node, &Forest),
-    path: &Path,
+    path: &Utf8Path,
     callbacks: &mut dyn Callbacks,
 ) {
     match (node1.kind(), node2.kind()) {
