@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::*;
 use log::*;
-use structopt::StructOpt;
+use clap::Parser;
 
 use crate::backend;
 use crate::diff;
@@ -14,9 +14,9 @@ use crate::snapshot;
 use crate::tree::{self, Forest, Node, NodeType};
 
 /// Compare two snapshots, or a snapshot to the current tree
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Args {
-    #[structopt(short, long)]
+    #[clap(short, long)]
     metadata: bool,
 
     first_snapshot: String,

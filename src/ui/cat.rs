@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use log::*;
-use structopt::StructOpt;
+use clap::Parser;
 
 use crate::backend;
 use crate::blob;
@@ -15,32 +15,32 @@ use crate::snapshot;
 use crate::tree;
 
 /// Print objects (as JSON) to stdout
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Args {
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     subcommand: Subcommand,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub enum Subcommand {
     /// Print the blob with the given ID
     ///
     /// A blob is either a chunk (of a file) or a tree (representing a directory).
-    #[structopt(verbatim_doc_comment)]
+    #[clap(verbatim_doc_comment)]
     Blob { id: ObjectId },
 
     /// Print the pack with the given ID
     ///
     /// A pack is a compressed collection of blobs,
     /// with a manifest at the end for reassembling the index (if needed).
-    #[structopt(verbatim_doc_comment)]
+    #[clap(verbatim_doc_comment)]
     Pack { id: ObjectId },
 
     /// Print the index with the given ID
     ///
     /// An index tells us which packs contain which blobs.
     /// Indexes can be split into several files if they get too big.
-    #[structopt(verbatim_doc_comment)]
+    #[clap(verbatim_doc_comment)]
     Index { id: ObjectId },
 
     /// Print the snapshot with the given ID
@@ -48,7 +48,7 @@ pub enum Subcommand {
     /// A snapshot records the time of the backup,
     /// the contents of all files and folders at that time,
     /// and (optionally) an author and tags for later lookup.
-    #[structopt(verbatim_doc_comment)]
+    #[clap(verbatim_doc_comment)]
     Snapshot { id_prefix: String },
 }
 

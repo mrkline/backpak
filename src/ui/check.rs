@@ -5,7 +5,7 @@ use anyhow::{bail, Result};
 use log::*;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
-use structopt::StructOpt;
+use clap::Parser;
 
 use crate::backend;
 use crate::hashing::ObjectId;
@@ -20,11 +20,11 @@ use crate::tree;
 /// and only ensure that needed files can be found and downloaded.
 /// If --read-packs is specified, ensure that each pack has the expected blobs,
 /// that those blobs match its manifest, and that those blobs match the index.
-#[derive(Debug, StructOpt)]
-#[structopt(verbatim_doc_comment)]
+#[derive(Debug, Parser)]
+#[clap(verbatim_doc_comment)]
 pub struct Args {
     /// Check all blobs in all packs
-    #[structopt(short, long)]
+    #[clap(short, long)]
     pub read_packs: bool,
 }
 

@@ -9,7 +9,7 @@ use anyhow::{bail, ensure, Context, Result};
 use chrono::prelude::*;
 use log::*;
 use rustc_hash::FxHashSet;
-use structopt::StructOpt;
+use clap::Parser;
 
 use crate::backend;
 use crate::blob::{self, Blob};
@@ -21,18 +21,18 @@ use crate::snapshot::{self, Snapshot};
 use crate::tree;
 
 /// Create a snapshot of the given files and directories.
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Args {
     /// The author of the snapshot (otherwise the hostname is used)
-    #[structopt(short, long, name = "name", verbatim_doc_comment)]
+    #[clap(short, long, name = "name", verbatim_doc_comment)]
     pub author: Option<String>,
 
     /// Add a metadata tag to the snapshot (can be specified multiple times)
-    #[structopt(short = "t", long = "tag", name = "tag")]
+    #[clap(short = 't', long = "tag", name = "tag")]
     pub tags: Vec<String>,
 
     /// The paths to back up
-    #[structopt(required = true)]
+    #[clap(required = true)]
     pub paths: Vec<PathBuf>,
 }
 

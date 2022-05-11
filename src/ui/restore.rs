@@ -5,9 +5,9 @@ use std::{
 };
 
 use anyhow::Result;
+use clap::Parser;
 use log::*;
 use rustc_hash::FxHashMap;
-use structopt::StructOpt;
 
 use crate::{
     backend, diff, fs_tree,
@@ -17,25 +17,25 @@ use crate::{
 };
 
 /// Compare two snapshots
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Args {
-    #[structopt(short, long)]
+    #[clap(short, long)]
     output: Option<PathBuf>,
 
-    #[structopt(short = "n", long)]
+    #[clap(short = 'n', long)]
     dry_run: bool,
 
     // Args based on rsync's
-    #[structopt(short, long)]
+    #[clap(short, long)]
     delete: bool,
 
-    #[structopt(short, long)]
+    #[clap(short, long)]
     times: bool,
 
-    #[structopt(short = "U", long)]
+    #[clap(short = 'U', long)]
     atimes: bool,
 
-    #[structopt(short, long)]
+    #[clap(short, long)]
     permissions: bool,
 
     restore_from: String,

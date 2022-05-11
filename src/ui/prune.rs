@@ -6,7 +6,7 @@ use anyhow::{anyhow, ensure, Context, Result};
 use log::*;
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
-use structopt::StructOpt;
+use clap::Parser;
 
 use crate::backend;
 use crate::backup;
@@ -18,9 +18,9 @@ use crate::read;
 use crate::snapshot;
 use crate::tree;
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Args {
-    #[structopt(short = "n", long)]
+    #[clap(short = 'n', long)]
     pub dry_run: bool,
 }
 

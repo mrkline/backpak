@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{bail, Result};
 use log::*;
-use structopt::StructOpt;
+use clap::Parser;
 
 use crate::backend;
 use crate::hashing::ObjectId;
@@ -12,13 +12,13 @@ use crate::snapshot;
 ///
 /// Data used by these snapshots is not immediately deleted,
 /// but will be thrown out by the next prune.
-#[derive(Debug, StructOpt)]
-#[structopt(verbatim_doc_comment)]
+#[derive(Debug, Parser)]
+#[clap(verbatim_doc_comment)]
 pub struct Args {
-    #[structopt(short = "n", long)]
+    #[clap(short = 'n', long)]
     pub dry_run: bool,
 
-    #[structopt(required = true)]
+    #[clap(required = true)]
     to_forget: Vec<String>,
 }
 

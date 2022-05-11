@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use log::*;
-use structopt::StructOpt;
+use clap::Parser;
 
 use crate::backend;
 use crate::index;
@@ -11,7 +11,7 @@ use crate::snapshot;
 use crate::tree;
 
 /// List the files in a snapshot
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Args {
     snapshot_prefix: String,
 }

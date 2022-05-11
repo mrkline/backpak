@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
 use log::*;
-use structopt::StructOpt;
+use clap::Parser;
 
 use crate::backend;
 use crate::index;
@@ -14,9 +14,9 @@ use crate::snapshot;
 use crate::tree;
 
 /// Print a given file from a given snapshot
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 pub struct Args {
-    #[structopt(short, long)]
+    #[clap(short, long)]
     output: Option<PathBuf>,
 
     snapshot: String,

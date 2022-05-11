@@ -1,52 +1,46 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
 use simplelog::*;
-use structopt::clap::arg_enum;
-use structopt::StructOpt;
 
 use backpak::counters;
 use backpak::ui::*;
 
-#[derive(Debug, StructOpt)]
-#[structopt(verbatim_doc_comment)]
+#[derive(Debug, Parser)]
 struct Args {
     /// Verbosity (-v, -vv, -vvv, etc.)
-    #[structopt(short, long, parse(from_occurrences))]
+    #[clap(short, long, parse(from_occurrences))]
     verbose: u8,
 
-    #[structopt(short, long, case_insensitive = true, default_value = "auto")]
-    #[structopt(name = "always/auto/never")]
+    #[clap(short, long, arg_enum, default_value = "auto")]
     color: Color,
 
     /// Prepend ISO-8601 timestamps to all trace messages (from --verbose).
     /// Useful for benchmarking.
-    #[structopt(short, long)]
+    #[clap(short, long)]
     timestamps: bool,
 
     /// Change to the given directory before doing anything else
-    #[structopt(short = "C", long, name = "path")]
-    #[structopt(verbatim_doc_comment)]
+    #[clap(short = 'C', long, name = "path")]
     working_directory: Option<PathBuf>,
 
-    #[structopt(short, long)]
+    #[clap(short, long)]
     repository: PathBuf,
 
-    #[structopt(subcommand)]
-    subcommand: Subcommand,
+    #[clap(subcommand)]
+    subcommand: Command,
 }
 
-arg_enum! {
-    #[derive(Debug)]
-    enum Color {
-        Auto,
-        Always,
-        Never
-    }
+#[derive(Debug, Copy, Clone, clap::ArgEnum)]
+enum Color {
+    Auto,
+    Always,
+    Never
 }
 
-#[derive(Debug, StructOpt)]
-enum Subcommand {
+#[derive(Debug, Subcommand)]
+enum Command {
     /// Initialize a backup repository
     Init,
     Backup(backup::Args),
@@ -72,7 +66,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let args = Args::from_args();
+    let args = Args::parse();
     init_logger(&args);
 
     if let Some(dir) = &args.working_directory {
@@ -80,18 +74,18 @@ fn run() -> Result<()> {
     }
 
     match args.subcommand {
-        Subcommand::Init => init::run(&args.repository),
-        Subcommand::Backup(b) => backup::run(&args.repository, b),
-        Subcommand::Cat(c) => cat::run(&args.repository, c),
-        Subcommand::Check(c) => check::run(&args.repository, c),
-        Subcommand::Diff(d) => diff::run(&args.repository, d),
-        Subcommand::Dump(d) => dump::run(&args.repository, d),
-        Subcommand::Forget(f) => forget::run(&args.repository, f),
-        Subcommand::Ls(l) => ls::run(&args.repository, l),
-        Subcommand::Prune(p) => prune::run(&args.repository, p),
-        Subcommand::Restore(r) => restore::run(&args.repository, r),
-        Subcommand::Snapshots => snapshots::run(&args.repository),
-        Subcommand::RebuildIndex => rebuild_index::run(&args.repository),
+        Command::Init => init::run(&args.repository),
+        Command::Backup(b) => backup::run(&args.repository, b),
+        Command::Cat(c) => cat::run(&args.repository, c),
+        Command::Check(c) => check::run(&args.repository, c),
+        Command::Diff(d) => diff::run(&args.repository, d),
+        Command::Dump(d) => dump::run(&args.repository, d),
+        Command::Forget(f) => forget::run(&args.repository, f),
+        Command::Ls(l) => ls::run(&args.repository, l),
+        Command::Prune(p) => prune::run(&args.repository, p),
+        Command::Restore(r) => restore::run(&args.repository, r),
+        Command::Snapshots => snapshots::run(&args.repository),
+        Command::RebuildIndex => rebuild_index::run(&args.repository),
     }?;
 
     counters::log_counts();
