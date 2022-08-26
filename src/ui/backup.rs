@@ -49,6 +49,11 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     reject_matching_directories(&paths)?;
 
+    // Do a quick scan of the paths to make sure we can read them and get
+    // metadata before we get backends and indexes
+    // and threads and all manner of craziness going.
+    check_paths(&paths).context("Failed FS check prior to backup")?;
+
     let cached_backend = backend::open(repository)?;
 
     let index = index::build_master_index(&cached_backend)?;
@@ -158,7 +163,24 @@ fn parent_snapshot(
     parent.map(|(snap, _)| snap)
 }
 
-pub fn backup_tree(
+fn check_paths(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
+    let mut no_op_visit =
+        |_nope: &mut (),
+         _path: &Utf8Path,
+         _metadata: tree::NodeMetadata,
+         _previous_node: Option<&tree::Node>,
+         _entry: fs_tree::DirectoryEntry<()>| { Ok(()) };
+    let mut no_op_finalize = |()| Ok(());
+    fs_tree::walk_fs(
+        paths,
+        None,
+        &tree::Forest::default(),
+        &mut no_op_visit,
+        &mut no_op_finalize,
+    )
+}
+
+fn backup_tree(
     paths: &BTreeSet<Utf8PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,

@@ -72,7 +72,7 @@ pub enum DirectoryEntry<T> {
 ///
 /// `finalize` is responsible for taking that intermediate value and converting
 /// it to the desired return value, e.g., calulating the ID of the tree representing
-/// the directory we're traversing.
+/// the directory we're traversing. This is done for _each_ recursive call.
 ///
 /// See [`forest_from_fs`] or [`backup_tree`](crate::ui::backup::backup_tree) for examples.
 pub fn walk_fs<T, Intermediate, Visit, Finalize>(
