@@ -164,6 +164,7 @@ fn parent_snapshot(
 }
 
 fn check_paths(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
+    trace!("Walking {paths:?} to check paths and if we can stat");
     let mut no_op_visit =
         |_nope: &mut (),
          _path: &Utf8Path,
