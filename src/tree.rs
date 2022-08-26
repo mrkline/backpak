@@ -354,7 +354,7 @@ impl<'a> Cache<'a> {
         self.tree_cache
             .get(id)
             .ok_or_else(|| anyhow!("Tree {} missing from pack {}", id, pack_id))
-            .map(|entry| entry.clone())
+            .cloned()
     }
 }
 
