@@ -41,12 +41,19 @@ fn bad_filename() -> Result<()> {
         .failure();
 
     println!("{}", stderr(&fails_on_utf8));
+    println!("{:?}", files_in(&working_path).collect::<Vec<_>>());
 
     // We should fail fast - _before_ we start the backup process and spit out
-    // any pack files.
+    // any pack files...
     ensure!(
-        !files_in(&working_path).any(|p| p.ends_with(".pack")),
-        "Files weren't validated before the backup process started."
+        !files_in(&working_path).any(|p| p.ends_with(".pack"))
+            && files_in(&working_path).count() == 2, //  foo/bar and foo/<junk>
+        "Files weren't validated before backup, .pack created"
+    );
+    // ...or any backup files at all.
+    ensure!(
+        files_in(&backup_path).count() == 0,
+        "Files weren't validated before backup, "
     );
 
     // To examine results
