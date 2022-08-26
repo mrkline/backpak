@@ -45,7 +45,7 @@ fn bad_filename() -> Result<()> {
     // We should fail fast - _before_ we start the backup process and spit out
     // any pack files.
     ensure!(
-        files_in(&working_path).any(|p| p.ends_with(".pack")),
+        !files_in(&working_path).any(|p| p.ends_with(".pack")),
         "Files weren't validated before the backup process started."
     );
 
