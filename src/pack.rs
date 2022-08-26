@@ -199,7 +199,7 @@ impl PackfileWriter {
         // The manifest CBOR will have lots of redundant data - compress it down.
         // TODO: Is multithreading worth it here?
         // This shouldn't be much data compared to blobs and trees.
-        let mut manifest = zstd::block::compress(&manifest, 0)?;
+        let mut manifest = zstd::bulk::compress(&manifest, 0)?;
 
         // Write the length of the (compressed) manifest to the end of the file,
         // making it simple and fast to examine the manifest:
