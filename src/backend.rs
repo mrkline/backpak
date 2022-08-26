@@ -92,9 +92,7 @@ impl CachedBackend {
                         prune_cache(cache_directory, *max_size)?;
                         Ok(f)
                     }
-                    Err(e) => {
-                        return Err(Error::from(e).context(format!("Couldn't open {}", from)));
-                    }
+                    Err(e) => Err(Error::from(e).context(format!("Couldn't open {}", from))),
                 }
             }
         }

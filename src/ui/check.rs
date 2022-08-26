@@ -121,7 +121,7 @@ fn map_chunks_to_snapshots(
 
         for chunks in snapshot_tree
             .values()
-            .map(|tree| tree::chunks_in_tree(&*tree))
+            .map(|tree| tree::chunks_in_tree(tree))
         {
             for chunk in chunks {
                 let needed_by = chunks_to_snapshots

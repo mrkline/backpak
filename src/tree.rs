@@ -398,7 +398,7 @@ fn append_tree(
 pub fn chunks_in_forest(forest: &Forest) -> FxHashSet<&ObjectId> {
     forest
         .par_iter()
-        .map(|(_id, tree)| chunks_in_tree(&*tree))
+        .map(|(_id, tree)| chunks_in_tree(tree))
         .reduce(FxHashSet::default, |mut a, b| {
             a.extend(b);
             a
