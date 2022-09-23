@@ -36,7 +36,7 @@ fn to_file(fh: &mut fs::File, snapshot: &Snapshot) -> Result<ObjectId> {
 
     let mut hasher = HashingWriter::new(fh);
 
-    serde_cbor::to_writer(&mut hasher, snapshot)?;
+    ciborium::into_writer(snapshot, &mut hasher)?;
 
     let (id, fh) = hasher.finalize();
     fh.sync_all()?;
@@ -69,7 +69,7 @@ fn from_reader<R: Read>(r: &mut R) -> Result<(Snapshot, ObjectId)> {
     check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for snapshot file")?;
     let mut hasher = HashingReader::new(r);
     let snapshot =
-        serde_cbor::from_reader(&mut hasher).context("CBOR decoding of snapshot file failed")?;
+        ciborium::from_reader(&mut hasher).context("CBOR decoding of snapshot file failed")?;
     let (id, _) = hasher.finalize();
     Ok((snapshot, id))
 }
@@ -177,12 +177,13 @@ mod test {
         /*
         let fh = fs::File::create("tests/references/snapshot.stability")?;
         let mut hasher = HashingWriter::new(fh);
-        serde_cbor::to_writer(&mut hasher, &snapshot)?;
+        ciborium::into_writer(&snapshot, &mut hasher)?;
         let (id, _fh) = hasher.finalize();
         */
 
-        let snapshot = serde_cbor::to_vec(&snapshot)?;
-        let id = ObjectId::hash(&snapshot);
+        let mut snapshot_cbor = Vec::new();
+        ciborium::into_writer(&snapshot, &mut snapshot_cbor)?;
+        let id = ObjectId::hash(&snapshot_cbor);
 
         // ID remains stable
         assert_eq!(
@@ -193,7 +194,7 @@ mod test {
         // (We could just use the ID and length,
         // but having some example CBOR in the repo seems helpful.)
         let from_example = fs::read("tests/references/snapshot.stability")?;
-        assert_eq!(snapshot, from_example);
+        assert_eq!(snapshot_cbor, from_example);
         Ok(())
     }
 

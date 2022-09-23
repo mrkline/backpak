@@ -291,7 +291,8 @@ pub type Tree = BTreeMap<Utf8PathBuf, Node>;
 /// Serialize the tree into its on-disk CBOR representation and return its
 /// ID (hash)
 pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
-    let tree_cbor = serde_cbor::to_vec(tree)?;
+    let mut tree_cbor = Vec::new();
+    ciborium::into_writer(tree, &mut tree_cbor)?;
     let id = ObjectId::hash(&tree_cbor);
     Ok((tree_cbor, id))
 }

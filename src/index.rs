@@ -149,7 +149,7 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
 
     let mut hasher = HashingWriter::new(zstd);
 
-    serde_cbor::to_writer(&mut hasher, index)?;
+    ciborium::into_writer(index, &mut hasher)?;
 
     let (id, zstd) = hasher.finalize();
     let fh = zstd.finish()?;
@@ -281,8 +281,7 @@ fn from_reader<R: Read>(r: &mut R) -> Result<(Index, ObjectId)> {
     let decoder =
         zstd::stream::read::Decoder::new(r).context("Decompression of index file failed")?;
     let mut hasher = HashingReader::new(decoder);
-    let index =
-        serde_cbor::from_reader(&mut hasher).context("CBOR decoding of index file failed")?;
+    let index = ciborium::from_reader(&mut hasher).context("CBOR decoding of index file failed")?;
     let (id, _) = hasher.finalize();
     Ok((index, id))
 }
@@ -385,12 +384,13 @@ mod test {
         /*
         let mut fh = File::create("tests/references/index.stability")?;
         let mut hasher = HashingWriter::new(fh);
-        serde_cbor::to_writer(&mut hasher, &index)?;
+        ciborium::into_writer(&index, &mut hasher)?;
         let (id, _fh) = hasher.finalize();
         */
 
-        let index = serde_cbor::to_vec(&index)?;
-        let id = ObjectId::hash(&index);
+        let mut index_cbor = Vec::new();
+        ciborium::into_writer(&index, &mut index_cbor)?;
+        let id = ObjectId::hash(&index_cbor);
 
         // ID remains stable
         assert_eq!(
@@ -401,7 +401,7 @@ mod test {
         // (We could just use the ID and length,
         // but having some example CBOR in the repo seems helpful.)
         let from_example = fs::read("tests/references/index.stability")?;
-        assert_eq!(index, from_example);
+        assert_eq!(index_cbor, from_example);
         Ok(())
     }
 

@@ -78,7 +78,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
             match manifest_entry.blob_type {
                 blob::Type::Chunk => io::stdout().write_all(&blob)?,
                 blob::Type::Tree => {
-                    let tree: tree::Tree = serde_cbor::from_slice(&blob)
+                    let tree: tree::Tree = ciborium::from_reader(&*blob)
                         .with_context(|| format!("CBOR decoding of tree {} failed", id))?;
                     serde_json::to_writer(io::stdout(), &tree)?;
                 }

@@ -40,10 +40,11 @@ pub struct PackMetadata {
 ///
 /// A pack file is identified by the hash of its (uncompressed) manifest.
 fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, ObjectId)> {
-    let manifest = serde_cbor::to_vec(&manifest)?;
-    let id = ObjectId::hash(&manifest);
+    let mut manifest_cbor = Vec::new();
+    ciborium::into_writer(&manifest, &mut manifest_cbor)?;
+    let id = ObjectId::hash(&manifest_cbor);
 
-    Ok((manifest, id))
+    Ok((manifest_cbor, id))
 }
 
 /// Packs blobs received from the given channel.
@@ -266,7 +267,7 @@ pub fn verify<R: Read + Seek>(
         trace!("Blob {} matches its ID", entry.id);
     }
 
-    // Attempting to read the manifest using `serde_cbor::from_reader()`
+    // Attempting to read the manifest from CBOR
     // without the correct `take()` length produces errors.
     // Should we rearrange the file so that isn't a problem?
     // Or is that fine, since verification isn't as performance critical
@@ -303,8 +304,8 @@ fn manifest_from_reader<R: Seek + Read>(r: &mut R) -> Result<(PackManifest, Obje
         .context("Decompression of pack manifest failed")?;
     let mut hasher = HashingReader::new(decoder);
 
-    let manifest: PackManifest = serde_cbor::from_reader(&mut hasher)
-        .context("CBOR decoding of the pack manifest failed")?;
+    let manifest: PackManifest =
+        ciborium::from_reader(&mut hasher).context("CBOR decoding of the pack manifest failed")?;
     let (id, _) = hasher.finalize();
     Ok((manifest, id))
 }
@@ -398,7 +399,7 @@ pub fn append_to_forest<R: Read + Seek>(
 
         let mut hashing_decoder = HashingReader::new((&mut decoder).take(entry.length as u64));
 
-        let to_add: tree::Tree = serde_cbor::from_reader(&mut hashing_decoder)
+        let to_add: tree::Tree = ciborium::from_reader(&mut hashing_decoder)
             .with_context(|| format!("CBOR decoding of tree {} failed", entry.id))?;
 
         let (hash, _) = hashing_decoder.finalize();
