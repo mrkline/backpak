@@ -33,7 +33,7 @@ serde_cbor = "0.11"
 serde_derive = "1.0"
 serde_json = "1.0"
 sha2 = "0.10"
-simplelog = { version = "0.11", features = ["test", "termcolor"] }
+simplelog = { version = "0.12", features = ["test", "termcolor"] }
 tempfile = "3.0"
 zstd = { version = "0.11", features = ["zstdmt"] }
 

@@ -97,7 +97,7 @@ fn init_logger(args: &Args) {
     builder.set_target_level(LevelFilter::Off);
     builder.set_thread_level(LevelFilter::Off);
     if args.timestamps {
-        builder.set_time_format_str("%+");
+        builder.set_time_format_rfc3339();
         builder.set_time_level(LevelFilter::Error);
     } else {
         builder.set_time_level(LevelFilter::Off);
