@@ -74,6 +74,12 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     // TODO: Load WIP index and upload any existing packs
     // before we start new ones.
+    //
+    // - Sanity check: WIP index should have all (but maybe one) packs uploaded.
+    // - Sanity check: 0 packs to upload and the +1 is already uploaded, OR
+    //                 1 pack to upload (and it had better match the ID of the +1)
+    // - Upload the pack as-needed
+    // - Pass WIP index to spawn_backup_threads
 
     let cached_backend = Arc::new(cached_backend);
     let mut backup =
