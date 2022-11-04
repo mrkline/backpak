@@ -131,7 +131,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         tree: root,
     };
 
-    snapshot::upload(&snapshot, &*cached_backend)
+    snapshot::upload(&snapshot, &cached_backend)
 }
 
 fn reject_matching_directories(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
@@ -232,7 +232,7 @@ fn backup_tree(
                 }
             }
             DirectoryEntry::ChangedFile => {
-                let chunks = chunk::chunk_file(&path)?;
+                let chunks = chunk::chunk_file(path)?;
 
                 let mut chunk_ids = Vec::new();
                 for chunk in chunks {

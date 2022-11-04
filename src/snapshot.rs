@@ -100,7 +100,7 @@ pub fn load_chronologically(
         .list_snapshots()?
         .par_iter()
         .map(|file| {
-            let snapshot_id = backend::id_from_path(&file)?;
+            let snapshot_id = backend::id_from_path(file)?;
             let snap = load(&snapshot_id, cached_backend)?;
             Ok((snap, snapshot_id))
         })

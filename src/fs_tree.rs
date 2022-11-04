@@ -204,7 +204,7 @@ pub fn forest_from_fs(
                 }
             }
             DirectoryEntry::ChangedFile => {
-                let chunks = chunk::chunk_file(&path)?;
+                let chunks = chunk::chunk_file(path)?;
 
                 let mut chunk_ids = Vec::new();
                 for chunk in chunks {

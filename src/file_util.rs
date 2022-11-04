@@ -78,7 +78,7 @@ where
     let to = to.as_ref();
 
     // POSIX lets us rename opened files. Neat!
-    match std::fs::rename(&from, &to) {
+    match std::fs::rename(from, to) {
         Ok(()) => {
             debug!("Renamed {from} to {to}");
             Ok(from_fh)
@@ -107,7 +107,7 @@ fn move_by_copy(from: &Utf8Path, mut from_fh: File, to: &Utf8Path) -> Result<Fil
     let to_fh = safe_copy_to_file(from_fh, to)?;
 
     // Axe /src/foo
-    std::fs::remove_file(&from).with_context(|| format!("Couldn't remove {from}"))?;
+    std::fs::remove_file(from).with_context(|| format!("Couldn't remove {from}"))?;
     debug!("Moved {from} to {to}");
     Ok(to_fh)
 }
@@ -127,7 +127,7 @@ pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Utf8Path) -> Result<File> {
     let mut to_fh = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
-        .open(&to_part)
+        .open(to_part)
         .with_context(|| format!("Couldn't open {to_part}"))?;
 
     std::io::copy(&mut from, &mut to_fh).with_context(|| format!("Couldn't write {to_part}"))?;
@@ -139,7 +139,7 @@ pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Utf8Path) -> Result<File> {
 
     if cfg!(unix) {
         // Rename to /dest/foo and return our handle
-        std::fs::rename(&to_part, to)
+        std::fs::rename(to_part, to)
             .with_context(|| format!("Couldn't rename {to_part} to {to}"))?;
 
         Ok(to_fh)
@@ -148,7 +148,7 @@ pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Utf8Path) -> Result<File> {
         // Is this a soundness/atomicity hole in the making?
         // Maybe; help me Windows friends.
         drop(to_fh);
-        std::fs::rename(&to_part, to)
+        std::fs::rename(to_part, to)
             .with_context(|| format!("Couldn't rename {to_part} to {to}"))?;
 
         File::open(to).with_context(|| format!("Couldn't open {to} after moving to it"))

@@ -175,7 +175,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
         .list_indexes()?
         .par_iter()
         .try_for_each_with(&shared, |shared, index_file| {
-            let index_id = backend::id_from_path(&index_file)?;
+            let index_id = backend::id_from_path(index_file)?;
             let mut loaded_index = match load(&index_id, cached_backend) {
                 Ok(l) => l,
                 Err(e) => {
