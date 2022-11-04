@@ -116,11 +116,9 @@ impl<R: Read> HashingReader<R> {
 
 impl<R: Read> Read for HashingReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let read_result = self.inner.read(buf);
-        if let Ok(count) = read_result {
-            self.hasher.update(&buf[..count]);
-        }
-        read_result
+        let count = self.inner.read(buf)?;
+        self.hasher.update(&buf[..count]);
+        Ok(count)
     }
 }
 
@@ -144,11 +142,9 @@ impl<W: Write> HashingWriter<W> {
 
 impl<W: Write> Write for HashingWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let write_result = self.inner.write(buf);
-        if let Ok(count) = write_result {
-            self.hasher.update(&buf[..count]);
-        }
-        write_result
+        let count = self.inner.write(buf)?;
+        self.hasher.update(&buf[..count]);
+        Ok(count)
     }
 
     fn flush(&mut self) -> io::Result<()> {

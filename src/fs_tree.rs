@@ -123,7 +123,6 @@ where
                     }
                     tree::NodeContents::Symlink { target } => {
                         trace!("{path} was a file, but is now a symlink to {target}");
-
                         None
                     }
                 });
@@ -204,17 +203,11 @@ pub fn forest_from_fs(
                 }
             }
             DirectoryEntry::ChangedFile => {
-                let chunks = chunk::chunk_file(path)?;
-
-                let mut chunk_ids = Vec::new();
-                for chunk in chunks {
-                    chunk_ids.push(chunk.id);
-                }
                 info!("{:>8} {}", "hash", path);
-
+                let chunks = chunk::chunk_file(path)?.into_iter().map(|c| c.id).collect();
                 tree::Node {
                     metadata,
-                    contents: tree::NodeContents::File { chunks: chunk_ids },
+                    contents: tree::NodeContents::File { chunks },
                 }
             }
         };
