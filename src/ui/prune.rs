@@ -18,6 +18,7 @@ use crate::read;
 use crate::snapshot;
 use crate::tree;
 
+/// Condense the backup, throwing out unused data.
 #[derive(Debug, Parser)]
 pub struct Args {
     #[clap(short = 'n', long)]

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 use simplelog::*;
 
 use backpak::counters;
@@ -9,15 +9,15 @@ use backpak::ui::*;
 #[derive(Debug, Parser)]
 struct Args {
     /// Verbosity (-v, -vv, -vvv, etc.)
-    #[clap(short, long, parse(from_occurrences))]
+    #[clap(short, long, action(ArgAction::Count))]
     verbose: u8,
 
-    #[clap(short, long, arg_enum, default_value = "auto")]
+    #[clap(short, long, value_enum, default_value = "auto")]
     color: Color,
 
     /// Prepend ISO-8601 timestamps to all trace messages (from --verbose).
     /// Useful for benchmarking.
-    #[clap(short, long)]
+    #[clap(short, long, verbatim_doc_comment)]
     timestamps: bool,
 
     /// Change to the given directory before doing anything else
@@ -31,7 +31,7 @@ struct Args {
     subcommand: Command,
 }
 
-#[derive(Debug, Copy, Clone, clap::ArgEnum)]
+#[derive(Debug, Copy, Clone, clap::ValueEnum)]
 enum Color {
     Auto,
     Always,
