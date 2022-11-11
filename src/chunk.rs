@@ -12,7 +12,9 @@ use crate::blob::{self, Blob};
 use crate::file_util;
 use crate::hashing::ObjectId;
 
-/// A span of a file.
+/// A span of a shared byte buffer,
+/// similar to [`Bytes`](https://docs.rs/bytes/latest/bytes/struct.Bytes.html),
+/// but referencing a file it came from.
 ///
 /// All chunks from a file share the same underlying buffer via a refcount to
 /// avoid reallocating the whole file, bit by bit, as we pass its chunks to the packer.

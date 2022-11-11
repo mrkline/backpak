@@ -1,3 +1,5 @@
+//! Diffs two trees and runs a set of callbacks for each difference.
+
 use std::collections::BTreeSet;
 
 use anyhow::{anyhow, Result};

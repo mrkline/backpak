@@ -1,3 +1,7 @@
+//! Some big dumb backup system.
+//!
+//! See the [`backup`] module for an overview and a crappy block diagram.
+
 pub mod backend;
 pub mod backup;
 pub mod blob;

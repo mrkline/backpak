@@ -1,7 +1,50 @@
 //! Common backup machinery exposed as channel-chomping threads
 //!
-//! Various commands (backup, prune, etc.) can walk data, existing or new,
-//! and send them to this machinery.
+//! As a crappy diagram, [`spawn_backup_threads()`] spins up:
+//!
+//! ```text
+//!     chunk_tx --blobs--> chunk packer --files------->---------
+//!                                     \                        \
+//!                                    ---chunks--> indexer ---> uploader
+//!                                   /                          /
+//!     tree_tx --blobs--> tree packer---files--------->---------
+//! ```
+//!
+//! What's going on?
+//!
+//! - While both are stored as a [`Blob`], it's very convenient to store chunks
+//!   (of files we're backing up) in separate packs from trees (dir structure & metadata).
+//!   Many operations (ls, diff) only need to look at the trees, and having trees
+//!   in the same packs gives us great locality.
+//!   See [`tree::Cache`](crate::tree::Cache) - whenever we pull down a pack of trees,
+//!   we read them all and insert them into the cache.
+//!
+//! - Each packer takes [`Blob`]s and inserts them into pack files,
+//!   compressed streams of blobs with a [`PackManifest`](crate::pack::PackManifest)
+//!   at the end for quick indexing. Pack files are filled until they reach a certain size.
+//!
+//! - When each pack file is finished, its hash
+//!   (i.e., its [`ObjectId`](crate::hashing::ObjectId)!) and manifest are sent
+//!   to the indexer. Each backup creates a single index file that contains
+//!   an [`Index`](crate::index::Index) which maps pack IDs to their manifests.
+//!   (We can also pass a starting index containing previously existing packs.
+//!   This isn't necessary for a normal backup, since
+//!   [`build_master_index()`](crate::index::build_master_index) merges all
+//!   backed-up indexes, but it's useful for pruning or resuming an interrupted
+//!   backup session.)
+//!
+//! - Each of these threads ultimately generate files which need to be... backed up!
+//!   That's the job of the uploader thread, which receives each in turn
+//!   (still open, to avoid filesystem races and perf hits from closing and reopening)
+//!   and uploads them to the current [`CachedBackend`](crate::backend::CachedBackend).
+//!
+//! That's it! To back up a snapshot, the [backup command](crate::ui::backup)
+//! walks the parts of the filesystem we want to back up, sending chunks of files
+//! to the file packer and trees to the tree packer. To prune the backup store,
+//! the [prune command](crate::ui::prune) builds lists of packs that are
+//! used/unused/partially used, starts a new index pre-populated with the fully-used
+//! packs (passing it to the indexer as a starting point), then feeds blobs from
+//! the partially-used packs to the packers for compaction. And so on, and so forth.
 
 use std::fs::File;
 use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};

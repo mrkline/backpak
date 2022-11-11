@@ -24,8 +24,7 @@ fn determine_type(_repository: &Utf8Path) -> BackendType {
     BackendType::Filesystem
 }
 
-// TODO: Should we make these async? Some backends (such as S3 via Rusoto)
-// are going to be async, but we could `block_on()` for each request...
+/// A backend is anything we can read from, write to, list, and remove items from.
 trait Backend {
     /// Read from the given key
     fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>>;
@@ -58,6 +57,12 @@ fn prune_cache(_cache_directory: &Utf8Path, _max_size: usize) -> Result<()> {
     todo!()
 }
 
+/// Cached backends do what they say on the tin.
+///
+/// One useful difference from the "raw" backend is that they deal directly
+/// in files because we can assume we're writing to some local `~/.cache/backpack`
+/// or the like before things are uploaded.
+/// (Or, for a local backup, we can write straight to the backup!)
 pub struct CachedBackend {
     cache: WritethroughCache,
     backend: Box<dyn Backend + Send + Sync>,
@@ -100,7 +105,7 @@ impl CachedBackend {
 
     /// Take the completed file and its `<id>.<type>` name and
     /// store it to an object with the appropriate key per
-    /// [`destination()`](destination)
+    /// `destination()`
     pub fn write(&self, from: &str, from_fh: File) -> Result<()> {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {

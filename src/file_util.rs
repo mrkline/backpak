@@ -39,7 +39,7 @@ impl LoadedFile {
     }
 }
 
-/// Reads an entire file if it's small enough, memory maps it otherwise.
+/// Read an entire file if it's small enough; memory map it otherwise.
 pub fn read_file(path: &Utf8Path) -> Result<Arc<LoadedFile>> {
     const MEGA: u64 = 1024 * 1024;
 

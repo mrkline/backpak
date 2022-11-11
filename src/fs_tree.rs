@@ -74,7 +74,9 @@ pub enum DirectoryEntry<T> {
 /// it to the desired return value, e.g., calulating the ID of the tree representing
 /// the directory we're traversing. This is done for _each_ recursive call.
 ///
-/// See [`forest_from_fs`] or [`backup_tree`](crate::ui::backup::backup_tree) for examples.
+/// The entire thing acts as a map-reduce, where `visit()` maps and `finalize()`
+/// reduces everything visited in that directory.
+/// See [`forest_from_fs`] or [`crate::ui::backup`]'s `backup_tree` for examples.
 pub fn walk_fs<T, Intermediate, Visit, Finalize>(
     paths: &BTreeSet<Utf8PathBuf>,
     previous_tree: Option<&ObjectId>,

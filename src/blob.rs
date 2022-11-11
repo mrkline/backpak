@@ -29,7 +29,7 @@ pub enum Type {
 
 /// Either part of a loaded file or Vec[u8] buffer.
 ///
-/// Formerly this was some Box<AsRef<u8> + Send + Sync>,
+/// Formerly this was some `Box<AsRef<u8> + Send + Sync>`,
 /// but let's cut down on the indirection where there's only a few choices.
 #[derive(Debug, Clone)]
 pub enum Contents {
