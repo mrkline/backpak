@@ -156,7 +156,7 @@ impl diff::Callbacks for Restorer<'_> {
         if self.args.dry_run {
             return Ok(());
         }
-        Ok(())
+        todo!();
     }
 
     fn node_removed(
