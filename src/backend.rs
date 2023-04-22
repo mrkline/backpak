@@ -110,7 +110,7 @@ impl CachedBackend {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let to = base_directory.join(destination(from));
-                file_util::move_opened(from, from_fh, &to)?;
+                file_util::move_opened(from, from_fh, to)?;
             }
             // Write through! Write it into the cache,
             // copy the cached version to the backend, and prune the cache.
@@ -119,7 +119,7 @@ impl CachedBackend {
                 max_size,
             } => {
                 let cached = cache_directory.join(from);
-                let mut f = file_util::move_opened(from, from_fh, &cached)?;
+                let mut f = file_util::move_opened(from, from_fh, cached)?;
                 f.seek(std::io::SeekFrom::Start(0))?;
                 self.backend.write(&mut f, from)?;
                 prune_cache(cache_directory, *max_size)?;

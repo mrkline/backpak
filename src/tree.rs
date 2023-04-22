@@ -186,9 +186,9 @@ pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
     let size = meta.size();
     let user_id = meta.uid();
     let group_id = meta.gid();
-    let access_time = chrono::Utc.timestamp(meta.atime(), meta.atime_nsec() as u32);
-    let modify_time = chrono::Utc.timestamp(meta.mtime(), meta.mtime_nsec() as u32);
-    let change_time = chrono::Utc.timestamp(meta.ctime(), meta.ctime_nsec() as u32);
+    let access_time = chrono::Utc.timestamp_opt(meta.atime(), meta.atime_nsec() as u32).unwrap();
+    let modify_time = chrono::Utc.timestamp_opt(meta.mtime(), meta.mtime_nsec() as u32).unwrap();
+    let change_time = chrono::Utc.timestamp_opt(meta.ctime(), meta.ctime_nsec() as u32).unwrap();
 
     Ok(NodeMetadata::Posix(PosixMetadata {
         mode,

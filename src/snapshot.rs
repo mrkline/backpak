@@ -43,7 +43,7 @@ pub fn upload(snapshot: &Snapshot, backend: &backend::CachedBackend) -> Result<(
     let mut fh = tempfile::Builder::new()
         .prefix("temp-backpak-")
         .suffix(".snapshot")
-        .tempfile_in(&std::env::current_dir()?) // TODO: Configurable?
+        .tempfile_in(std::env::current_dir()?) // TODO: Configurable?
         .context("Couldn't open temporary snapshot for writing")?;
 
     let id = to_file(fh.as_file_mut(), snapshot).context("Couldn't save snapshot")?;
