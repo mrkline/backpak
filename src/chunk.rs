@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
-use fastcdc::FastCDC;
+use fastcdc::v2020::FastCDC;
 use log::*;
 use rayon::prelude::*;
 
@@ -63,9 +63,9 @@ pub type ChunkedFile = Vec<Blob>;
 ///
 /// See <https://crates.io/crates/fastcdc>
 pub fn chunk_file<P: AsRef<Utf8Path>>(path: P) -> Result<ChunkedFile> {
-    const MIN_SIZE: usize = 1024 * 512;
-    const TARGET_SIZE: usize = 1024 * 1024;
-    const MAX_SIZE: usize = 1024 * 1024 * 2;
+    const MIN_SIZE: u32 = 1024 * 512;
+    const TARGET_SIZE: u32 = 1024 * 1024;
+    const MAX_SIZE: u32 = 1024 * 1024 * 2;
 
     let path: &Utf8Path = path.as_ref();
 
