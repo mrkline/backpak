@@ -13,7 +13,7 @@ use crate::{
     tree::{self, Forest, Node, NodeType},
 };
 
-/// Compare two snapshots
+/// Restores the given snapshot to the filesystem
 #[derive(Debug, Parser)]
 pub struct Args {
     #[clap(short, long)]
@@ -156,7 +156,7 @@ impl diff::Callbacks for Restorer<'_> {
         if self.args.dry_run {
             return Ok(());
         }
-        todo!();
+        todo!("Rehydrate a new file/dir at {node_path}")
     }
 
     fn node_removed(
@@ -178,6 +178,8 @@ impl diff::Callbacks for Restorer<'_> {
         }
         if old_node.kind() == NodeType::Directory {
             fs::remove_dir(&node_path)?
+        } else {
+            fs::remove_file(&node_path)?
         }
         Ok(())
     }
@@ -196,6 +198,7 @@ impl diff::Callbacks for Restorer<'_> {
         if self.args.dry_run {
             return Ok(());
         }
+        todo!("Set the file contents to new_node");
         self.set_metadata(&node_path, new_node)
     }
 
@@ -229,8 +232,7 @@ impl diff::Callbacks for Restorer<'_> {
 
         // rsync will remove empty directories to replace them with a file,
         // but without --delete will refuse to nuke a directory.
-
-        Ok(())
+        todo!("Based on --delete, axe old file/dir and copy new contents")
     }
 }
 
@@ -240,6 +242,9 @@ impl<'a> Restorer<'a> {
             todo!();
         }
         if self.args.atimes {
+            todo!();
+        }
+        if self.args.permissions {
             todo!();
         }
         Ok(())

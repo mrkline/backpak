@@ -6,9 +6,10 @@ use camino::Utf8Path;
 use crate::hashing::ObjectId;
 use crate::tree;
 
+#[derive(Debug)]
 pub enum Recurse<'a> {
-    Yes(&'a tree::Forest),
     No,
+    Yes(&'a tree::Forest),
 }
 
 #[cfg(windows)]
