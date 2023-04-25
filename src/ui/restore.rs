@@ -71,9 +71,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         (&snapshot.tree, &snapshot_forest),
         Utf8Path::new(""),
         &mut res,
-    );
-
-    Ok(())
+    )
 }
 
 struct FsTreeAndMapping<'a> {

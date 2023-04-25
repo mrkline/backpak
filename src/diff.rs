@@ -4,7 +4,6 @@ use std::collections::BTreeSet;
 
 use anyhow::{anyhow, Result};
 use camino::Utf8Path;
-use log::*;
 
 use crate::hashing::ObjectId;
 use crate::tree::{Forest, Node, NodeType, Tree};
@@ -61,7 +60,7 @@ pub fn compare_trees(
     (id2, forest2): (&ObjectId, &Forest),
     tree_path: &Utf8Path,
     callbacks: &mut dyn Callbacks,
-) {
+) -> Result<()> {
     let tree1: &Tree = forest1
         .get(id1)
         .ok_or_else(|| anyhow!("Missing tree {}", id1))
@@ -80,13 +79,10 @@ pub fn compare_trees(
             (None, None) => unreachable!(),
             (None, Some(new_node)) => callbacks.node_added(&node_path, new_node, forest2),
             (Some(old_node), None) => callbacks.node_removed(&node_path, old_node, forest1),
-            (Some(l), Some(r)) => {
-                compare_nodes((l, forest1), (r, forest2), &node_path, callbacks);
-                Ok(())
-            }
-        }
-        .unwrap_or_else(|e| error!("{:?}", e));
+            (Some(l), Some(r)) => compare_nodes((l, forest1), (r, forest2), &node_path, callbacks),
+        }?;
     }
+    Ok(())
 }
 
 pub fn compare_nodes(
@@ -94,7 +90,7 @@ pub fn compare_nodes(
     (node2, forest2): (&Node, &Forest),
     path: &Utf8Path,
     callbacks: &mut dyn Callbacks,
-) {
+) -> Result<()> {
     match (node1.kind(), node2.kind()) {
         (NodeType::File, NodeType::File) | (NodeType::Symlink, NodeType::Symlink) => {
             if node1.contents != node2.contents {
@@ -105,7 +101,6 @@ pub fn compare_nodes(
             } else {
                 callbacks.nothing_changed(path, node2)
             }
-            .unwrap_or_else(|e| error!("{:?}", e));
         }
         (NodeType::Directory, NodeType::Directory) => {
             let mut changed = false;
@@ -116,26 +111,19 @@ pub fn compare_nodes(
                     (node2.contents.subtree(), forest2),
                     path,
                     callbacks,
-                );
+                )?;
                 changed = true;
             }
             if node1.metadata != node2.metadata {
                 // trace!("{:#?} != {:#?}", node1.metadata, node2.metadata);
-                callbacks
-                    .metadata_changed(path, node1)
-                    .unwrap_or_else(|e| error!("{:?}", e));
+                callbacks.metadata_changed(path, node1)?;
                 changed = true;
             }
             if !changed {
-                callbacks
-                    .nothing_changed(path, node1)
-                    .unwrap_or_else(|e| error!("{:?}", e));
+                callbacks.nothing_changed(path, node1)?;
             }
+            Ok(())
         }
-        _ => {
-            callbacks
-                .type_changed(path, node1, forest1, node2, forest2)
-                .unwrap_or_else(|e| error!("{:?}", e));
-        }
+        _ => callbacks.type_changed(path, node1, forest1, node2, forest2),
     }
 }

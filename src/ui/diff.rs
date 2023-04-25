@@ -47,9 +47,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         &mut PrintDiffs {
             metadata: args.metadata,
         },
-    );
-
-    Ok(())
+    )
 }
 
 fn load_snapshot2_or_paths(
