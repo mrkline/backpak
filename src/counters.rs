@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{fence, AtomicUsize, Ordering};
 
-use enum_map::{enum_map, Enum, EnumMap};
+use enum_map::{Enum, EnumMap};
 use lazy_static::lazy_static;
 use log::*;
 
@@ -46,24 +46,20 @@ pub fn log_counts() {
         return;
     }
 
-    lazy_static! {
-        static ref OP_NAMES: EnumMap<Op, &'static str> = {
-            enum_map! {
-                Op::IndexLoad => "indexes loaded",
-                Op::FileToBuffer => "input files buffered",
-                Op::FileToMmap => "input files memory mapped",
-                Op::FileCacheHit => "files cache hits",
-                Op::FileCacheMiss => "file cache misses",
-                Op::TreeCacheHit => "tree cache hits",
-                Op::TreeCacheMiss => "tree cache misses",
-                Op::PackSkippedBlob => "blobs skipped reading packs",
-                Op::PackStreamRestart => "pack read restarts",
-            }
-        };
-    }
+    let opname = |op| match op {
+        Op::IndexLoad => "indexes loaded",
+        Op::FileToBuffer => "input files buffered",
+        Op::FileToMmap => "input files memory mapped",
+        Op::FileCacheHit => "files cache hits",
+        Op::FileCacheMiss => "file cache misses",
+        Op::TreeCacheHit => "tree cache hits",
+        Op::TreeCacheMiss => "tree cache misses",
+        Op::PackSkippedBlob => "blobs skipped reading packs",
+        Op::PackStreamRestart => "pack read restarts",
+    };
 
     debug!("Counters:");
     for (op, count) in &counts {
-        debug!("{:6} {}", count, OP_NAMES[*op],);
+        debug!("{:6} {}", count, opname(*op),);
     }
 }
