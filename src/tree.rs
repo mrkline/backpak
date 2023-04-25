@@ -290,7 +290,7 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
 ///
 /// We use a FxHashMap because we never serialize a whole forest as a single object,
 /// so we'll take constant-time lookup over deterministic order.
-/// We use an Arc<Tree> so that a Forest can be used as a tree cache,
+/// We use an `Arc<Tree>` so that a Forest can be used as a tree cache,
 /// doling out references to its trees.
 /// We use Arc and not Rc so that functions can operate in parallel on all
 /// trees in the forest.

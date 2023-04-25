@@ -27,7 +27,7 @@ pub enum Type {
     Tree,
 }
 
-/// Either part of a loaded file or Vec[u8] buffer.
+/// Either part of a loaded file or [`Vec`] buffer.
 ///
 /// Formerly this was some `Box<AsRef<u8> + Send + Sync>`,
 /// but let's cut down on the indirection where there's only a few choices.
