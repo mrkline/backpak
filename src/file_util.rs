@@ -27,7 +27,7 @@ pub fn check_magic<R: Read>(r: &mut R, expected: &[u8]) -> Result<()> {
 #[derive(Debug)]
 pub enum LoadedFile {
     Buffered(Vec<u8>),
-    Mapped(memmap::Mmap),
+    Mapped(memmap2::Mmap),
 }
 
 impl LoadedFile {
@@ -54,7 +54,7 @@ pub fn read_file(path: &Utf8Path) -> Result<Arc<LoadedFile>> {
         LoadedFile::Buffered(buffer)
     } else {
         trace!("{path} is > 10MB, memory mapping");
-        let mapping = unsafe { memmap::Mmap::map(&fh)? };
+        let mapping = unsafe { memmap2::Mmap::map(&fh)? };
         counters::bump(counters::Op::FileToMmap);
         LoadedFile::Mapped(mapping)
     };
