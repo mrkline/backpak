@@ -121,19 +121,4 @@ impl diff::Callbacks for PrintDiffs {
         }
         Ok(())
     }
-
-    fn type_changed(
-        &mut self,
-        node_path: &Utf8Path,
-        old_node: &Node,
-        old_forest: &Forest,
-        new_node: &Node,
-        new_forest: &Forest,
-    ) -> Result<()> {
-        // If we changed from one type to another,
-        // just - the old and + the new
-        ls::print_node("- ", node_path, old_node, ls::Recurse::Yes(old_forest));
-        ls::print_node("+ ", node_path, new_node, ls::Recurse::Yes(new_forest));
-        Ok(())
-    }
 }

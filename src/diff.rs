@@ -39,6 +39,9 @@ pub trait Callbacks {
     }
 
     /// Called when the type of a node changed.
+    ///
+    /// For most cases this can be modeled as removing the old node
+    /// and adding the new node, so make that the default behavior.
     fn type_changed(
         &mut self,
         node_path: &Utf8Path,
@@ -46,7 +49,11 @@ pub trait Callbacks {
         old_forest: &Forest,
         new_node: &Node,
         new_forest: &Forest,
-    ) -> Result<()>;
+    ) -> Result<()> {
+        self.node_removed(node_path, old_node, old_forest)?;
+        self.node_added(node_path, new_node, new_forest)?;
+        Ok(())
+    }
 }
 
 pub fn compare_trees(
