@@ -15,7 +15,7 @@ pub enum Recurse<'a> {
 #[cfg(windows)]
 fn has_trailing_slash(p: &Utf8Path) -> bool {
     let last = p.as_str().as_bytes().last();
-    last == Some(b'\\') || last == Some(b'/')
+    last == Some(&b'\\') || last == Some(&b'/')
 }
 
 #[cfg(unix)]

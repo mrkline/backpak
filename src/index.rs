@@ -96,7 +96,7 @@ pub fn index(
         let index_name = format!("{}.index", index_id);
 
         // On Windows, we can't move an open file. Boo, Windows.
-        if cfg!(target_family = "windows") {
+        if cfg!(windows) {
             persisted
                 .sync_all()
                 .with_context(|| format!("Couldn't close {} to rename it", WIP_NAME))?;

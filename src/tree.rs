@@ -177,7 +177,7 @@ impl NodeMetadata {
     }
 }
 
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
     use std::os::unix::fs::MetadataExt;
 
@@ -186,9 +186,15 @@ pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
     let size = meta.size();
     let user_id = meta.uid();
     let group_id = meta.gid();
-    let access_time = chrono::Utc.timestamp_opt(meta.atime(), meta.atime_nsec() as u32).unwrap();
-    let modify_time = chrono::Utc.timestamp_opt(meta.mtime(), meta.mtime_nsec() as u32).unwrap();
-    let change_time = chrono::Utc.timestamp_opt(meta.ctime(), meta.ctime_nsec() as u32).unwrap();
+    let access_time = chrono::Utc
+        .timestamp_opt(meta.atime(), meta.atime_nsec() as u32)
+        .unwrap();
+    let modify_time = chrono::Utc
+        .timestamp_opt(meta.mtime(), meta.mtime_nsec() as u32)
+        .unwrap();
+    let change_time = chrono::Utc
+        .timestamp_opt(meta.ctime(), meta.ctime_nsec() as u32)
+        .unwrap();
 
     Ok(NodeMetadata::Posix(PosixMetadata {
         mode,
@@ -201,7 +207,7 @@ pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
     }))
 }
 
-#[cfg(target_family = "windows")]
+#[cfg(windows)]
 pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
     use std::os::windows::fs::MetadataExt;
 
@@ -222,7 +228,7 @@ pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
     }))
 }
 
-#[cfg(target_family = "windows")]
+#[cfg(windows)]
 fn windows_timestamp(ts: u64) -> Option<DateTime<Utc>> {
     // Windows returns 100ns intervals since January 1, 1601
     const TICKS_PER_SECOND: u64 = 1_000_000_000 / 100;
@@ -234,7 +240,7 @@ fn windows_timestamp(ts: u64) -> Option<DateTime<Utc>> {
         let nanos = (ts % TICKS_PER_SECOND) * 100;
 
         Some(
-            Utc.ymd(1601, 1, 1).and_hms(0, 0, 0)
+            Utc.with_ymd_and_hms(1601, 1, 1, 0, 0, 0).unwrap()
                 + chrono::Duration::seconds(seconds as i64)
                 + chrono::Duration::nanoseconds(nanos as i64),
         )
