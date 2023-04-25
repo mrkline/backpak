@@ -37,7 +37,7 @@ impl AsRef<[u8]> for FileSpan {
 
 pub type ChunkedFile = Vec<Blob>;
 
-/// Cuts a file into content-based chunks between 512kB and 2MB, aiming for 1MB.
+/// Cuts a file into content-based chunks between 512kB and 8MB, aiming for 1MB.
 ///
 /// Duplicati makes a convincing argument that heavyweight attempts to
 /// deduplicate data at the chunk level (as opposed to the file level) isn't
@@ -65,7 +65,7 @@ pub type ChunkedFile = Vec<Blob>;
 pub fn chunk_file<P: AsRef<Utf8Path>>(path: P) -> Result<ChunkedFile> {
     const MIN_SIZE: u32 = 1024 * 512;
     const TARGET_SIZE: u32 = 1024 * 1024;
-    const MAX_SIZE: u32 = 1024 * 1024 * 2;
+    const MAX_SIZE: u32 = 1024 * 1024 * 8;
 
     let path: &Utf8Path = path.as_ref();
 
