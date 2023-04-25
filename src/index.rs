@@ -226,9 +226,12 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
     })
 }
 
+/// A result of [`blob_to_pack_map()`],
+/// mapping [`Blob`](crate::blob::Blob) IDs to the the pack where each is stored
 pub type BlobMap = FxHashMap<ObjectId, ObjectId>;
 
-/// Given an index, produce a mapping that relates blobs -> their packs
+/// Given an index, produce a mapping that traces [`Blob`](crate::blob::Blob)s
+/// to the packs where they're stored
 pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap> {
     debug!("Building a blob -> pack map");
     let mut mapping = FxHashMap::default();

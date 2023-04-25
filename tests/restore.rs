@@ -43,9 +43,11 @@ fn backup_src() -> Result<()> {
     let restoreit = || {
         let restore_run = cli_run(working_path, backup_path)
             .unwrap()
-            .args(&["restore", "--dry-run", "--delete", "--times", "last"]) // TODO: hot run
+            .args(&["restore", "--delete", "--times", "last"])
             .assert()
             .success();
+        let restore_err = stderr(&restore_run).trim();
+        eprintln!("{}", restore_err);
         let restore_output = stdout(&restore_run).trim();
         restore_output.to_string()
     };
@@ -56,6 +58,7 @@ fn backup_src() -> Result<()> {
         format!("{}{}", code, prefixed.display())
     };
 
+    // Without any changes, restore should be a no-op
     assert_eq!(restoreit(), "");
 
     // Obvious stuff - added, removed, moved, modified, perms...
@@ -72,13 +75,13 @@ fn backup_src() -> Result<()> {
     )?;
 
     let compare = |expected: &[&str]| {
-        let got = restoreit()
-            .split('\n')
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
         let expected = expected
             .iter()
             .map(|p| prefix_working_path(p))
+            .collect::<Vec<_>>();
+        let got = restoreit()
+            .split('\n')
+            .map(|s| s.to_string())
             .collect::<Vec<_>>();
         println!("Expected:\n{:#?}", expected);
         println!("Got:\n{:#?}", got);
@@ -99,27 +102,14 @@ fn backup_src() -> Result<()> {
         "U src/",
     ]);
 
-    // Wipe the slate.
-    cli_run(working_path, backup_path)?
-        .arg("backup")
-        .arg(working_path.join("src"))
-        .assert()
-        .success();
-
-    assert_eq!(restoreit(), "");
+    // Restoring again should do nothing
+    compare(&[]);
 
     // Changed type!
     fs::remove_file(working_path.join("src/ls.rs"))?;
     unix::fs::symlink("/dev/null", working_path.join("src/ls.rs"))?;
 
     compare(&["- src/ls.rs -> /dev/null", "+ src/ls.rs", "U src/"]);
-
-    // Wipe the slate.
-    cli_run(working_path, backup_path)?
-        .arg("backup")
-        .arg(working_path.join("src"))
-        .assert()
-        .success();
 
     // Symlink modified (should be -/+, not M)
     fs::remove_file(working_path.join("src/ls.rs"))?;
