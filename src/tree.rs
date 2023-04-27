@@ -61,16 +61,16 @@ impl NodeContents {
 /// Backup-relevant metadata taken from a `stat()` call on a Posix system.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PosixMetadata {
-    mode: u32,
-    size: u64,
-    user_id: u32,
-    group_id: u32,
+    pub mode: u32,
+    pub size: u64,
+    pub user_id: u32,
+    pub group_id: u32,
     #[serde(with = "prettify::date_time")]
-    access_time: DateTime<Utc>,
+    pub access_time: DateTime<Utc>,
     #[serde(with = "prettify::date_time")]
-    modify_time: DateTime<Utc>,
+    pub modify_time: DateTime<Utc>,
     #[serde(with = "prettify::date_time")]
-    change_time: DateTime<Utc>,
+    pub change_time: DateTime<Utc>,
 }
 
 // We don't want to make or break metadata equivalence with access time -
@@ -82,9 +82,8 @@ impl PartialEq for PosixMetadata {
             self.size == o.size &&
             self.user_id == o.user_id &&
             self.group_id == o.group_id &&
-            // Skip access time!
-            self.modify_time == o.modify_time &&
-            self.change_time == o.change_time
+            // Skip access time! And change time (we can't set that!)
+            self.modify_time == o.modify_time
     }
 }
 
@@ -94,14 +93,14 @@ impl Eq for PosixMetadata {}
 /// on Windows.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WindowsMetadata {
-    attributes: u32,
-    size: u64,
+    pub attributes: u32,
+    pub size: u64,
     #[serde(with = "prettify::date_time_option")]
-    creation_time: Option<DateTime<Utc>>,
+    pub creation_time: Option<DateTime<Utc>>,
     #[serde(with = "prettify::date_time_option")]
-    access_time: Option<DateTime<Utc>>,
+    pub access_time: Option<DateTime<Utc>>,
     #[serde(with = "prettify::date_time_option")]
-    write_time: Option<DateTime<Utc>>,
+    pub write_time: Option<DateTime<Utc>>,
 }
 
 impl PartialEq for WindowsMetadata {

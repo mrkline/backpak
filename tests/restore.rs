@@ -43,7 +43,7 @@ fn backup_src() -> Result<()> {
     let restoreit = || {
         let restore_run = cli_run(working_path, backup_path)
             .unwrap()
-            .args(&["restore", "--delete", "--times", "last"])
+            .args(&["restore", "--delete", "--times", "--permissions", "last"])
             .assert()
             .success();
         let restore_err = stderr(&restore_run).trim();
@@ -103,7 +103,7 @@ fn backup_src() -> Result<()> {
     ]);
 
     // Restoring again should do nothing
-    compare(&[]);
+    compare(&["U src/"]);
 
     // Changed type!
     fs::remove_file(working_path.join("src/ls.rs"))?;

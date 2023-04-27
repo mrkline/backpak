@@ -17,7 +17,7 @@ use crate::{
     index,
     read::BlobReader,
     snapshot,
-    tree::{self, Forest, Node, NodeContents, NodeType},
+    tree::{self, Forest, Node, NodeContents, NodeMetadata, NodeType},
 };
 
 /// Restores the given snapshot to the filesystem
@@ -35,9 +35,6 @@ pub struct Args {
 
     #[clap(short, long)]
     times: bool,
-
-    #[clap(short = 'U', long)]
-    atimes: bool,
 
     #[clap(short, long)]
     permissions: bool,
@@ -57,7 +54,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let tree_and_mapping =
         load_fs_tree_and_mapping(&id, &snapshot, &snapshot_forest, &args.output)?;
 
-    let metadata = args.times || args.atimes || args.permissions;
+    let metadata = args.times || args.permissions;
 
     let mut res = Restorer {
         printer: super::diff::PrintDiffs { metadata },
@@ -171,6 +168,7 @@ impl Restorer<'_> {
             if mtime.is_none() && atime.is_none() {
                 trace!("--times given but {node_path} has no time metadata");
             } else {
+                trace!("setting timestamps for {node_path}");
                 use rustix::fs::*;
                 let stamps = Timestamps {
                     last_access: to_timespec(atime.unwrap_or_else(Utc::now)),
@@ -186,7 +184,14 @@ impl Restorer<'_> {
             }
         }
         if self.args.permissions {
-            // todo!();
+            trace!("setting permissions for {node_path}");
+            use std::os::unix::fs::PermissionsExt;
+            let permissions = match &node.metadata {
+                NodeMetadata::Posix(p) => fs::Permissions::from_mode(p.mode),
+                NodeMetadata::Windows(_w) => todo!("Windows -> Posix perms mapping"),
+            };
+            fs::set_permissions(node_path, permissions)
+                .with_context(|| format!("Couldn't chmod {node_path}"))?;
         }
         Ok(())
     }
