@@ -176,36 +176,20 @@ pub fn forest_from_fs(
         let node = match entry {
             DirectoryEntry::Directory((subtree, subforest)) => {
                 forest.extend(subforest);
-
-                trace!(
-                    "{}{} hashed to {}",
-                    path,
-                    std::path::MAIN_SEPARATOR,
-                    subtree
-                );
-                info!("finished {}{}", path, std::path::MAIN_SEPARATOR);
-
                 tree::Node {
                     metadata,
                     contents: tree::NodeContents::Directory { subtree },
                 }
             }
-            DirectoryEntry::Symlink { target } => {
-                info!("{:>8} {}", "symlink", path);
-                tree::Node {
-                    metadata,
-                    contents: tree::NodeContents::Symlink { target },
-                }
-            }
-            DirectoryEntry::UnchangedFile => {
-                info!("{:>8} {}", "skip", path);
-                tree::Node {
-                    metadata,
-                    contents: previous_node.unwrap().contents.clone(),
-                }
-            }
+            DirectoryEntry::Symlink { target } => tree::Node {
+                metadata,
+                contents: tree::NodeContents::Symlink { target },
+            },
+            DirectoryEntry::UnchangedFile => tree::Node {
+                metadata,
+                contents: previous_node.unwrap().contents.clone(),
+            },
             DirectoryEntry::ChangedFile => {
-                info!("{:>8} {}", "hash", path);
                 let chunks = chunk::chunk_file(path)?.into_iter().map(|c| c.id).collect();
                 tree::Node {
                     metadata,
