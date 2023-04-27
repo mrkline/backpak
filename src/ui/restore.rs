@@ -5,9 +5,11 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
+use chrono::prelude::*;
 use clap::Parser;
 use log::*;
 use rustc_hash::FxHashMap;
+use rustix::fs::Timespec;
 
 use crate::{
     backend, diff, fs_tree,
@@ -134,6 +136,14 @@ fn load_fs_tree_and_mapping<'a>(
     }
 }
 
+#[cfg(unix)]
+fn to_timespec(c: DateTime<Utc>) -> Timespec {
+    Timespec {
+        tv_sec: c.timestamp(),
+        tv_nsec: c.timestamp_subsec_nanos().into(),
+    }
+}
+
 struct Restorer<'a> {
     printer: super::diff::PrintDiffs,
     path_map: FxHashMap<&'a str, Utf8PathBuf>,
@@ -152,17 +162,38 @@ impl Restorer<'_> {
 
     // NB: node_path is already translated for all of thse
 
-    fn set_metadata(&self, _node_path: &Utf8Path, _node: &Node) -> Result<()> {
+    #[cfg(unix)]
+    fn set_metadata(&self, node_path: &Utf8Path, node: &Node) -> Result<()> {
+        let mtime = node.metadata.modification_time();
+        let atime = node.metadata.access_time();
+
         if self.args.times {
-            // todo!();
-        }
-        if self.args.atimes {
-            // todo!();
+            if mtime.is_none() && atime.is_none() {
+                trace!("--times given but {node_path} has no time metadata");
+            } else {
+                use rustix::fs::*;
+                let stamps = Timestamps {
+                    last_access: to_timespec(atime.unwrap_or_else(Utc::now)),
+                    last_modification: to_timespec(mtime.unwrap_or_else(Utc::now)),
+                };
+                utimensat(
+                    cwd(),
+                    node_path.as_str(),
+                    &stamps,
+                    AtFlags::SYMLINK_NOFOLLOW,
+                )
+                .with_context(|| format!("Couldn't set timestamps for {node_path}"))?;
+            }
         }
         if self.args.permissions {
             // todo!();
         }
         Ok(())
+    }
+
+    #[cfg(windows)]
+    fn set_metadata(&self, _node_path: &Utf8Path, _node: &Node) -> Result<()> {
+        todo!("lol windows metadata");
     }
 
     fn remove_node(&mut self, node_path: &Utf8Path, old_node: &Node) -> Result<()> {

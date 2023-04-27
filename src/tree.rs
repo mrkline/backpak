@@ -174,6 +174,13 @@ impl NodeMetadata {
             NodeMetadata::Windows(w) => w.write_time,
         }
     }
+
+    pub fn access_time(&self) -> Option<DateTime<Utc>> {
+        match self {
+            NodeMetadata::Posix(p) => Some(p.access_time),
+            NodeMetadata::Windows(w) => w.access_time,
+        }
+    }
 }
 
 #[cfg(unix)]
