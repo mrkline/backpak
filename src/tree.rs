@@ -8,7 +8,6 @@ use anyhow::{anyhow, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
 use log::*;
-use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::{Deserialize, Serialize};
 
@@ -403,27 +402,24 @@ fn append_tree(
 /// Collect the set of chunks for the files in the given forest
 pub fn chunks_in_forest(forest: &Forest) -> FxHashSet<&ObjectId> {
     forest
-        .par_iter()
-        .map(|(_id, tree)| chunks_in_tree(tree))
-        .reduce(FxHashSet::default, |mut a, b| {
+        .values()
+        .map(|t| chunks_in_tree(t))
+        .reduce(|mut a, b| {
             a.extend(b);
             a
         })
+        .unwrap_or_default()
 }
 
 /// Collect the set of chunks for the files the given tree
 pub fn chunks_in_tree(tree: &Tree) -> FxHashSet<&ObjectId> {
-    tree.par_iter()
-        .map(|(_, node)| chunks_in_node(node))
-        .fold_with(FxHashSet::default(), |mut set, node_chunks| {
+    tree.values()
+        .map(chunks_in_node)
+        .fold(FxHashSet::default(), |mut set, node_chunks| {
             for chunk in node_chunks {
                 set.insert(chunk);
             }
             set
-        })
-        .reduce(FxHashSet::default, |mut a, b| {
-            a.extend(b);
-            a
         })
 }
 
