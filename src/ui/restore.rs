@@ -238,7 +238,9 @@ impl Restorer<'_> {
                 }
             }
         };
-        self.set_metadata(node_path, new_node)?;
+        if !matches!(&new_node.contents, NodeContents::Symlink { .. }) {
+            self.set_metadata(node_path, new_node)?;
+        }
         Ok(())
     }
 
@@ -253,8 +255,13 @@ impl Restorer<'_> {
                 let fh = File::create(node_path)
                     .with_context(|| format!("Couldn't create file {node_path}"))?;
                 fill_file(fh, new_node, &mut self.blob_reader)?;
+
+                // Don't try to set metadata on a symlink! We can't lol
+                self.set_metadata(node_path, new_node)?;
             }
             NodeContents::Symlink { target } => {
+                fs::remove_file(node_path)
+                    .with_context(|| format!("Couldn't remove previous symlink at {node_path}"))?;
                 symlink(target, node_path)?;
             }
             NodeContents::Directory { .. } => {
@@ -262,7 +269,6 @@ impl Restorer<'_> {
                 unreachable!();
             }
         };
-        self.set_metadata(node_path, new_node)?;
         Ok(())
     }
 }
