@@ -168,11 +168,15 @@ impl Restorer<'_> {
             if mtime.is_none() && atime.is_none() {
                 trace!("--times given but {node_path} has no time metadata");
             } else {
+                let atime = atime.unwrap_or_else(Utc::now);
+                let mtime = mtime.unwrap_or_else(Utc::now);
                 trace!("setting timestamps for {node_path}");
+                // trace!("    atime: {:?}", atime);
+                // trace!("    tmtime: {:?}", mtime);
                 use rustix::fs::*;
                 let stamps = Timestamps {
-                    last_access: to_timespec(atime.unwrap_or_else(Utc::now)),
-                    last_modification: to_timespec(mtime.unwrap_or_else(Utc::now)),
+                    last_access: to_timespec(atime),
+                    last_modification: to_timespec(mtime),
                 };
                 utimensat(
                     cwd(),
@@ -184,12 +188,12 @@ impl Restorer<'_> {
             }
         }
         if self.args.permissions {
-            trace!("setting permissions for {node_path}");
             use std::os::unix::fs::PermissionsExt;
             let permissions = match &node.metadata {
                 NodeMetadata::Posix(p) => fs::Permissions::from_mode(p.mode),
                 NodeMetadata::Windows(_w) => todo!("Windows -> Posix perms mapping"),
             };
+            trace!("chown {:o} {node_path}", permissions.mode());
             fs::set_permissions(node_path, permissions)
                 .with_context(|| format!("Couldn't chmod {node_path}"))?;
         }

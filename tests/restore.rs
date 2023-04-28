@@ -81,6 +81,7 @@ fn backup_src() -> Result<()> {
             .collect::<Vec<_>>();
         let got = restoreit()
             .split('\n')
+            .filter(|l| !l.is_empty())
             .map(|s| s.to_string())
             .collect::<Vec<_>>();
         println!("Expected:\n{:#?}", expected);
@@ -103,7 +104,7 @@ fn backup_src() -> Result<()> {
     ]);
 
     // Restoring again should do nothing
-    compare(&["U src/"]);
+    compare(&[]);
 
     // Changed type!
     fs::remove_file(working_path.join("src/ls.rs"))?;
@@ -112,6 +113,14 @@ fn backup_src() -> Result<()> {
     compare(&["- src/ls.rs -> /dev/null", "+ src/ls.rs", "U src/"]);
 
     // Symlink modified (should be -/+, not M)
+    fs::remove_file(working_path.join("src/ls.rs"))?;
+    unix::fs::symlink("/dev/null", working_path.join("src/ls.rs"))?;
+    cli_run(working_path, backup_path)?
+        .arg("backup")
+        .arg(working_path.join("src"))
+        .assert()
+        .success();
+
     fs::remove_file(working_path.join("src/ls.rs"))?;
     unix::fs::symlink("/dev/urandom", working_path.join("src/ls.rs"))?;
 

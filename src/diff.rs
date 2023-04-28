@@ -117,7 +117,7 @@ pub fn compare_nodes(
             }
             if node1.metadata != node2.metadata {
                 // trace!("{:#?} != {:#?}", node1.metadata, node2.metadata);
-                callbacks.metadata_changed(path, node1)?;
+                callbacks.metadata_changed(path, node2)?;
                 changed = true;
             }
             if !changed {
