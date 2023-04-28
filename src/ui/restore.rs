@@ -20,25 +20,55 @@ use crate::{
     tree::{self, Forest, Node, NodeContents, NodeMetadata, NodeType},
 };
 
-/// Restores the given snapshot to the filesystem
+/// Restore the given snapshot to the filesystem
+///
+/// Prints changes made using the same codes as the `diff` command:
+///   + added/file/or/dir
+///   - removed
+///   M modified (contents changed)
+///   U metadata changed (times, permissions)
+///
+/// Type changes (e.g. dir -> file, or file -> symlink)
+/// are modeled as removing one and adding the other.
+/// Same goes for symlinks so we can show
+///   - some/symlink -> previous/target
+///   + some/symlink -> new/target
 #[derive(Debug, Parser)]
+#[command(verbatim_doc_comment)]
 pub struct Args {
-    #[clap(short, long)]
+    /// Restore the snapshot to the given directory
+    /// instead of the absolute paths in the snapshot
+    ///
+    /// With `--output /tmp`, a snapshot containing
+    /// `/home/me/src/backpak` and `/home/me/src/mcap`
+    /// would be restored to `/tmp/backpak` and `/tmp/mcap`
+    ///
+    /// This assumes the output dir already exists;
+    /// it does not create it.
+    #[clap(short, long, verbatim_doc_comment)]
     output: Option<Utf8PathBuf>,
 
     #[clap(short = 'n', long)]
     dry_run: bool,
 
-    // Args based on rsync's
-    #[clap(short, long)]
+    /// Delete files not contained in the snapshot
+    ///
+    /// This includes deleting some directory `foo/` and all its contents
+    /// to replace it with some file `foo` in the snapshot.
+    /// (Without this flag, `foo/` will be left alone
+    /// and `foo` in the snapshot will be ignored.)
+    #[clap(short, long, verbatim_doc_comment)]
     delete: bool,
 
+    /// Restore modification and access times
     #[clap(short, long)]
     times: bool,
 
+    /// Restore file permissions
     #[clap(short, long)]
     permissions: bool,
 
+    #[clap(name = "SNAPSHOT")]
     restore_from: String,
 }
 

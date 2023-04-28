@@ -9,14 +9,16 @@ use crate::snapshot;
 /// Forget snapshots
 ///
 /// Data used by these snapshots is not immediately deleted,
-/// but will be thrown out by the next prune.
+/// but will be thrown out by the next `prune`.
 #[derive(Debug, Parser)]
 #[clap(verbatim_doc_comment)]
 pub struct Args {
     #[clap(short = 'n', long)]
     pub dry_run: bool,
 
-    #[clap(required = true)]
+    /// The ID of a snapshot to forget or
+    /// "duplicates" to forget duplicate snapshots
+    #[clap(required = true, name = "SNAPSHOTS", verbatim_doc_comment)]
     to_forget: Vec<String>,
 }
 
@@ -66,7 +68,7 @@ fn forget_duplicate_snapshots(
         }
 
         // Hey, a duplicate tree!
-        debug!("Snapshot {} is a duplicate of {}", id, last_unique_snapshot);
+        info!("Snapshot {} is a duplicate of {}", id, last_unique_snapshot);
         success &= forget_snapshot(cached_backend, id, dry_run);
     }
     Ok(success)

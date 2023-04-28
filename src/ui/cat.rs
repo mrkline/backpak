@@ -38,7 +38,8 @@ pub enum Subcommand {
     /// Print the index with the given ID
     ///
     /// An index tells us which packs contain which blobs.
-    /// Indexes can be split into several files if they get too big.
+    /// Each backup stores a new index.
+    /// They can be coalesced with `rebuild-index`
     #[clap(verbatim_doc_comment)]
     Index { id: ObjectId },
 

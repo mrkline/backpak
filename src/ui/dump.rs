@@ -13,13 +13,15 @@ use crate::read;
 use crate::snapshot;
 use crate::tree;
 
-/// Print a given file from a given snapshot
+/// Print a given file or directory from a given snapshot
 #[derive(Debug, Parser)]
 pub struct Args {
-    #[clap(short, long)]
+    /// Write to the given file instead of stdout
+    #[clap(short, long, name = "FILE")]
     output: Option<Utf8PathBuf>,
 
     snapshot: String,
+
     path: Utf8PathBuf,
 }
 

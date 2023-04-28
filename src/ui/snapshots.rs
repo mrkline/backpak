@@ -17,7 +17,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
             println!();
         } else {
             println!(
-                "({})",
+                " ({})",
                 snapshot.tags.into_iter().collect::<Vec<String>>().join(" ")
             );
         }

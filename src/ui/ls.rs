@@ -12,12 +12,12 @@ use crate::tree;
 /// List the files in a snapshot
 #[derive(Debug, Parser)]
 pub struct Args {
-    snapshot_prefix: String,
+    snapshot: String,
 }
 
 pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let cached_backend = backend::open(repository)?;
-    let (snapshot, id) = snapshot::find_and_load(&args.snapshot_prefix, &cached_backend)?;
+    let (snapshot, id) = snapshot::find_and_load(&args.snapshot, &cached_backend)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);

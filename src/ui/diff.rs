@@ -12,13 +12,29 @@ use crate::ls;
 use crate::snapshot;
 use crate::tree::{self, Forest, Node, NodeType};
 
-/// Compare two snapshots, or a snapshot to the current tree
+/// Compare two snapshots, or compare a snapshot to its paths on the filesystem
+///
+/// + added/file/or/dir
+/// - removed
+/// M modified (contents changed)
+/// U metadata changed (times, permissions)
+///
+/// Type changes (e.g. dir -> file, or file -> symlink)
+/// are modeled as removing one and adding the other.
+/// Same goes for symlinks so we can show
+///   - some/symlink -> previous/target
+///   + some/symlink -> new/target
 #[derive(Debug, Parser)]
+#[command(verbatim_doc_comment)]
 pub struct Args {
+    /// Print metadata changes (times, permissoins)
     #[clap(short, long)]
     metadata: bool,
 
+    #[clap(name = "SNAPSHOT_1")]
     first_snapshot: String,
+
+    #[clap(name = "SNAPSHOT_2")]
     second_snapshot: Option<String>,
 }
 

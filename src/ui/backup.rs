@@ -23,7 +23,7 @@ use crate::tree;
 #[derive(Debug, Parser)]
 pub struct Args {
     /// The author of the snapshot (otherwise the hostname is used)
-    #[clap(short, long, name = "name", verbatim_doc_comment)]
+    #[clap(short, long, name = "name")]
     pub author: Option<String>,
 
     /// Add a metadata tag to the snapshot (can be specified multiple times)
@@ -31,7 +31,11 @@ pub struct Args {
     pub tags: Vec<String>,
 
     /// The paths to back up
-    #[clap(required = true)]
+    ///
+    /// These paths are canonicalized into absolute ones.
+    /// Snapshots can be restored to either the same absolute paths,
+    /// or to a given directory with `restore -o some/dir`
+    #[clap(required = true, verbatim_doc_comment)]
     pub paths: Vec<Utf8PathBuf>,
 }
 

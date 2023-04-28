@@ -18,8 +18,19 @@ use crate::read;
 use crate::snapshot;
 use crate::tree;
 
-/// Condense the backup, throwing out unused data.
+/// Garbage collect: condense the backup, throwing out unused data.
+///
+/// Forgetting a snapshot doesn't delete any data it references,
+/// since many snapshots might share the same backed-up data.
+/// (Letting snapshots reuse data like this is what makes them small
+/// and backups fast!) To actually delete things, we need to *prune*.
+///
+/// Packs are searched for chunks (of backed up files) and trees
+/// (i.e., directories) no longer used by any snapshot.
+/// Those with without *any* data referenced by snapshots are deleted,
+/// and those with *some* data referenced by snapshots are repacked.
 #[derive(Debug, Parser)]
+#[command(verbatim_doc_comment)]
 pub struct Args {
     #[clap(short = 'n', long)]
     pub dry_run: bool,

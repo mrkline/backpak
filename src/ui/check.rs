@@ -15,14 +15,14 @@ use crate::tree;
 
 /// Check the repository for errors
 ///
-/// By default this assumes file integrity of the backup,
-/// and only ensure that needed files can be found and downloaded.
-/// If --read-packs is specified, ensure that each pack has the expected blobs,
+/// By default this assumes integrity of the backup,
+/// and only ensures that needed files can be found and downloaded.
+/// If `--read-packs` is specified, ensure that each pack has the expected blobs,
 /// that those blobs match its manifest, and that those blobs match the index.
 #[derive(Debug, Parser)]
 #[clap(verbatim_doc_comment)]
 pub struct Args {
-    /// Check all blobs in all packs
+    /// Check the contents of packs, not just that they exist
     #[clap(short, long)]
     pub read_packs: bool,
 }

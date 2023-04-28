@@ -22,7 +22,6 @@ pub fn file_changed(
     assert_eq!(metadata.kind(), tree::NodeType::File);
 
     if previous_node.is_none() {
-        trace!("No previous node for {path}");
         return true;
     }
     let previous_node = previous_node.unwrap();

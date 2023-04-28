@@ -53,7 +53,7 @@ enum Command {
     Restore(restore::Args),
     /// List the snapshots in this repository
     Snapshots,
-    /// Build a new index from all existing packs
+    /// Build a new index from all existing packs and delete all old ones
     RebuildIndex,
 }
 
