@@ -35,12 +35,6 @@ impl FilesystemBackend {
         }
 
         create_dir(&repository.join("packs"))?;
-
-        for b in 0..=255 {
-            let pack_bucket = repository.join(format!("packs/{:02x}", b));
-            create_dir(&pack_bucket)?;
-        }
-
         create_dir(&repository.join("indexes"))?;
         create_dir(&repository.join("snapshots"))?;
 
@@ -50,11 +44,7 @@ impl FilesystemBackend {
     pub fn open(repository: &Utf8Path) -> Result<Self> {
         let base_directory = Utf8PathBuf::from(repository);
         ensure_exists(&base_directory)?;
-
-        for b in 0..=255 {
-            ensure_exists(&base_directory.join(format!("packs/{:02x}", b)))?;
-        }
-
+        ensure_exists(&base_directory.join("packs"))?;
         ensure_exists(&base_directory.join("indexes"))?;
         ensure_exists(&base_directory.join("snapshots"))?;
 

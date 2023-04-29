@@ -10,9 +10,9 @@ anyhow = { version = "1.0", features = ["backtrace"] }
 camino = { version = "1.0", features = ["serde1"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 clap = { version = "4.0", features = ["derive"] }
+data-encoding = "2.3"
 enum-map = "2.5"
 fastcdc = "3.0"
-hex = "0.4"
 hostname = "0.3"
 lazy_static = "1.0"
 log = "0.4"

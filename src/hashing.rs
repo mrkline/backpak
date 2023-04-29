@@ -4,7 +4,8 @@ use std::fmt;
 use std::io;
 use std::io::prelude::*;
 
-use anyhow::{ensure, Result};
+use anyhow::{ensure, Context, Result};
+use data_encoding::BASE32_DNSSEC as BASE32HEX;
 use sha2::{digest::Output, Digest, Sha224};
 
 type Sha224Digest = Output<Sha224>;
@@ -38,13 +39,13 @@ impl ObjectId {
 
 impl fmt::Debug for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{ digest: {} }}", hex::encode(self.digest))
+        write!(f, "{{ digest: {} }}", BASE32HEX.encode(&self.digest))
     }
 }
 
 impl fmt::Display for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", hex::encode(self.digest))
+        write!(f, "{}", BASE32HEX.encode(&self.digest))
     }
 }
 
@@ -52,10 +53,13 @@ impl std::str::FromStr for ObjectId {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bytes = hex::decode(s)?;
+        let bytes = BASE32HEX
+            .decode(s.as_bytes())
+            .with_context(|| format!("Couldn't decode {s} as base32"))?;
+
         ensure!(
             bytes.len() == <Sha224 as Digest>::output_size(),
-            "Expected SHA224 hex"
+            "Expected SHA224 base32hex"
         );
         Ok(ObjectId::from_digest(*Sha224Digest::from_slice(&bytes)))
     }
@@ -79,7 +83,7 @@ impl serde::Serialize for ObjectId {
         // So hang your head in shame and use a global variable.
         // (Obvious but worth saying: set it at the start and don't mess with it after.)
         if crate::prettify::should_prettify() {
-            serializer.serialize_str(&hex::encode(self.digest.as_slice()))
+            serializer.serialize_str(&BASE32HEX.encode(self.digest.as_slice()))
         } else {
             serializer.serialize_bytes(self.digest.as_slice())
         }

@@ -166,14 +166,14 @@ impl CachedBackend {
     }
 
     pub fn probe_pack(&self, id: &ObjectId) -> Result<()> {
-        let hex = id.to_string();
-        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
+        let base32 = id.to_string();
+        let pack_path = format!("packs/{}.pack", base32);
         let found_packs = self
             .backend
             .list(&pack_path)
             .with_context(|| format!("Couldn't find {}", pack_path))?;
         match found_packs.len() {
-            0 => bail!("Couldn't find pack {}", hex),
+            0 => bail!("Couldn't find pack {}", base32),
             1 => Ok(()),
             multiple => panic!(
                 "Expected one pack at {}, found several! {:?}",
@@ -183,8 +183,8 @@ impl CachedBackend {
     }
 
     pub fn read_pack(&self, id: &ObjectId) -> Result<File> {
-        let hex = id.to_string();
-        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
+        let base32 = id.to_string();
+        let pack_path = format!("packs/{}.pack", base32);
         self.read(&pack_path)
             .with_context(|| format!("Couldn't open {}", pack_path))
     }
@@ -202,8 +202,8 @@ impl CachedBackend {
     }
 
     pub fn remove_pack(&self, id: &ObjectId) -> Result<()> {
-        let hex = id.to_string();
-        let pack_path = format!("packs/{}/{}.pack", &hex[0..2], hex);
+        let base32 = id.to_string();
+        let pack_path = format!("packs/{}.pack", base32);
         self.remove(&pack_path)
     }
 
@@ -244,7 +244,7 @@ pub fn open(repository: &Utf8Path) -> Result<CachedBackend> {
 /// Returns the desitnation path for the given temp file based on its extension
 fn destination(src: &str) -> String {
     match Utf8Path::new(src).extension() {
-        Some("pack") => format!("packs/{}/{}", &src[0..2], src),
+        Some("pack") => format!("packs/{}", src),
         Some("index") => format!("indexes/{}", src),
         Some("snapshot") => format!("snapshots/{}", src),
         _ => panic!("Unexpected extension on file to upload: {}", src),

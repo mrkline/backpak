@@ -181,7 +181,7 @@ mod test {
         // ID remains stable
         assert_eq!(
             format!("{}", id),
-            "180ced9d274b8456b277fb756a32ddd8b58386bd880a6d6c512adc09"
+            "306er7979e25dcjnvdqmkcmtr2qo71lth056qr2h5be0i"
         );
         // Contents remain stable
         // (We could just use the ID and length,
