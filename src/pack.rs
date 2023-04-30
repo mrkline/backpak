@@ -13,7 +13,7 @@ use tempfile::NamedTempFile;
 
 use crate::backend;
 use crate::blob::{self, Blob};
-use crate::file_util;
+use crate::file_util::{self, nice_size};
 use crate::hashing::{HashingReader, ObjectId};
 use crate::tree;
 use crate::DEFAULT_TARGET_SIZE;
@@ -54,7 +54,8 @@ pub fn pack(
 ) -> Result<()> {
     let mut writer = PackfileWriter::new()?;
 
-    let mut bytes_written: u64 = 0;
+    let mut pass_bytes_written: u64 = 0; // Bytes written since the last size check
+    let mut total_bytes_written: u64 = 0;
     let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
 
     // For each blob...
@@ -66,25 +67,27 @@ pub fn pack(
         // Sanity checks are nice, but maybe extra O(N) RAM usage, not so much.
 
         // Write a blob and check how many (uncompressed) bytes we've written to the file so far.
-        bytes_written += writer.write_blob(blob)?;
+        let blob_size = writer.write_blob(blob)?;
+        pass_bytes_written += blob_size;
+        total_bytes_written += blob_size;
 
         // We've written as many bytes as we want the pack size to to be,
         // but we don't know how much they've compressed to.
         // Flush the compressor to see how much space we've actually taken up.
-        if bytes_written >= bytes_before_next_check {
+        if pass_bytes_written >= bytes_before_next_check {
             trace!(
                 "Wrote {} bytes into pack, checking compressed size...",
-                bytes_written
+                nice_size(total_bytes_written)
             );
 
             let compressed_size = writer.flush_and_check_size()?;
 
-            // If we're close enough to our target size, stop
-            if compressed_size >= DEFAULT_TARGET_SIZE * 9 / 10 {
+            // If we pass our target size, stop
+            if compressed_size >= DEFAULT_TARGET_SIZE {
                 trace!(
-                    "Compressed pack size is {} (> 90% of {}). Starting another pack.",
-                    compressed_size,
-                    DEFAULT_TARGET_SIZE
+                    "Compressed pack size is {} (>= target of {}). Starting another pack.",
+                    nice_size(compressed_size),
+                    nice_size(DEFAULT_TARGET_SIZE)
                 );
                 let (metadata, persisted) = writer.finalize()?;
                 let finalized_path = format!("{}.pack", metadata.id);
@@ -97,21 +100,28 @@ pub fn pack(
                     .context("packer -> indexer channel exited early")?;
 
                 writer = PackfileWriter::new()?;
-                bytes_written = 0;
+                pass_bytes_written = 0;
+                total_bytes_written = 0;
                 bytes_before_next_check = DEFAULT_TARGET_SIZE;
             }
             // Otherwise, write some more
             else {
-                bytes_before_next_check = DEFAULT_TARGET_SIZE - compressed_size;
+                // Take our current compression ratio to estimate how much more
+                // we need to write to hit the target pack size.
+                let current_ratio = total_bytes_written as f64 / compressed_size as f64;
+                bytes_before_next_check =
+                    (current_ratio * (DEFAULT_TARGET_SIZE - compressed_size) as f64) as u64;
+                pass_bytes_written = 0;
                 trace!(
-                    "Compressed pack size is {}. Writing another {} bytes",
-                    compressed_size,
-                    bytes_before_next_check
+                    "Compressed pack size is {} (ratio {:.02}). Writing {} more bytes",
+                    nice_size(compressed_size),
+                    current_ratio,
+                    nice_size(bytes_before_next_check)
                 );
             }
         }
     }
-    if bytes_written > 0 {
+    if total_bytes_written > 0 {
         let (metadata, persisted) = writer.finalize()?;
         let finalized_path = format!("{}.pack", metadata.id);
         to_upload
