@@ -1,0 +1,18 @@
+When packfiles are moved from the backup to the CWD, currently failing on
+
+[ERROR] packer -> indexer channel exited early
+
+Caused by:
+    sending on a closed channel
+    [ERROR] Duplicate pack received: 1brf1e64ai9otilha99bbnr06qqnjb6qio5l37u6feti8
+    [ERROR] backup failed
+
+Root problem:
+
+Loaded index needs to be merged into the master one so that we skip
+repacking things we don't need to.
+
+Do we need to create a faux last snapshot as well? Without a snapshot,
+we don't compare _anything_ to its previous state.
+
+...WIP snapshot?
