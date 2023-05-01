@@ -6,7 +6,7 @@ use std::io::prelude::*;
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::Mutex;
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use log::*;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -23,7 +23,7 @@ const MAGIC_BYTES: &[u8] = b"MKBAKIDX";
 
 // Persist WIP (but valid) indexes to a known name so that an interrupted
 // backup can read it in and know what we've already backed up.
-const WIP_NAME: &str = "backpak-wip.index";
+pub const WIP_NAME: &str = "backpak-wip.index";
 
 pub type PackMap = BTreeMap<ObjectId, PackManifest>;
 
@@ -280,6 +280,21 @@ fn from_reader<R: Read>(r: &mut R) -> Result<(Index, ObjectId)> {
         serde_cbor::from_reader(&mut hasher).context("CBOR decoding of index file failed")?;
     let (id, _) = hasher.finalize();
     Ok((index, id))
+}
+
+pub fn read_wip() -> Result<Option<Index>> {
+    let mut fd = match File::open(WIP_NAME) {
+        Ok(w) => w,
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return Ok(None);
+            }
+            let e = anyhow!(e).context(format!("Couldn't open {WIP_NAME}"));
+            return Err(e);
+        }
+    };
+    let (index, _) = from_reader(&mut fd)?;
+    Ok(Some(index))
 }
 
 /// Load the index with the given ID from the backend,
