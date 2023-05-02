@@ -145,16 +145,16 @@ fn backup_master_thread(
         .unwrap();
 
     let mut errors: Vec<anyhow::Error> = Vec::new();
-    let mut append_error = |result: Option<anyhow::Error>| {
+    let mut append_error = |thread: &'static str, result: Option<anyhow::Error>| {
         if let Some(e) = result {
-            errors.push(e);
+            errors.push(e.context(thread));
         }
     };
 
-    append_error(chunk_packer.join().unwrap().err());
-    append_error(tree_packer.join().unwrap().err());
-    append_error(indexer.join().unwrap().err());
-    append_error(uploader.join().unwrap().err());
+    append_error("Packing chunks failed", chunk_packer.join().unwrap().err());
+    append_error("Packing trees failed", tree_packer.join().unwrap().err());
+    append_error("Indexing failed", indexer.join().unwrap().err());
+    append_error("Uploading failed", uploader.join().unwrap().err());
 
     if errors.is_empty() {
         Ok(())

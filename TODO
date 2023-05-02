@@ -16,3 +16,26 @@ Do we need to create a faux last snapshot as well? Without a snapshot,
 we don't compare _anything_ to its previous state.
 
 ...WIP snapshot?
+Even then, trees are descended from the top. How do we recognize that we're
+in a subtree that we packed before being interrupted? Can we walk up from the
+leaves somehow? But wouldn't that require a link to the parent?
+Seems prohibitive... or store that in some WIP?
+
+==========================
+
+Screw al that - linear log of what the last WIP run did?
+- files examined (size, mtime, to skip, then ID)
+- dirs examined (ID)
+- Packs sent to index?
+
+That way we know what we should already expect to be uploaded in packs
+(once we upload all in the WIP index)
+
+=============================
+OR
+
+Just make sure we append all blobs in the WIP index to packed_blobs?
+
+Seems to work great, we don't skip any hashing
+(to make sure we're getting the same everything)
+but skip packing/indexing/uploading everything in a pack so far.

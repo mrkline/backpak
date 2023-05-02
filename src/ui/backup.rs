@@ -77,8 +77,16 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         .unwrap_or_default();
     drop(tree_cache);
 
+    let mut packed_blobs = index::blob_set(&index)?;
+
     let (maybe_wip_index, maybe_cwd_packfiles) =
         find_resumable_backup(&cached_backend)?.unwrap_or_default();
+
+    for manifest in maybe_wip_index.packs.values() {
+        for entry in manifest {
+            packed_blobs.insert(entry.id);
+        }
+    }
 
     let cached_backend = Arc::new(cached_backend);
     let mut backup = crate::backup::spawn_backup_threads(cached_backend.clone(), maybe_wip_index);
@@ -100,8 +108,6 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             .collect::<Vec<_>>()
             .join(", ")
     );
-
-    let mut packed_blobs = index::blob_set(&index)?;
 
     let root = backup_tree(
         &paths,
@@ -283,7 +289,7 @@ fn backup_tree(
                     std::path::MAIN_SEPARATOR,
                     subtree
                 );
-                info!("finished {}{}", path, std::path::MAIN_SEPARATOR);
+                info!("{:>9} {}{}", "finished", path, std::path::MAIN_SEPARATOR);
 
                 tree::Node {
                     metadata,
@@ -291,7 +297,7 @@ fn backup_tree(
                 }
             }
             DirectoryEntry::Symlink { target } => {
-                info!("{:>8} {}", "symlink", path);
+                info!("{:>9} {}", "symlink", path);
 
                 tree::Node {
                     metadata,
@@ -299,7 +305,7 @@ fn backup_tree(
                 }
             }
             DirectoryEntry::UnchangedFile => {
-                info!("{:>8} {}", "skip", path);
+                info!("{:>9} {}", "unchanged", path);
 
                 tree::Node {
                     metadata,
@@ -314,14 +320,15 @@ fn backup_tree(
                     chunk_ids.push(chunk.id);
 
                     if packed_blobs.borrow_mut().insert(chunk.id) {
+                        info!("{:>9} {}", "backup", path);
                         chunk_tx
                             .send(chunk)
                             .context("backup -> chunk packer channel exited early")?;
                     } else {
+                        info!("{:>9} {}", "deduped", path);
                         trace!("chunk {} already packed", chunk.id);
                     }
                 }
-                info!("{:>8} {}", "backup", path);
 
                 tree::Node {
                     metadata,
