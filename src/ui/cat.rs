@@ -93,7 +93,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
             serde_json::to_writer(io::stdout(), &index)?;
         }
         Subcommand::Snapshot { id_prefix } => {
-            let snapshot = snapshot::find_and_load(&id_prefix, &cached_backend)?;
+            let (snapshot, _id) = snapshot::find_and_load(&id_prefix, &cached_backend)?;
             serde_json::to_writer(io::stdout(), &snapshot)?;
         }
     }
