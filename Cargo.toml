@@ -1,8 +1,12 @@
 [package]
 name = "backpak"
+description = "A content-addressed backup system with deduplication and compression"
 version = "0.1.0"
-authors = ["Matt Kline"]
+authors = ["Matt Kline <matt@bitbashing.io>"]
 edition = "2021"
+license = "Zlib"
+keywords = ["backup"]
+categories = ["command-line-utilities", "compression", "filesystem"]
 
 [dependencies]
 atty = "0.2"
