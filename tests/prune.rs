@@ -48,11 +48,13 @@ fn backup_src() -> Result<()> {
     assert_eq!(3, files_in(backup_path.join("packs")).count());
 
     // Prune shouldn't do anything until we forget some snapshots.
-    let prune_run = cli_run(working_path, backup_path)?
+    cli_run(working_path, backup_path)?
         .arg("prune")
         .assert()
-        .success();
-    assert!(stderr(&prune_run).contains("No unused blobs in any packs! Nothing to do."));
+        .success()
+        .stderr(predicates::str::contains(
+            "No unused blobs in any packs! Nothing to do.",
+        ));
 
     // Axe the first backup. This will create a situation where the pack(s)
     // can be pruned - we still need the chunks for `tests/references`
@@ -67,12 +69,13 @@ fn backup_src() -> Result<()> {
     assert_eq!(3, before_packs.len());
 
     // Dry run shouldn't do anything!
-    let dry_run = cli_run(working_path, backup_path)?
+    cli_run(working_path, backup_path)?
         .args(&["prune", "-n"])
         .assert()
-        .success();
-    assert!(stderr(&dry_run)
-        .contains("Keep 1 packs, rewrite 2, drop 0, and replace the 2 current indexes"));
+        .success()
+        .stderr(predicates::str::contains(
+            "Keep 1 packs, rewrite 2, drop 0, and replace the 2 current indexes",
+        ));
 
     // They're the same!
     let dry_run_packs = files_in(backup_path.join("packs")).collect::<HashSet<_>>();
@@ -84,12 +87,13 @@ fn backup_src() -> Result<()> {
         .assert()
         .success();
 
-    let prune_run = cli_run(working_path, backup_path)?
+    cli_run(working_path, backup_path)?
         .arg("prune")
         .assert()
-        .success();
-    assert!(stderr(&prune_run)
-        .contains("Keep 1 packs, rewrite 2, drop 0, and replace the 2 current indexes"));
+        .success()
+        .stderr(predicates::str::contains(
+            "Keep 1 packs, rewrite 2, drop 0, and replace the 2 current indexes",
+        ));
 
     // They're different!
     let after_packs = files_in(backup_path.join("packs")).collect::<HashSet<_>>();
@@ -100,12 +104,13 @@ fn backup_src() -> Result<()> {
         .assert()
         .success();
 
-    let prune_run2 = cli_run(working_path, backup_path)?
+    cli_run(working_path, backup_path)?
         .arg("prune")
         .assert()
-        .success();
-    let prune_output2 = std::str::from_utf8(&prune_run2.get_output().stderr).unwrap();
-    assert!(prune_output2.contains("No unused blobs in any packs! Nothing to do."));
+        .success()
+        .stderr(predicates::str::contains(
+            "No unused blobs in any packs! Nothing to do.",
+        ));
 
     // To examine results
     // std::mem::forget(backup_dir);
@@ -154,14 +159,13 @@ fn no_repacks_needed() -> Result<()> {
         .assert()
         .success();
 
-    let prune_run = cli_run(working_path, backup_path)?
+    cli_run(working_path, backup_path)?
         .arg("prune")
         .assert()
-        .success();
-    let prune_output = std::str::from_utf8(&prune_run.get_output().stderr).unwrap();
-    assert!(
-        prune_output.contains("Keep 2 packs, rewrite 0, drop 2, and replace the 2 current indexes")
-    );
+        .success()
+        .stderr(predicates::str::contains(
+            "Keep 2 packs, rewrite 0, drop 2, and replace the 2 current indexes",
+        ));
 
     // We were previously blowing up here because I forgot to write
     // a new index if nothing was repacked.
