@@ -40,6 +40,5 @@ zstd = { version = "0.12", features = ["zstdmt"] }
 assert_cmd = "2.0"
 env_logger = "0.9"
 hex-literal = "0.3"
-nix = "0.25"
 predicates = "3.0"
 walkdir = "2.0"

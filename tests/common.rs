@@ -55,7 +55,6 @@ pub fn dir_entries<P: AsRef<Path>>(p: P) -> impl Iterator<Item = PathBuf> {
 pub fn setup_bigfile() {
     // Guess this makes tests Unix-only for now.
     // Add a Windows analog? Does it have sparse files?
-    use std::os::unix::io::AsRawFd;
 
     let big_path = Path::new("tests/references/bigfile");
     if big_path.is_file() {
@@ -63,12 +62,12 @@ pub fn setup_bigfile() {
     }
     // We don't want to make it _too_ lest tests take too long,
     // but we want a good # of chunks out of it.
-    const BIG_SIZE: i64 = 1024 * 1024 * 1024; // 1GB
+    const BIG_SIZE: u64 = 1024 * 1024 * 1024; // 1GB
 
     let mut fh = std::fs::File::create(&big_path).expect("Couldn't create bigfile");
     // Truncate the file so that modern filesystems can punch a hole
     // instead of having a gigabyte of zeroes.
-    nix::unistd::ftruncate(fh.as_raw_fd(), BIG_SIZE).expect("ftruncate() failed");
+    rustix::fs::ftruncate(&fh, BIG_SIZE).expect("ftruncate() failed");
 
     // Stripe it with some nonsense so it's not _just_ zeroes.
     // Write some bytes every 10MB or so.
