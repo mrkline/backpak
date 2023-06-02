@@ -123,7 +123,8 @@ fn init_logger(args: &Args) {
         let color = match args.color {
             Color::Always => ColorChoice::AlwaysAnsi,
             Color::Auto => {
-                if atty::is(atty::Stream::Stderr) {
+                use std::io::IsTerminal;
+                if std::io::stderr().is_terminal() {
                     ColorChoice::Auto
                 } else {
                     ColorChoice::Never
