@@ -141,9 +141,8 @@ fn map_chunks_to_snapshots(
             .map(|tree| tree::chunks_in_tree(tree))
         {
             for chunk in chunks {
-                let needed_by = chunks_to_snapshots
-                    .entry(*chunk)
-                    .or_insert_with(FxHashSet::default);
+                let needed_by: &mut FxHashSet<ObjectId> =
+                    chunks_to_snapshots.entry(*chunk).or_default();
                 needed_by.insert(snapshot_id);
             }
         }
