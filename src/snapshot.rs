@@ -16,10 +16,16 @@ use crate::hashing::{HashingReader, HashingWriter, ObjectId};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
+    /// The time (local + TZ offset) whe the snapshot was taken
     pub time: DateTime<FixedOffset>,
+    /// Snapshot author, defaulting to the machine's hostname
     pub author: String,
+    /// Arbitrary user tags
     pub tags: BTreeSet<String>,
+    /// The _absolute_ paths the user backed up in this snapshot,
+    /// each of which will be a child in the top-level tree
     pub paths: BTreeSet<Utf8PathBuf>,
+    /// A tree where each path is a child node.
     pub tree: ObjectId,
 }
 

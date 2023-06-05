@@ -60,7 +60,7 @@ fn prune_cache(_cache_directory: &Utf8Path, _max_size: usize) -> Result<()> {
 /// Cached backends do what they say on the tin.
 ///
 /// One useful difference from the "raw" backend is that they deal directly
-/// in files because we can assume we're writing to some local `~/.cache/backpack`
+/// in files because we can assume we're writing to some local `~/.cache/backpak`
 /// or the like before things are uploaded.
 /// (Or, for a local backup, we can write straight to the backup!)
 pub struct CachedBackend {

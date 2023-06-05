@@ -25,6 +25,7 @@ const MAGIC_BYTES: &[u8] = b"MKBAKIDX";
 // backup can read it in and know what we've already backed up.
 pub const WIP_NAME: &str = "backpak-wip.index";
 
+/// Maps a pack's ID to the manifest of blobs it holds.
 pub type PackMap = BTreeMap<ObjectId, PackManifest>;
 
 /// Maps packs to the blobs they contain,
@@ -203,7 +204,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
 
     if !shared.bad_indexes.is_empty() {
         bail!(
-            "Errors loading indexes {:?}. Consider running backpack rebuild-index.",
+            "Errors loading indexes {:?}. Consider running backpak rebuild-index.",
             shared.bad_indexes
         );
     }
@@ -239,6 +240,9 @@ pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap> {
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {
             if let Some(other_pack) = mapping.insert(blob.id, *pack_id) {
+                // TODO: Should this just be a warning?
+                // This might happen in weird cases like concurrent backups
+                // but isn't a huge issue so long as the blobs are valid...
                 bail!(
                     "Duplicate blob {} in pack {}, previously seen in pack {}",
                     blob.id,
@@ -260,6 +264,7 @@ pub fn blob_set(index: &Index) -> Result<FxHashSet<ObjectId>> {
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {
             if !blobs.insert(blob.id) {
+                // TODO: Ditto - just warn?
                 bail!("Duplicate blob {} in pack {}", blob.id, pack_id);
             }
         }

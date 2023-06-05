@@ -140,11 +140,20 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         &mut backup,
     )?;
 
+    // NB: Before deleting the old indexes, we make sure the new one's been written.
+    //     This ensures there's no point in time when we don't have a valid index
+    //     of reachable blobs in packs. rebuild-index plays the same game.
+    //
+    //     Any concurrent writers (writing a backup at the same time)
+    //     will upload their own index only after all packs are uploaded,
+    //     making sure indexes never refer to missing packs. (I hope...)
     if let Some(b) = backup {
         b.join()?;
     }
 
     if !args.dry_run {
+        // Remove old indexes _before_ removing packs such that we don't have
+        // indexes referring to missing packs.
         for old_index in &superseded {
             cached_backend.remove_index(old_index)?;
         }

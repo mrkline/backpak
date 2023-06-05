@@ -48,6 +48,23 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         trouble = true;
     }
 
+    info!("Checking for packs not listed in indexes");
+    let pack_ids = cached_backend
+        .list_packs()?
+        .iter()
+        .map(backend::id_from_path)
+        .collect::<Result<Vec<_>>>()?;
+    let mut unlisted_packs: usize = 0;
+    for pack_id in pack_ids {
+        if !index.packs.contains_key(&pack_id) {
+            warn!("Pack {pack_id} not listed in any index");
+            unlisted_packs += 1;
+        }
+    }
+    if unlisted_packs > 0 {
+        warn!("{unlisted_packs} are not listed in any index. Someone is backing up concurrently or you should consider running backpak rebuild-index");
+    }
+
     info!("Checking that all chunks in snapshots are reachable");
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
@@ -55,7 +72,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     // Map the chunks that belong in each snapshot.
     let chunks_to_snapshots = map_chunks_to_snapshots(&cached_backend, &mut tree_cache)?;
 
-    let mut missing_chunks = 0;
+    let mut missing_chunks: usize = 0;
     for (chunk, snapshots) in &chunks_to_snapshots {
         if blob_map.contains_key(chunk) {
             trace!(
@@ -76,7 +93,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
             missing_chunks += 1;
         }
     }
-    if missing_chunks != 0 {
+    if missing_chunks > 0 {
         error!("{} missing chunks", missing_chunks);
         trouble = true;
     }

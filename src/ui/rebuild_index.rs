@@ -46,6 +46,13 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
 
     upload::upload(&cached_backend, upload_rx)?;
 
+    // NB: Before deleting the old indexes, we make sure the new one's been written.
+    //     This ensures there's no point in time when we don't have a valid index
+    //     of reachable blobs in packs. Prune plays the same game.
+    //
+    //     Any concurrent writers (writing a backup at the same time)
+    //     will upload their own index only after all packs are uploaded,
+    //     making sure indexes never refer to missing packs. (I hope...)
     ensure!(indexer.join().unwrap()?, "No new index built");
 
     info!("Uploaded a new index; removing previous ones");
