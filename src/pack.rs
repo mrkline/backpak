@@ -254,8 +254,7 @@ pub fn verify<R: Read + Seek>(
     for entry in manifest_from_index {
         let mut hashing_decoder = HashingReader::new((&mut decoder).take(entry.length as u64));
 
-        let mut buf = Vec::with_capacity(entry.length as usize);
-        hashing_decoder.read_to_end(&mut buf)?;
+        io::copy(&mut hashing_decoder, &mut io::sink())?;
 
         let (hash, _) = hashing_decoder.finalize();
         ensure!(
