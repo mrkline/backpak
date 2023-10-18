@@ -62,10 +62,7 @@ impl Backend for FilesystemBackend {
 
     fn write(&self, from: &mut dyn Read, to: &str) -> Result<()> {
         let to = self.base_directory.join(to);
-        let mut fh = fs::File::create(&to).with_context(|| format!("Couldn't create {to}"))?;
-        io::copy(from, &mut fh).with_context(|| format!("Couldn't write to {to}"))?;
-        fh.sync_all()
-            .with_context(|| format!("Couldn't sync {to}"))?;
+        file_util::safe_copy_to_file(from, &to)?;
         Ok(())
     }
 

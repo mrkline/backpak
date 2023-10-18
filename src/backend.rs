@@ -2,13 +2,14 @@
 //! (eventually) cloud hosts, etc.
 
 use std::fs::File;
-use std::io::{self, prelude::*};
+use std::io::prelude::*;
+use std::io::Cursor;
 
-use anyhow::{anyhow, bail, ensure, Context, Error, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use log::*;
 
-use crate::{counters, file_util, hashing::ObjectId};
+use crate::{file_util, hashing::ObjectId};
 
 mod fs;
 mod memory;
@@ -48,11 +49,12 @@ enum WritethroughCache {
     Local { base_directory: Utf8PathBuf },
     #[allow(unused)]
     Remote {
-        cache_directory: Utf8PathBuf,
-        max_size: usize,
+        _cache_directory: Utf8PathBuf,
+        _max_size: usize,
     },
 }
 
+#[allow(dead_code)]
 fn prune_cache(_cache_directory: &Utf8Path, _max_size: usize) -> Result<()> {
     todo!()
 }
@@ -60,7 +62,7 @@ fn prune_cache(_cache_directory: &Utf8Path, _max_size: usize) -> Result<()> {
 /// Cached backends do what they say on the tin.
 ///
 /// One useful difference from the "raw" backend is that they deal directly
-/// in files because we can assume we're writing to some local `~/.cache/backpak`
+/// in buffers because we can assume we're writing to some local `~/.cache/backpak`
 /// or the like before things are uploaded.
 /// (Or, for a local backup, we can write straight to the backup!)
 pub struct CachedBackend {
@@ -69,36 +71,20 @@ pub struct CachedBackend {
 }
 
 impl CachedBackend {
-    /// Read the object at the given key into a file and return a handle to that file.
-    fn read(&self, from: &str) -> Result<File> {
+    /// Read the object at the given key and return its buffer.
+    ///
+    /// This could just be the Vec<u8>, but most users are streaming and seeking.
+    /// Provide a cursor for convenience; we can get the buf with an .into_inner()
+    fn read(&self, from: &str) -> Result<Cursor<Vec<u8>>> {
         match &self.cache {
             WritethroughCache::Local { base_directory } => {
                 let from = base_directory.join(from);
-                Ok(File::open(&from).with_context(|| format!("Couldn't open {from}"))?)
+                Ok(Cursor::new(
+                    std::fs::read(&from).with_context(|| format!("Couldn't read {from}"))?,
+                ))
             }
-            WritethroughCache::Remote {
-                cache_directory,
-                max_size,
-            } => {
-                let cached = cache_directory.join(from);
-                match File::open(&cached) {
-                    // If it's in the cache, awesome!
-                    Ok(f) => {
-                        counters::bump(counters::Op::FileCacheHit);
-                        Ok(f)
-                    }
-                    // Otherwise, first copy it into the cache,
-                    // prune the cache, then serve up that cached copy.
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                        counters::bump(counters::Op::FileCacheMiss);
-                        let backend_reader = self.backend.read(from)?;
-                        let mut f = file_util::safe_copy_to_file(backend_reader, &cached)?;
-                        f.seek(std::io::SeekFrom::Start(0))?;
-                        prune_cache(cache_directory, *max_size)?;
-                        Ok(f)
-                    }
-                    Err(e) => Err(Error::from(e).context(format!("Couldn't open {}", from))),
-                }
+            WritethroughCache::Remote { .. } => {
+                todo!()
             }
         }
     }
@@ -114,15 +100,8 @@ impl CachedBackend {
             }
             // Write through! Write it into the cache,
             // copy the cached version to the backend, and prune the cache.
-            WritethroughCache::Remote {
-                cache_directory,
-                max_size,
-            } => {
-                let cached = cache_directory.join(from);
-                let mut f = file_util::move_opened(from, from_fh, cached)?;
-                f.seek(std::io::SeekFrom::Start(0))?;
-                self.backend.write(&mut f, from)?;
-                prune_cache(cache_directory, *max_size)?;
+            WritethroughCache::Remote { .. } => {
+                todo!()
             }
         }
         Ok(())
@@ -133,18 +112,9 @@ impl CachedBackend {
             WritethroughCache::Local { .. } => {
                 // Let backend.remove() unlink the file below
             }
-            WritethroughCache::Remote {
-                cache_directory, ..
-            } => {
+            WritethroughCache::Remote { .. } => {
                 // Remove it from the cache too. No worries if it isn't there.
-                let cached = cache_directory.join(to_remove);
-                match std::fs::remove_file(&cached) {
-                    Ok(()) => {}
-                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                    Err(e) => {
-                        return Err(Error::from(e).context(format!("Couldn't remove {cached}")));
-                    }
-                }
+                todo!()
             }
         }
         self.backend.remove(to_remove)
@@ -182,20 +152,20 @@ impl CachedBackend {
         }
     }
 
-    pub fn read_pack(&self, id: &ObjectId) -> Result<File> {
+    pub fn read_pack(&self, id: &ObjectId) -> Result<Cursor<Vec<u8>>> {
         let base32 = id.to_string();
         let pack_path = format!("packs/{}.pack", base32);
         self.read(&pack_path)
             .with_context(|| format!("Couldn't open {}", pack_path))
     }
 
-    pub fn read_index(&self, id: &ObjectId) -> Result<File> {
+    pub fn read_index(&self, id: &ObjectId) -> Result<Cursor<Vec<u8>>> {
         let index_path = format!("indexes/{}.index", id);
         self.read(&index_path)
             .with_context(|| format!("Couldn't open {}", index_path))
     }
 
-    pub fn read_snapshot(&self, id: &ObjectId) -> Result<File> {
+    pub fn read_snapshot(&self, id: &ObjectId) -> Result<Cursor<Vec<u8>>> {
         let snapshot_path = format!("snapshots/{}.snapshot", id);
         self.read(&snapshot_path)
             .with_context(|| format!("Couldn't open {}", snapshot_path))
