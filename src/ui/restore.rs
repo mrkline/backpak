@@ -208,13 +208,8 @@ impl Restorer<'_> {
                     last_access: to_timespec(atime),
                     last_modification: to_timespec(mtime),
                 };
-                utimensat(
-                    cwd(),
-                    node_path.as_str(),
-                    &stamps,
-                    AtFlags::SYMLINK_NOFOLLOW,
-                )
-                .with_context(|| format!("Couldn't set timestamps for {node_path}"))?;
+                utimensat(CWD, node_path.as_str(), &stamps, AtFlags::SYMLINK_NOFOLLOW)
+                    .with_context(|| format!("Couldn't set timestamps for {node_path}"))?;
             }
         }
         if self.args.permissions {
