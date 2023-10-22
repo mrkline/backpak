@@ -40,7 +40,7 @@ num_cpus = "1.0"
 # par_iter
 rayon = "1.4"
 # Local cache
-#rusqlite = "0.29.0"
+rusqlite = "0.29.0"
 # We don't need DDOS-resistant hashes
 rustc-hash = "1.1"
 # Syscalls for setting file times
@@ -61,7 +61,7 @@ zstd = { version = "0.12", features = ["zstdmt"] }
 
 [dev-dependencies]
 assert_cmd = "2.0"
-env_logger = "0.9"
+env_logger = "0.10"
 hex-literal = "0.3"
 predicates = "3.0"
 walkdir = "2.0"

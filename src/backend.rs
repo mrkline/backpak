@@ -11,6 +11,7 @@ use log::*;
 
 use crate::{file_util, hashing::ObjectId};
 
+mod cache;
 mod fs;
 mod memory;
 
