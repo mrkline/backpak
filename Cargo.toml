@@ -9,30 +9,54 @@ keywords = ["backup"]
 categories = ["command-line-utilities", "compression", "filesystem"]
 
 [dependencies]
+# Sane error handling
 anyhow = { version = "1.0", features = ["backtrace"] }
+# Pretty-printing byte counts
 byte-unit = "4.0"
+# Paths are UTF-8
 camino = { version = "1.0", features = ["serde1"] }
+# Tick tock
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+# CBOR serde
+ciborium = "0.2.1"
+# Arg parsing
 clap = { version = "4.0", features = ["derive"] }
+# Base-32 encoding
 data-encoding = "2.3"
+# Stats map
 enum-map = "2.5"
+# Chunkin'
 fastcdc = "3.0"
+# Default author - the hostname
 hostname = "0.3"
+# Be lazy.
 lazy_static = "1.0"
+# Logging
 log = "0.4"
-memmap2 = "0.5"
+# Memmap1 is unmaintained
+memmap2 = "0.9"
+# How many cores? Tell Zstd
 num_cpus = "1.0"
+# par_iter
 rayon = "1.4"
+# Local cache
+#rusqlite = "0.29.0"
+# We don't need DDOS-resistant hashes
 rustc-hash = "1.1"
-rustix = { version = "0.38", features = [ "fs" ] }
+# Syscalls for setting file times
+rustix = { version = "0.38", default_features = false, features = [ "fs" ] }
+# Praise be unto thee
 serde = "1.0"
 serde_bytes = "0.11"
-ciborium = "0.2.1"
 serde_derive = "1.0"
 serde_json = "1.0"
+# The good hash
 sha2 = "0.10"
+# KISS
 simplelog = { version = "0.12", features = ["test", "termcolor"] }
+# Persisting to temporary locations
 tempfile = "3.0"
+# Thank you Yann.
 zstd = { version = "0.12", features = ["zstdmt"] }
 
 [dev-dependencies]
