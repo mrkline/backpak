@@ -75,6 +75,14 @@ impl Cache {
         Ok(())
     }
 
+    fn evict(&self, name: &str) -> Result<()> {
+        let rows = self
+            .conn
+            .execute("DELETE FROM cache WHERE name == ?1", [name])?;
+        assert!(rows <= 1, "Duplicate cache entries evicted");
+        Ok(())
+    }
+
     fn prune(&mut self) -> Result<()> {
         // We want this all to be atomic.
         let transaction = self.conn.transaction()?;
@@ -171,6 +179,10 @@ mod test {
         new_size(&mut cache, 1);
         cache.prune()?;
         assert_eq!(names_left(&mut cache), ["baz"]);
+
+        // Evict that guy.
+        cache.evict("baz")?;
+        assert!(names_left(&mut cache).is_empty());
 
         // Absurd: zero-size cache should complain.
         new_size(&mut cache, 0);
