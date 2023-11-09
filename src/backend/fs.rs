@@ -6,7 +6,7 @@ use std::io;
 use camino::{Utf8Path, Utf8PathBuf};
 
 pub struct FilesystemBackend {
-    base_directory: Utf8PathBuf,
+    pub base_directory: Utf8PathBuf,
 }
 
 #[inline]

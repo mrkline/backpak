@@ -9,7 +9,7 @@ use rusqlite::Connection;
 /// and deleting files sounds like a pain in the ass, to put it mildly.
 /// Retrying whenever the directory changes under our feet sounds similarly unpleasant.
 /// What if we had some mechanism that was atomic, consistent, isolated, and durable?
-struct Cache {
+pub struct Cache {
     conn: Connection,
 }
 
@@ -19,7 +19,7 @@ const CACHE_SIZE: i64 = 1024 * 1024 * 1024;
 impl Cache {
     /// Create a cache given the database connection - let users handle the creation
     /// to make it easy to pass in `Connection::open_in_memory()`, etc.
-    fn new(mut conn: Connection) -> Result<Self> {
+    pub fn new(mut conn: Connection) -> Result<Self> {
         let t = conn.transaction()?;
         let ver: i32 = t.query_row("PRAGMA user_version", (), |r| r.get(0))?;
         if ver < 1 {
@@ -57,7 +57,7 @@ impl Cache {
         Ok(Self { conn })
     }
 
-    fn try_read(&self, name: &str) -> Result<Option<Vec<u8>>> {
+    pub fn try_read(&self, name: &str) -> Result<Option<Vec<u8>>> {
         let blobs = self
             .conn
             .prepare("SELECT data FROM cache where name = ?1")?
@@ -67,7 +67,7 @@ impl Cache {
         Ok(blobs.into_iter().next())
     }
 
-    fn insert(&self, name: &str, contents: &[u8]) -> Result<()> {
+    pub fn insert(&self, name: &str, contents: &[u8]) -> Result<()> {
         self.conn.execute(
             "REPLACE INTO cache(name, time, data) VALUES (?1, ?2, ?3)",
             (name, now_nanos(), contents),
@@ -75,7 +75,7 @@ impl Cache {
         Ok(())
     }
 
-    fn evict(&self, name: &str) -> Result<()> {
+    pub fn evict(&self, name: &str) -> Result<()> {
         let rows = self
             .conn
             .execute("DELETE FROM cache WHERE name == ?1", [name])?;
@@ -83,7 +83,7 @@ impl Cache {
         Ok(())
     }
 
-    fn prune(&mut self) -> Result<()> {
+    pub fn prune(&mut self) -> Result<()> {
         // We want this all to be atomic.
         let transaction = self.conn.transaction()?;
 

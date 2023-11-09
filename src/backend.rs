@@ -4,16 +4,19 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Cursor;
+use std::sync::{Mutex};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 use log::*;
 
-use crate::{file_util, hashing::ObjectId};
+use crate::{counters::{Op, bump}, file_util, hashing::ObjectId};
 
 mod cache;
 mod fs;
 mod memory;
+
+use cache::Cache;
 
 enum BackendType {
     Filesystem,
@@ -27,7 +30,7 @@ fn determine_type(_repository: &Utf8Path) -> BackendType {
 }
 
 /// A backend is anything we can read from, write to, list, and remove items from.
-trait Backend {
+pub trait Backend {
     /// Read from the given key
     fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>>;
 
@@ -40,35 +43,23 @@ trait Backend {
     fn list(&self, prefix: &str) -> Result<Vec<String>>;
 }
 
-// Use an enum instead of trait objects because we don't forsee ever having
-// more than two types here (are the files local, or do we need to cache them?)
-enum WritethroughCache {
+/// Cached backends do what they say on the tin,
+/// _or_ for the narrow case when we're writing unfiltered content to the filesystem,
+/// a direct passthrough for that.
+///
+/// In the former case, the backend is also responsible for unlinking the files
+/// it's given once they're safely backed up.
+pub enum CachedBackend {
     /// Since a filesystem backend is, well, on the file system,
     /// we don't need to make and store copies, worry about eviction, ...
     /// Just keep track of the base directory and pass file handles directly.
     /// Nice.
-    Local { base_directory: Utf8PathBuf },
+    Direct { backend: fs::FilesystemBackend },
     #[allow(unused)]
-    Remote {
-        _cache_directory: Utf8PathBuf,
-        _max_size: usize,
+    Cached {
+        cache: Mutex<Cache>,
+        backend: Box<dyn Backend + Send + Sync>,
     },
-}
-
-#[allow(dead_code)]
-fn prune_cache(_cache_directory: &Utf8Path, _max_size: usize) -> Result<()> {
-    todo!()
-}
-
-/// Cached backends do what they say on the tin.
-///
-/// One useful difference from the "raw" backend is that they deal directly
-/// in buffers because we can assume we're writing to some local `~/.cache/backpak`
-/// or the like before things are uploaded.
-/// (Or, for a local backup, we can write straight to the backup!)
-pub struct CachedBackend {
-    cache: WritethroughCache,
-    backend: Box<dyn Backend + Send + Sync>,
 }
 
 impl CachedBackend {
@@ -77,15 +68,28 @@ impl CachedBackend {
     /// This could just be the Vec<u8>, but most users are streaming and seeking.
     /// Provide a cursor for convenience; we can get the buf with an .into_inner()
     fn read(&self, from: &str) -> Result<Cursor<Vec<u8>>> {
-        match &self.cache {
-            WritethroughCache::Local { base_directory } => {
-                let from = base_directory.join(from);
+        match &self {
+            CachedBackend::Direct { backend } => {
+                let from = backend.base_directory.join(from);
                 Ok(Cursor::new(
                     std::fs::read(&from).with_context(|| format!("Couldn't read {from}"))?,
                 ))
             }
-            WritethroughCache::Remote { .. } => {
-                todo!()
+            CachedBackend::Cached { cache, backend } => {
+                if let Some(hit) = cache.lock().unwrap().try_read(from)? {
+                    bump(Op::FileCacheHit);
+                    Ok(Cursor::new(hit))
+                } else {
+                    bump(Op::FileCacheMiss);
+                    let mut buf = vec![];
+                    backend.read(from)?.read_to_end(&mut buf)?;
+                    let mut c = cache.lock().unwrap();
+                    // TODO: Should these just be one transaction?
+                    // Or do we get better perf and no downsides this way?
+                    c.insert(from, &buf)?;
+                    c.prune()?;
+                    Ok(Cursor::new(buf))
+                }
             }
         }
     }
@@ -94,14 +98,14 @@ impl CachedBackend {
     /// store it to an object with the appropriate key per
     /// `destination()`
     pub fn write(&self, from: &str, from_fh: File) -> Result<()> {
-        match &self.cache {
-            WritethroughCache::Local { base_directory } => {
-                let to = base_directory.join(destination(from));
+        match &self {
+            CachedBackend::Direct { backend } => {
+                let to = backend.base_directory.join(destination(from));
                 file_util::move_opened(from, from_fh, to)?;
             }
             // Write through! Write it into the cache,
             // copy the cached version to the backend, and prune the cache.
-            WritethroughCache::Remote { .. } => {
+            CachedBackend::Cached { .. } => {
                 todo!()
             }
         }
@@ -109,38 +113,47 @@ impl CachedBackend {
     }
 
     fn remove(&self, to_remove: &str) -> Result<()> {
-        match &self.cache {
-            WritethroughCache::Local { .. } => {
-                // Let backend.remove() unlink the file below
+        match &self {
+            CachedBackend::Direct { backend } => {
+                backend.remove(to_remove)
             }
-            WritethroughCache::Remote { .. } => {
+            CachedBackend::Cached { .. } => {
                 // Remove it from the cache too. No worries if it isn't there.
                 todo!()
             }
         }
-        self.backend.remove(to_remove)
     }
 
     // Let's put all the layout-specific stuff here so that we don't have paths
     // spread throughout the codebase.
 
+    fn list(&self, which: &str) -> Result<Vec<String>> {
+        match &self {
+            CachedBackend::Direct { backend } => {
+                backend.list(which)
+            },
+            CachedBackend::Cached { backend, .. } => {
+                backend.list(which)
+            }
+        }
+    }
+
     pub fn list_indexes(&self) -> Result<Vec<String>> {
-        self.backend.list("indexes/")
+        self.list("indexes/")
     }
 
     pub fn list_snapshots(&self) -> Result<Vec<String>> {
-        self.backend.list("snapshots/")
+        self.list("snapshots/")
     }
 
     pub fn list_packs(&self) -> Result<Vec<String>> {
-        self.backend.list("packs/")
+        self.list("packs/")
     }
 
     pub fn probe_pack(&self, id: &ObjectId) -> Result<()> {
         let base32 = id.to_string();
         let pack_path = format!("packs/{}.pack", base32);
         let found_packs = self
-            .backend
             .list(&pack_path)
             .with_context(|| format!("Couldn't find {}", pack_path))?;
         match found_packs.len() {
@@ -201,12 +214,8 @@ pub fn open(repository: &Utf8Path) -> Result<CachedBackend> {
     info!("Opening repository '{repository}'");
     let cached_backend = match determine_type(repository) {
         BackendType::Filesystem => {
-            let backend = Box::new(fs::FilesystemBackend::open(repository)?);
-            let base_directory = Utf8PathBuf::from(repository);
-            CachedBackend {
-                cache: WritethroughCache::Local { base_directory },
-                backend,
-            }
+            let backend = fs::FilesystemBackend::open(repository)?;
+            CachedBackend::Direct { backend }
         }
     };
     Ok(cached_backend)
