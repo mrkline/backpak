@@ -97,16 +97,19 @@ impl CachedBackend {
     /// Take the completed file and its `<id>.<type>` name and
     /// store it to an object with the appropriate key per
     /// `destination()`
-    pub fn write(&self, from: &str, from_fh: File) -> Result<()> {
+    pub fn write(&self, to: &str, from_fh: File) -> Result<()> {
         match &self {
             CachedBackend::Direct { backend } => {
                 let to = backend.base_directory.join(destination(from));
                 file_util::move_opened(from, from_fh, to)?;
             }
-            // Write through! Write it into the cache,
-            // copy the cached version to the backend, and prune the cache.
-            CachedBackend::Cached { .. } => {
-                todo!()
+            CachedBackend::Cached { cache } => {
+                // Write through!
+                // Seek from_fh to the beginning, read it all to a buf.
+                // Write it through to the backend.
+                // Insert it into the cache.
+                // Prune the cache.
+                // _Then_ unlink the file once we've persisted it in both places.
             }
         }
         Ok(())
@@ -118,7 +121,8 @@ impl CachedBackend {
                 backend.remove(to_remove)
             }
             CachedBackend::Cached { .. } => {
-                // Remove it from the cache too. No worries if it isn't there.
+                // Remove it from the cache too.
+                // No worries if it isn't there, no need to prune.
                 todo!()
             }
         }
