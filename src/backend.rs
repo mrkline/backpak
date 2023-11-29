@@ -55,7 +55,6 @@ pub enum CachedBackend {
     /// Just keep track of the base directory and pass file handles directly.
     /// Nice.
     Direct { backend: fs::FilesystemBackend },
-    #[allow(unused)]
     Cached {
         cache: Mutex<Cache>,
         backend: Box<dyn Backend + Send + Sync>,
@@ -67,26 +66,27 @@ impl CachedBackend {
     ///
     /// This could just be the Vec<u8>, but most users are streaming and seeking.
     /// Provide a cursor for convenience; we can get the buf with an .into_inner()
-    fn read(&self, from: &str) -> Result<Cursor<Vec<u8>>> {
+    fn read(&self, name: &str) -> Result<Cursor<Vec<u8>>> {
         match &self {
             CachedBackend::Direct { backend } => {
-                let from = backend.base_directory.join(from);
+                let from = backend.path_of(name);
                 Ok(Cursor::new(
                     std::fs::read(&from).with_context(|| format!("Couldn't read {from}"))?,
                 ))
             }
             CachedBackend::Cached { cache, backend } => {
-                if let Some(hit) = cache.lock().unwrap().try_read(from)? {
+                let tr = cache.lock().unwrap().try_read(name)?;
+                if let Some(hit) = tr {
                     bump(Op::FileCacheHit);
                     Ok(Cursor::new(hit))
                 } else {
                     bump(Op::FileCacheMiss);
                     let mut buf = vec![];
-                    backend.read(from)?.read_to_end(&mut buf)?;
+                    backend.read(name)?.read_to_end(&mut buf)?;
                     let mut c = cache.lock().unwrap();
                     // TODO: Should these just be one transaction?
                     // Or do we get better perf and no downsides this way?
-                    c.insert(from, &buf)?;
+                    c.insert(name, &buf)?;
                     c.prune()?;
                     Ok(Cursor::new(buf))
                 }
@@ -97,33 +97,45 @@ impl CachedBackend {
     /// Take the completed file and its `<id>.<type>` name and
     /// store it to an object with the appropriate key per
     /// `destination()`
-    pub fn write(&self, to: &str, from_fh: File) -> Result<()> {
+    pub fn write(&self, name: &str, mut fh: File) -> Result<()> {
         match &self {
             CachedBackend::Direct { backend } => {
-                let to = backend.base_directory.join(destination(from));
-                file_util::move_opened(from, from_fh, to)?;
+                let to = backend.path_of(name);
+                file_util::move_opened(name, fh, to)?;
             }
-            CachedBackend::Cached { cache } => {
+            CachedBackend::Cached { cache, backend } => {
                 // Write through!
-                // Seek from_fh to the beginning, read it all to a buf.
+                // Seek fh to the beginning, read it all to a buf.
+                fh.seek(std::io::SeekFrom::Start(0))?;
+                let mut buf = vec![];
+                fh.read_to_end(&mut buf)?;
+                drop(fh);
                 // Write it through to the backend.
+                backend.write(&mut Cursor::new(&buf), name)?;
                 // Insert it into the cache.
+                let mut c = cache.lock().unwrap();
+                c.insert(name, &buf)?;
                 // Prune the cache.
+                c.prune()?;
+                drop(c);
                 // _Then_ unlink the file once we've persisted it in both places.
+                std::fs::remove_file(name)?;
             }
         }
         Ok(())
     }
 
-    fn remove(&self, to_remove: &str) -> Result<()> {
+    fn remove(&self, name: &str) -> Result<()> {
         match &self {
             CachedBackend::Direct { backend } => {
-                backend.remove(to_remove)
+                backend.remove(name)
             }
-            CachedBackend::Cached { .. } => {
+            CachedBackend::Cached { cache, backend } => {
                 // Remove it from the cache too.
                 // No worries if it isn't there, no need to prune.
-                todo!()
+                cache.lock().unwrap().evict(name)?;
+                backend.remove(name)?;
+                Ok(())
             }
         }
     }
@@ -172,36 +184,36 @@ impl CachedBackend {
 
     pub fn read_pack(&self, id: &ObjectId) -> Result<Cursor<Vec<u8>>> {
         let base32 = id.to_string();
-        let pack_path = format!("packs/{}.pack", base32);
+        let pack_path = format!("{}.pack", base32);
         self.read(&pack_path)
             .with_context(|| format!("Couldn't open {}", pack_path))
     }
 
     pub fn read_index(&self, id: &ObjectId) -> Result<Cursor<Vec<u8>>> {
-        let index_path = format!("indexes/{}.index", id);
+        let index_path = format!("{}.index", id);
         self.read(&index_path)
             .with_context(|| format!("Couldn't open {}", index_path))
     }
 
     pub fn read_snapshot(&self, id: &ObjectId) -> Result<Cursor<Vec<u8>>> {
-        let snapshot_path = format!("snapshots/{}.snapshot", id);
+        let snapshot_path = format!("{}.snapshot", id);
         self.read(&snapshot_path)
             .with_context(|| format!("Couldn't open {}", snapshot_path))
     }
 
     pub fn remove_pack(&self, id: &ObjectId) -> Result<()> {
         let base32 = id.to_string();
-        let pack_path = format!("packs/{}.pack", base32);
+        let pack_path = format!("{}.pack", base32);
         self.remove(&pack_path)
     }
 
     pub fn remove_index(&self, id: &ObjectId) -> Result<()> {
-        let index_path = format!("indexes/{}.index", id);
+        let index_path = format!("{}.index", id);
         self.remove(&index_path)
     }
 
     pub fn remove_snapshot(&self, id: &ObjectId) -> Result<()> {
-        let snapshot_path = format!("snapshots/{}.snapshot", id);
+        let snapshot_path = format!("{}.snapshot", id);
         self.remove(&snapshot_path)
     }
 }
@@ -231,7 +243,7 @@ fn destination(src: &str) -> String {
         Some("pack") => format!("packs/{}", src),
         Some("index") => format!("indexes/{}", src),
         Some("snapshot") => format!("snapshots/{}", src),
-        _ => panic!("Unexpected extension on file to upload: {}", src),
+        _ => panic!("Unexpected extension on file: {}", src),
     }
 }
 

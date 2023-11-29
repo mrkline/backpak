@@ -50,24 +50,28 @@ impl FilesystemBackend {
 
         Ok(Self { base_directory })
     }
+
+    pub fn path_of(&self, p: &str) -> Utf8PathBuf {
+        self.base_directory.join(super::destination(p))
+    }
 }
 
 impl Backend for FilesystemBackend {
     fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
-        let from = self.base_directory.join(from);
+        let from = self.path_of(from);
         Ok(Box::new(
             fs::File::open(&from).with_context(|| format!("Couldn't open {from}"))?,
         ))
     }
 
     fn write(&self, from: &mut dyn Read, to: &str) -> Result<()> {
-        let to = self.base_directory.join(to);
+        let to = self.path_of(to);
         file_util::safe_copy_to_file(from, &to)?;
         Ok(())
     }
 
     fn remove(&self, which: &str) -> Result<()> {
-        let which = self.base_directory.join(which);
+        let which = self.path_of(which);
         fs::remove_file(&which).with_context(|| format!("Couldn't remove {which}"))?;
         Ok(())
     }
