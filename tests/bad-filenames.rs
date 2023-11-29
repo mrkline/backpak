@@ -9,8 +9,6 @@ use common::*;
 
 #[test]
 fn bad_filename() -> Result<()> {
-    setup_bigfile();
-
     let backup_dir = tempdir()?;
     let backup_path = backup_dir.path();
 

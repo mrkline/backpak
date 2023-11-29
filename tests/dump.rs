@@ -7,8 +7,6 @@ use common::*;
 
 #[test]
 fn backup_src() -> Result<()> {
-    setup_bigfile();
-
     let project_dir = std::env::current_dir()?;
 
     let backup_dir = tempdir()?;
