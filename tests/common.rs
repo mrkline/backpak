@@ -24,7 +24,6 @@ pub fn stdout(cmd: &assert_cmd::assert::Assert) -> &str {
 }
 
 pub fn count_directory_entries<P: AsRef<Path>>(dir: P) -> usize {
-    #[allow(clippy::suspicious_map)]
     std::fs::read_dir(dir)
         .expect("Couldn't read dir")
         .map(|de| {
