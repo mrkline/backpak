@@ -4,13 +4,17 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Cursor;
-use std::sync::{Mutex};
+use std::sync::Mutex;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::Utf8Path;
 use log::*;
 
-use crate::{counters::{Op, bump}, file_util, hashing::ObjectId};
+use crate::{
+    counters::{bump, Op},
+    file_util,
+    hashing::ObjectId,
+};
 
 mod cache;
 mod fs;
@@ -127,9 +131,7 @@ impl CachedBackend {
 
     fn remove(&self, name: &str) -> Result<()> {
         match &self {
-            CachedBackend::Direct { backend } => {
-                backend.remove(name)
-            }
+            CachedBackend::Direct { backend } => backend.remove(name),
             CachedBackend::Cached { cache, backend } => {
                 // Remove it from the cache too.
                 // No worries if it isn't there, no need to prune.
@@ -145,12 +147,8 @@ impl CachedBackend {
 
     fn list(&self, which: &str) -> Result<Vec<String>> {
         match &self {
-            CachedBackend::Direct { backend } => {
-                backend.list(which)
-            },
-            CachedBackend::Cached { backend, .. } => {
-                backend.list(which)
-            }
+            CachedBackend::Direct { backend } => backend.list(which),
+            CachedBackend::Cached { backend, .. } => backend.list(which),
         }
     }
 
