@@ -38,7 +38,7 @@ pub struct Args {
 
 pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Build the usual suspects.
-    let cached_backend = Arc::new(backend::open(repository)?);
+    let (backend_config, cached_backend) = backend::open(repository)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
 
@@ -127,8 +127,10 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // As we repack our snapshots, skip blobs in the 100% reachable packs.
     let mut packed_blobs = index::blob_set(&new_index)?;
 
-    let mut backup =
-        (!args.dry_run).then(|| backup::spawn_backup_threads(cached_backend.clone(), new_index));
+    let backend_config = Arc::new(backend_config);
+    let cached_backend = Arc::new(cached_backend);
+    let mut backup = (!args.dry_run)
+        .then(|| backup::spawn_backup_threads(backend_config, cached_backend.clone(), new_index));
 
     // Get a reader to load the chunks we're repacking.
     let mut reader = read::BlobReader::new(&cached_backend, &index, &blob_map);

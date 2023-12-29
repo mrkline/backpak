@@ -59,7 +59,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // and threads and all manner of craziness going.
     check_paths(&paths).context("Failed FS check prior to backup")?;
 
-    let cached_backend = backend::open(repository)?;
+    let (backend_config, cached_backend) = backend::open(repository)?;
 
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
@@ -88,8 +88,13 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         }
     }
 
+    let backend_config = Arc::new(backend_config);
     let cached_backend = Arc::new(cached_backend);
-    let mut backup = crate::backup::spawn_backup_threads(cached_backend.clone(), maybe_wip_index);
+    let mut backup = crate::backup::spawn_backup_threads(
+        backend_config,
+        cached_backend.clone(),
+        maybe_wip_index,
+    );
 
     for p in maybe_cwd_packfiles {
         let name = format!("{p}.pack");

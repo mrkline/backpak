@@ -209,8 +209,6 @@ mod test {
     use std::collections::BTreeSet;
     use std::sync::mpsc::{channel, sync_channel};
 
-    use camino::Utf8Path;
-
     use crate::blob;
     use crate::chunk;
 
@@ -223,10 +221,7 @@ mod test {
         init();
 
         // Create a backend with a single pack from our reference files
-        let backup_dir = tempfile::tempdir().expect("Failed to create temp test directory");
-        let backup_path = Utf8Path::from_path(backup_dir.path()).unwrap();
-        backend::initialize(backup_path)?;
-        let backend = backend::open(backup_path)?;
+        let backend = backend::in_memory();
 
         let mut chunks = Vec::new();
 
@@ -240,7 +235,9 @@ mod test {
         let (pack_tx, pack_rx) = channel();
         let (upload_tx, upload_rx) = sync_channel(1);
 
-        let chunk_packer = std::thread::spawn(move || pack::pack(chunk_rx, pack_tx, upload_tx));
+        let chunk_packer = std::thread::spawn(move || {
+            pack::pack(pack::DEFAULT_PACK_SIZE, chunk_rx, pack_tx, upload_tx)
+        });
 
         let uploader = std::thread::spawn(move || -> Result<backend::CachedBackend> {
             let mut num_packs = 0;

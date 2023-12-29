@@ -73,7 +73,7 @@ pub struct Args {
 }
 
 pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
-    let cached_backend = backend::open(repository)?;
+    let (_cfg, cached_backend) = backend::open(repository)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);

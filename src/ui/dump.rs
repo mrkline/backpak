@@ -30,7 +30,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         crate::prettify::prettify_serialize();
     }
 
-    let cached_backend = backend::open(repository)?;
+    let (_cfg, cached_backend) = backend::open(repository)?;
     let (snapshot, id) = snapshot::find_and_load(&args.snapshot, &cached_backend)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;

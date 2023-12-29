@@ -30,7 +30,7 @@ pub struct Args {
 pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let mut trouble = false;
 
-    let cached_backend = backend::open(repository)?;
+    let (_cfg, cached_backend) = backend::open(repository)?;
 
     let index = index::build_master_index(&cached_backend)?;
 

@@ -38,6 +38,14 @@ impl FilesystemBackend {
         create_dir(&repository.join("indexes"))?;
         create_dir(&repository.join("snapshots"))?;
 
+        let c = super::Config {
+            pack_size: crate::pack::DEFAULT_PACK_SIZE,
+            kind: super::Kind::Filesystem,
+            filter: None,
+            unfilter: None,
+        };
+        fs::write(&repository.join("config.toml"), &toml::to_string(&c)?)?;
+
         Ok(())
     }
 

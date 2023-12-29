@@ -57,7 +57,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         crate::prettify::prettify_serialize();
     }
 
-    let cached_backend = backend::open(repository)?;
+    let (_cfg, cached_backend) = backend::open(repository)?;
 
     match args.subcommand {
         Subcommand::Blob { id } => {

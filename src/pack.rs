@@ -16,9 +16,11 @@ use crate::blob::{self, Blob};
 use crate::file_util::{self, nice_size};
 use crate::hashing::{HashingReader, ObjectId};
 use crate::tree;
-use crate::DEFAULT_TARGET_SIZE;
 
 const MAGIC_BYTES: &[u8] = b"MKBAKPAK";
+
+/// The desired size of [crate::pack] files
+pub const DEFAULT_PACK_SIZE: u64 = 1024 * 1024 * 100; // 100 MB
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PackManifestEntry {
@@ -49,6 +51,7 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
 
 /// Packs blobs received from the given channel.
 pub fn pack(
+    target_size: u64,
     rx: Receiver<Blob>,
     to_index: Sender<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
@@ -57,7 +60,7 @@ pub fn pack(
 
     let mut pass_bytes_written: u64 = 0; // Bytes written since the last size check
     let mut total_bytes_written: u64 = 0;
-    let mut bytes_before_next_check = DEFAULT_TARGET_SIZE;
+    let mut bytes_before_next_check = target_size;
 
     // For each blob...
     while let Ok(blob) = rx.recv() {
@@ -84,11 +87,11 @@ pub fn pack(
             let compressed_size = writer.flush_and_check_size()?;
 
             // If we pass our target size, stop
-            if compressed_size >= DEFAULT_TARGET_SIZE {
+            if compressed_size >= target_size {
                 trace!(
                     "Compressed pack size is {} (>= target of {}). Starting another pack.",
                     nice_size(compressed_size),
-                    nice_size(DEFAULT_TARGET_SIZE)
+                    nice_size(target_size)
                 );
                 let (metadata, persisted) = writer.finalize()?;
                 let finalized_path = format!("{}.pack", metadata.id);
@@ -103,7 +106,7 @@ pub fn pack(
                 writer = PackfileWriter::new()?;
                 pass_bytes_written = 0;
                 total_bytes_written = 0;
-                bytes_before_next_check = DEFAULT_TARGET_SIZE;
+                bytes_before_next_check = target_size;
             }
             // Otherwise, write some more
             else {
@@ -111,7 +114,7 @@ pub fn pack(
                 // we need to write to hit the target pack size.
                 let current_ratio = total_bytes_written as f64 / compressed_size as f64;
                 bytes_before_next_check =
-                    (current_ratio * (DEFAULT_TARGET_SIZE - compressed_size) as f64) as u64;
+                    (current_ratio * (target_size - compressed_size) as f64) as u64;
                 pass_bytes_written = 0;
                 trace!(
                     "Compressed pack size is {} (ratio {:.02}). Writing {} more bytes",
@@ -482,7 +485,8 @@ mod test {
         let (pack_tx, pack_rx) = channel();
         let (upload_tx, upload_rx) = sync_channel(1);
 
-        let chunk_packer = std::thread::spawn(move || pack(chunk_rx, pack_tx, upload_tx));
+        let chunk_packer =
+            std::thread::spawn(move || pack(DEFAULT_PACK_SIZE, chunk_rx, pack_tx, upload_tx));
 
         let upload_chucker = std::thread::spawn(move || -> Result<()> {
             // This test doesn't actually care about the files themselves,

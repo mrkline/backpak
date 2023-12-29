@@ -49,8 +49,9 @@ fn bad_filename() -> Result<()> {
         "Files weren't validated before backup, .pack created"
     );
     // ...or any backup files at all.
+    let backup_files: Vec<_> = files_in(&backup_path).collect();
     ensure!(
-        files_in(&backup_path).count() == 0,
+        backup_files.len() == 1 && backup_files[0].ends_with("config.toml"),
         "Files weren't validated before backup, "
     );
 

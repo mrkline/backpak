@@ -79,6 +79,7 @@ impl Backup {
 }
 
 pub fn spawn_backup_threads(
+    backend_config: Arc<backend::Config>,
     cached_backend: Arc<backend::CachedBackend>,
     starting_index: index::Index,
 ) -> Backup {
@@ -95,6 +96,7 @@ pub fn spawn_backup_threads(
                 tree_rx,
                 upload_tx2,
                 upload_rx,
+                backend_config,
                 cached_backend,
                 starting_index,
             )
@@ -114,6 +116,7 @@ fn backup_master_thread(
     tree_rx: Receiver<Blob>,
     upload_tx: SyncSender<(String, File)>,
     upload_rx: Receiver<(String, File)>,
+    backend_config: Arc<backend::Config>,
     cached_backend: Arc<backend::CachedBackend>,
     starting_index: index::Index,
 ) -> Result<()> {
@@ -123,15 +126,16 @@ fn backup_master_thread(
     let chunk_pack_upload_tx = upload_tx;
     let tree_pack_upload_tx = chunk_pack_upload_tx.clone();
     let index_upload_tx = chunk_pack_upload_tx.clone();
+    let pack_size = backend_config.pack_size;
 
     let chunk_packer = thread::Builder::new()
         .name(String::from("chunk packer"))
-        .spawn(move || pack::pack(chunk_rx, chunk_pack_tx, chunk_pack_upload_tx))
+        .spawn(move || pack::pack(pack_size, chunk_rx, chunk_pack_tx, chunk_pack_upload_tx))
         .unwrap();
 
     let tree_packer = thread::Builder::new()
         .name(String::from("tree packer"))
-        .spawn(move || pack::pack(tree_rx, tree_pack_tx, tree_pack_upload_tx))
+        .spawn(move || pack::pack(pack_size, tree_rx, tree_pack_tx, tree_pack_upload_tx))
         .unwrap();
 
     let indexer = thread::Builder::new()

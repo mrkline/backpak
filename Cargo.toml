@@ -56,6 +56,8 @@ sha2 = "0.10"
 simplelog = { version = "0.12", features = ["test", "termcolor"] }
 # Persisting to temporary locations
 tempfile = "3.0"
+# INI config is nice
+toml = "0.8"
 # Thank you Yann.
 zstd = { version = "0.12", features = ["zstdmt"] }
 

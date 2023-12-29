@@ -9,11 +9,13 @@ use std::sync::Mutex;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::Utf8Path;
 use log::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     counters::{bump, Op},
     file_util,
     hashing::ObjectId,
+    pack,
 };
 
 mod cache;
@@ -22,15 +24,35 @@ mod memory;
 
 use cache::Cache;
 
-enum BackendType {
-    Filesystem,
-    // TODO: S3, B2, etc...
+// lol: Serde wants a function to call for defaults.
+fn defsize() -> u64 {
+    pack::DEFAULT_PACK_SIZE
 }
 
-/// Determine the repo type based on its name.
-fn determine_type(_repository: &Utf8Path) -> BackendType {
-    // We're just starting with filesystem
-    BackendType::Filesystem
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub enum Kind {
+    Filesystem,
+    // ...?
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Config {
+    #[serde(default = "defsize")]
+    pub pack_size: u64,
+    #[serde(rename = "type")]
+    pub kind: Kind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub filter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub unfilter: Option<String>,
+}
+
+fn read_config(p: &Utf8Path) -> Result<Config> {
+    let s = std::fs::read_to_string(p).with_context(|| format!("Couldn't read config from {p}"))?;
+    let c = toml::from_str(&s)?;
+    Ok(c)
 }
 
 /// A backend is anything we can read from, write to, list, and remove items from.
@@ -51,16 +73,24 @@ pub trait Backend {
 /// _or_ for the narrow case when we're writing unfiltered content to the filesystem,
 /// a direct passthrough for that.
 ///
-/// In the former case, the backend is also responsible for unlinking the files
+/// The backend is also responsible for unlinking the files
 /// it's given once they're safely backed up.
+/// (Bad separation of concerns? Perhaps. Convenient API? Yes.)
 pub enum CachedBackend {
     /// Since a filesystem backend is, well, on the file system,
-    /// we don't need to make and store copies, worry about eviction, ...
-    /// Just keep track of the base directory and pass file handles directly.
-    /// Nice.
-    Direct { backend: fs::FilesystemBackend },
+    /// we don't win anything by caching.
+    /// Just read and write files directly. Nice.
+    File { backend: fs::FilesystemBackend },
+    // The usual case: the backend is some remotely-hosted storage,
+    // or local, but the files are filtered first.
+    // Here we can benefit from a write-through cache.
     Cached {
         cache: Mutex<Cache>,
+        backend: Box<dyn Backend + Send + Sync>,
+    },
+    /// An arbitrary backend without the cache.
+    /// Mostly just useful for testing with an in-memory backend.
+    Direct {
         backend: Box<dyn Backend + Send + Sync>,
     },
 }
@@ -72,7 +102,7 @@ impl CachedBackend {
     /// Provide a cursor for convenience; we can get the buf with an .into_inner()
     fn read(&self, name: &str) -> Result<Cursor<Vec<u8>>> {
         match &self {
-            CachedBackend::Direct { backend } => {
+            CachedBackend::File { backend } => {
                 let from = backend.path_of(name);
                 Ok(Cursor::new(
                     std::fs::read(&from).with_context(|| format!("Couldn't read {from}"))?,
@@ -95,6 +125,11 @@ impl CachedBackend {
                     Ok(Cursor::new(buf))
                 }
             }
+            CachedBackend::Direct { backend } => {
+                let mut buf = vec![];
+                backend.read(name)?.read_to_end(&mut buf)?;
+                Ok(Cursor::new(buf))
+            }
         }
     }
 
@@ -103,7 +138,7 @@ impl CachedBackend {
     /// `destination()`
     pub fn write(&self, name: &str, mut fh: File) -> Result<()> {
         match &self {
-            CachedBackend::Direct { backend } => {
+            CachedBackend::File { backend } => {
                 let to = backend.path_of(name);
                 file_util::move_opened(name, fh, to)?;
             }
@@ -125,13 +160,18 @@ impl CachedBackend {
                 // _Then_ unlink the file once we've persisted it in both places.
                 std::fs::remove_file(name)?;
             }
+            CachedBackend::Direct { backend } => {
+                fh.seek(std::io::SeekFrom::Start(0))?;
+                backend.write(&mut fh, name)?;
+                std::fs::remove_file(name)?;
+            }
         }
         Ok(())
     }
 
     fn remove(&self, name: &str) -> Result<()> {
         match &self {
-            CachedBackend::Direct { backend } => backend.remove(name),
+            CachedBackend::File { backend } => backend.remove(name),
             CachedBackend::Cached { cache, backend } => {
                 // Remove it from the cache too.
                 // No worries if it isn't there, no need to prune.
@@ -139,6 +179,7 @@ impl CachedBackend {
                 backend.remove(name)?;
                 Ok(())
             }
+            CachedBackend::Direct { backend } => backend.remove(name),
         }
     }
 
@@ -147,8 +188,9 @@ impl CachedBackend {
 
     fn list(&self, which: &str) -> Result<Vec<String>> {
         match &self {
-            CachedBackend::Direct { backend } => backend.list(which),
+            CachedBackend::File { backend } => backend.list(which),
             CachedBackend::Cached { backend, .. } => backend.list(which),
+            CachedBackend::Direct { backend } => backend.list(which),
         }
     }
 
@@ -218,21 +260,39 @@ impl CachedBackend {
 
 /// Initializes the appropriate type of backend from the repository path
 pub fn initialize(repository: &Utf8Path) -> Result<()> {
-    match determine_type(repository) {
-        BackendType::Filesystem => fs::FilesystemBackend::initialize(repository),
+    fs::FilesystemBackend::initialize(repository)
+}
+
+/// Initializes an in-memory cache for testing purposes.
+pub fn in_memory() -> CachedBackend {
+    CachedBackend::Direct {
+        backend: Box::new(memory::MemoryBackend::new()),
     }
 }
 
 /// Factory function to open the appropriate type of backend from the repository path
-pub fn open(repository: &Utf8Path) -> Result<CachedBackend> {
-    info!("Opening repository '{repository}'");
-    let cached_backend = match determine_type(repository) {
-        BackendType::Filesystem => {
-            let backend = fs::FilesystemBackend::open(repository)?;
-            CachedBackend::Direct { backend }
-        }
+pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
+    info!("Opening repository {repository}");
+    let stat =
+        std::fs::metadata(repository).with_context(|| format!("Couldn't stat {repository}"))?;
+    let c = if stat.is_dir() {
+        let cfg_file = repository.join("config.toml");
+        read_config(&cfg_file)
+    } else if stat.is_file() {
+        read_config(repository)
+    } else {
+        bail!("{repository} is not a file or directory")
+    }?;
+    debug!("Read config: {c:?}");
+    ensure!(
+        c.filter.is_some() == c.unfilter.is_some(),
+        "{repository} config should set `filter` and `unfilter` or neither."
+    );
+    let backend = match c.kind {
+        Kind::Filesystem => fs::FilesystemBackend::open(repository)?,
     };
-    Ok(cached_backend)
+    let cached_backend = CachedBackend::File { backend };
+    Ok((c, cached_backend))
 }
 
 /// Returns the desitnation path for the given temp file based on its extension

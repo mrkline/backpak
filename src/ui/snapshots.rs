@@ -8,7 +8,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
         crate::prettify::prettify_serialize();
     }
 
-    let cached_backend = backend::open(repository)?;
+    let (_cfg, cached_backend) = backend::open(repository)?;
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
 
     for (snapshot, id) in snapshots.into_iter().rev() {

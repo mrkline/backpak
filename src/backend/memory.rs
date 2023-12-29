@@ -12,6 +12,14 @@ pub struct MemoryBackend {
     files: Mutex<FxHashMap<String, Vec<u8>>>,
 }
 
+impl MemoryBackend {
+    pub fn new() -> Self {
+        Self {
+            files: Mutex::new(FxHashMap::default()),
+        }
+    }
+}
+
 impl Backend for MemoryBackend {
     fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
         let buf: Vec<u8> = self

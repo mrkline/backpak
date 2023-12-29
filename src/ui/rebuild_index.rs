@@ -13,7 +13,7 @@ use crate::pack;
 use crate::upload;
 
 pub fn run(repository: &camino::Utf8Path) -> Result<()> {
-    let cached_backend = backend::open(repository)?;
+    let (_cfg, cached_backend) = backend::open(repository)?;
 
     let superseded = cached_backend
         .list_indexes()?
