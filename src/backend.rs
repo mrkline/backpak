@@ -19,6 +19,7 @@ use crate::{
 };
 
 mod cache;
+mod filter;
 mod fs;
 mod memory;
 
@@ -291,7 +292,17 @@ pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
     let backend = match c.kind {
         Kind::Filesystem => fs::FilesystemBackend::open(repository)?,
     };
-    let cached_backend = CachedBackend::File { backend };
+    // Don't bother checking unfilter; we ensure both are set if one is above.
+    let cached_backend = if c.filter.is_some() {
+        let filtered = Box::new(filter::BackendFilter {
+            filter: c.filter.clone().unwrap(),
+            unfilter: c.unfilter.clone().unwrap(),
+            raw: Box::new(backend)
+        });
+        CachedBackend::Cached { backend: filtered, cache: todo!("load global cache") };
+    } else {
+        CachedBackend::File { backend }
+    };
     Ok((c, cached_backend))
 }
 
