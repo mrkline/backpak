@@ -93,6 +93,9 @@ impl Backend for FilesystemBackend {
 
         let paths: Vec<String> = walk_dir(&prefix)?
             .iter()
+            // see file_utils::safe_copy_to_file()
+            // Use the fancy new atomic file crate instead?
+            .filter(|p| p.extension() != Some("part"))
             .map(|p| p.strip_prefix(&self.base_directory).unwrap())
             .map(|p| p.to_string())
             .collect();
