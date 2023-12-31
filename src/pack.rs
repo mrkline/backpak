@@ -231,9 +231,9 @@ impl PackfileWriter {
             .with_context(|| format!("Couldn't persist finished pack to {}", pack_name))?;
 
         debug!(
-            "Pack {}.pack finished ({} bytes)",
+            "Pack {}.pack finished ({})",
             id,
-            persisted.metadata()?.len(),
+            nice_size(persisted.metadata()?.len()),
         );
 
         Ok((

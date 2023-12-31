@@ -15,7 +15,7 @@ use tempfile::NamedTempFile;
 
 use crate::backend;
 use crate::counters;
-use crate::file_util::check_magic;
+use crate::file_util::{check_magic, nice_size};
 use crate::hashing::{HashingReader, HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
 
@@ -111,9 +111,9 @@ pub fn index(
                 .with_context(|| format!("Couldn't rename {} to {}", WIP_NAME, index_name))?;
         }
         debug!(
-            "Index {} finished ({} bytes)",
+            "Index {} finished ({})",
             index_id,
-            persisted.metadata()?.len()
+            nice_size(persisted.metadata()?.len())
         );
 
         to_upload
