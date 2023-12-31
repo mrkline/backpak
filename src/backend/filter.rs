@@ -19,6 +19,7 @@ pub struct BackendFilter {
 struct UnfilterRead {
     from: String,
     unfilter: String,
+    copy_thread: Option<thread::JoinHandle<Result<()>>>,
     child: Child,
 }
 
@@ -29,6 +30,17 @@ impl Drop for UnfilterRead {
     fn drop(&mut self) {
         // Lacking that, await the unfilter process in the destructor
         // and panic if it failed :/
+        self.copy_thread
+            .take()
+            .unwrap()
+            .join()
+            .unwrap()
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Piping {} through {} failed: {:#?}",
+                    self.from, self.unfilter, e
+                )
+            });
         trace!("Waiting for {} -> {} to exit...", self.from, self.unfilter);
         if !self.child.wait().unwrap().success() {
             panic!("unfilter ({} -> {}) failed", self.from, self.unfilter)
@@ -59,7 +71,7 @@ impl Backend for BackendFilter {
 
         let mut to_unfilter = uf.stdin.take().unwrap();
 
-        let copy_to_thread = thread::Builder::new()
+        let copy_thread = thread::Builder::new()
             .name("unfilter-copy".to_string())
             .spawn(move || -> anyhow::Result<()> {
                 io::copy(&mut inner_read, &mut to_unfilter)?;
@@ -67,14 +79,10 @@ impl Backend for BackendFilter {
             })
             .unwrap(); // Panic if we can't spawn a thread
 
-        // This seems scary; will errors get reported back to us through ChildStdout?
-        // I suppose we expect everything downstream to check contents
-        // to make sure we didn't get truncated.
-        drop(copy_to_thread); // detach
-
         Ok(Box::new(UnfilterRead {
             from: from.to_string(),
             unfilter: self.unfilter.clone(),
+            copy_thread: Some(copy_thread),
             child: uf,
         }))
     }
@@ -113,14 +121,14 @@ impl Backend for BackendFilter {
             copy_to.join().unwrap()?;
             Ok(())
         })
-        .with_context(|| format!("Error filtering through {}", self.filter))?;
+        .with_context(|| format!("Piping {to} through {} failed", self.filter))?;
 
-        trace!("Waiting for {} -> {} to exit...", to, self.filter);
+        trace!("Waiting for {to} -> {} to exit...", self.filter);
         ensure!(
             f.wait().unwrap().success(),
             format!("filter ({}) failed", self.filter)
         );
-        trace!("...{} -> {} exited", to, self.filter);
+        trace!("...{to} -> {} exited", self.filter);
 
         Ok(())
     }
