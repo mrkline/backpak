@@ -12,7 +12,7 @@ categories = ["command-line-utilities", "compression", "filesystem"]
 # Sane error handling
 anyhow = { version = "1.0", features = ["backtrace"] }
 # Pretty-printing byte counts
-byte-unit = "4.0"
+byte-unit = "5.0"
 # Paths are UTF-8
 camino = { version = "1.0", features = ["serde1"] }
 # Tick tock
@@ -40,7 +40,7 @@ num_cpus = "1.0"
 # par_iter
 rayon = "1.4"
 # Local cache
-rusqlite = "0.29.0"
+rusqlite = "0.30.0"
 # We don't need DDOS-resistant hashes
 rustc-hash = "1.1"
 # Syscalls for setting file times
@@ -59,11 +59,11 @@ tempfile = "3.0"
 # INI config is nice
 toml = "0.8"
 # Thank you Yann.
-zstd = { version = "0.12", features = ["zstdmt"] }
+zstd = { version = "0.13", features = ["zstdmt"] }
 
 [dev-dependencies]
 assert_cmd = "2.0"
 env_logger = "0.10"
-hex-literal = "0.3"
+hex-literal = "0.4"
 predicates = "3.0"
 walkdir = "2.0"

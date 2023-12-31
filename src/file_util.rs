@@ -156,10 +156,10 @@ pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Utf8Path) -> Result<File> {
 }
 
 /// File size but nice.
-pub fn nice_size<S: Into<u128>>(s: S) -> String {
+pub fn nice_size(s: u64) -> String {
     use byte_unit::*;
 
-    let b = Byte::from_bytes(s.into());
-    let adj = b.get_appropriate_unit(true); // power of 2 units
-    adj.format(2)
+    let b = Byte::from_u64(s);
+    let a = b.get_appropriate_unit(UnitType::Decimal); // power of 2 units
+    format!("{a:.2}")
 }
