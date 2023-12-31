@@ -21,7 +21,7 @@ impl MemoryBackend {
 }
 
 impl Backend for MemoryBackend {
-    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
+    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
         let buf: Vec<u8> = self
             .files
             .lock()
@@ -32,7 +32,7 @@ impl Backend for MemoryBackend {
         Ok(Box::new(io::Cursor::new(buf)))
     }
 
-    fn write(&self, from: &mut dyn Read, to: &str) -> Result<()> {
+    fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
         let mut vec = Vec::new();
         io::copy(from, &mut vec)?;
         self.files.lock().unwrap().insert(to.to_owned(), vec);

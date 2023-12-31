@@ -65,14 +65,14 @@ impl FilesystemBackend {
 }
 
 impl Backend for FilesystemBackend {
-    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>> {
+    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
         let from = self.path_of(from);
         Ok(Box::new(
             fs::File::open(&from).with_context(|| format!("Couldn't open {from}"))?,
         ))
     }
 
-    fn write(&self, from: &mut dyn Read, to: &str) -> Result<()> {
+    fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
         let to = self.path_of(to);
         file_util::safe_copy_to_file(from, &to)?;
         Ok(())

@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::Utf8Path;
 use log::*;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -59,10 +60,10 @@ fn read_config(p: &Utf8Path) -> Result<Config> {
 /// A backend is anything we can read from, write to, list, and remove items from.
 pub trait Backend {
     /// Read from the given key
-    fn read<'a>(&'a self, from: &str) -> Result<Box<dyn Read + Send + 'a>>;
+    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>>;
 
     /// Write the given read stream to the given key
-    fn write(&self, from: &mut dyn Read, to: &str) -> Result<()>;
+    fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()>;
 
     fn remove(&self, which: &str) -> Result<()>;
 
@@ -112,10 +113,10 @@ impl CachedBackend {
             CachedBackend::Cached { cache, backend } => {
                 let tr = cache.lock().unwrap().try_read(name)?;
                 if let Some(hit) = tr {
-                    bump(Op::FileCacheHit);
+                    bump(Op::BackendCacheHit);
                     Ok(Cursor::new(hit))
                 } else {
-                    bump(Op::FileCacheMiss);
+                    bump(Op::BackendCacheMiss);
                     let mut buf = vec![];
                     backend.read(name)?.read_to_end(&mut buf)?;
                     let mut c = cache.lock().unwrap();
@@ -146,6 +147,7 @@ impl CachedBackend {
             CachedBackend::Cached { cache, backend } => {
                 // Write through!
                 // Seek fh to the beginning, read it all to a buf.
+                bump(Op::BackendCacheWrite);
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 let mut buf = vec![];
                 fh.read_to_end(&mut buf)?;
@@ -297,9 +299,13 @@ pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
         let filtered = Box::new(filter::BackendFilter {
             filter: c.filter.clone().unwrap(),
             unfilter: c.unfilter.clone().unwrap(),
-            raw: Box::new(backend)
+            raw: Box::new(backend),
         });
-        CachedBackend::Cached { backend: filtered, cache: todo!("load global cache") };
+        CachedBackend::Cached {
+            backend: filtered,
+            // TODO: load global cache
+            cache: Mutex::new(cache::Cache::new(Connection::open("cache.sqlite")?)?),
+        }
     } else {
         CachedBackend::File { backend }
     };
