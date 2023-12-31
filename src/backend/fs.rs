@@ -44,7 +44,7 @@ impl FilesystemBackend {
             filter: None,
             unfilter: None,
         };
-        fs::write(&repository.join("config.toml"), &toml::to_string(&c)?)?;
+        fs::write(repository.join("config.toml"), toml::to_string(&c)?)?;
 
         Ok(())
     }
