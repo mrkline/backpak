@@ -41,11 +41,11 @@ impl Drop for UnfilterRead {
                     self.from, self.unfilter, e
                 )
             });
-        trace!("Waiting for {} -> {} to exit...", self.from, self.unfilter);
+        trace!("Waiting for {} < {} to exit...", self.unfilter, self.from);
         if !self.child.wait().unwrap().success() {
-            panic!("unfilter ({} -> {}) failed", self.from, self.unfilter)
+            panic!("{} < {} failed", self.unfilter, self.from)
         }
-        trace!("...{} -> {} exited", self.from, self.unfilter);
+        trace!("...{} < {} exited", self.unfilter, self.from);
     }
 }
 
@@ -57,7 +57,7 @@ impl Read for UnfilterRead {
 
 impl Backend for BackendFilter {
     fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
-        debug!("Unfiltering {from} through {}", self.unfilter);
+        debug!("{} < {from}", self.unfilter);
 
         let mut inner_read = self.raw.read(from)?;
 
@@ -88,7 +88,7 @@ impl Backend for BackendFilter {
     }
 
     fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
-        debug!("Filtering {to} through {}", self.filter);
+        debug!("{} > {to}", self.filter);
 
         let mut f = Command::new("sh")
             .arg("-c")
@@ -123,12 +123,12 @@ impl Backend for BackendFilter {
         })
         .with_context(|| format!("Piping {to} through {} failed", self.filter))?;
 
-        trace!("Waiting for {to} -> {} to exit...", self.filter);
+        trace!("Waiting for {} > {to} to exit...", self.filter);
         ensure!(
             f.wait().unwrap().success(),
-            format!("filter ({}) failed", self.filter)
+            format!("{} > {to} failed", self.filter)
         );
-        trace!("...{to} -> {} exited", self.filter);
+        trace!("...{} > {to} exited", self.filter);
 
         Ok(())
     }
