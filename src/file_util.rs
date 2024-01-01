@@ -117,43 +117,30 @@ fn move_by_copy(from: &Utf8Path, mut from_fh: File, to: &Utf8Path) -> Result<Fil
 /// This should guarantee that `to` never contains a partial file.
 /// Returns an open file handle for `to` (assume at EOF)
 pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Utf8Path) -> Result<File> {
-    // To make things more atomic, copy to /dest/foo.part,
+    // To make things more atomic, copy to /dest/foo.<rando>.part,
     // then rename to /dest/foo.
-    let mut to_part: String = to.as_str().to_owned();
-    to_part.push_str(".part");
-    let to_part = Utf8Path::new(&to_part);
+    let dir = to.parent().unwrap();
+    let pre = to.file_name().unwrap().to_owned() + ".";
+    let mut to_fh = tempfile::Builder::new()
+        .prefix(&pre)
+        .suffix(".part")
+        .tempfile_in(dir)
+        .with_context(|| format!("Couldn't open temporary {to}.part"))?;
 
-    // Copy the file to /dest/foo.part.
-    let mut to_fh = std::fs::OpenOptions::new()
-        .write(true)
-        .read(true) // The caller might turn around and read the returned File
-        .create(true)
-        .open(to_part)
-        .with_context(|| format!("Couldn't open {to_part}"))?;
+    let temp_path = format!("{}", to_fh.path().display());
 
-    std::io::copy(&mut from, &mut to_fh).with_context(|| format!("Couldn't write {to_part}"))?;
+    std::io::copy(&mut from, &mut to_fh)
+        .with_context(|| format!("Couldn't write to {temp_path}"))?;
     drop(from);
 
-    to_fh
+    let persisted = to_fh
+        .persist(to)
+        .with_context(|| format!("Couldn't persist {temp_path} to {to}"))?;
+    persisted
         .sync_all()
-        .with_context(|| format!("Couldn't sync {to_part}"))?;
+        .with_context(|| format!("Couldn't sync {to}"))?;
 
-    if cfg!(unix) {
-        // Rename to /dest/foo and return our handle
-        std::fs::rename(to_part, to)
-            .with_context(|| format!("Couldn't rename {to_part} to {to}"))?;
-
-        Ok(to_fh)
-    } else {
-        // Windows is sad, we have to close to rename.
-        // Is this a soundness/atomicity hole in the making?
-        // Maybe; help me Windows friends.
-        drop(to_fh);
-        std::fs::rename(to_part, to)
-            .with_context(|| format!("Couldn't rename {to_part} to {to}"))?;
-
-        File::open(to).with_context(|| format!("Couldn't open {to} after moving to it"))
-    }
+    Ok(persisted)
 }
 
 /// File size but nice.
