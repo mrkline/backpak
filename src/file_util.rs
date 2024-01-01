@@ -126,6 +126,7 @@ pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Utf8Path) -> Result<File> {
     // Copy the file to /dest/foo.part.
     let mut to_fh = std::fs::OpenOptions::new()
         .write(true)
+        .read(true) // The caller might turn around and read the returned File
         .create(true)
         .open(to_part)
         .with_context(|| format!("Couldn't open {to_part}"))?;
