@@ -1,8 +1,9 @@
 use super::*;
 
-use std::io;
+use std::io::{self, Cursor};
 use std::sync::Mutex;
 
+use anyhow::Result;
 use rustc_hash::FxHashMap;
 
 /// A backend that stores everything as path-addressed buffers.
@@ -18,10 +19,9 @@ impl MemoryBackend {
             files: Mutex::new(FxHashMap::default()),
         }
     }
-}
 
-impl Backend for MemoryBackend {
-    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
+    // Cursor is also seek - expose that to `CachedBackend`
+    pub fn read_cursor(&self, from: &str) -> Result<Cursor<Vec<u8>>> {
         let buf: Vec<u8> = self
             .files
             .lock()
@@ -29,7 +29,13 @@ impl Backend for MemoryBackend {
             .get(from)
             .ok_or_else(|| anyhow!("No file {}", from))?
             .clone();
-        Ok(Box::new(io::Cursor::new(buf)))
+        Ok(Cursor::new(buf))
+    }
+}
+
+impl Backend for MemoryBackend {
+    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
+        Ok(Box::new(self.read_cursor(from)?))
     }
 
     fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {

@@ -2,7 +2,7 @@
 //!
 //! This is ultimately how we read backups back out for restore, repack, etc.
 use std::io::prelude::*;
-use std::io::{self, Cursor, SeekFrom};
+use std::io::{self, BufReader, SeekFrom};
 
 use anyhow::{anyhow, ensure, Context, Result};
 use log::*;
@@ -22,7 +22,7 @@ type ZstdDecoder<R> = zstd::stream::read::Decoder<'static, R>;
 /// restarting the compressed zstd stream to get it.
 struct CurrentPackfile<'a> {
     id: ObjectId,
-    blob_stream: ZstdDecoder<Cursor<Vec<u8>>>,
+    blob_stream: ZstdDecoder<BufReader<Box<dyn backend::SeekableRead>>>,
     manifest: &'a pack::PackManifest,
     current_blob_index: usize,
 }
@@ -146,8 +146,7 @@ impl<'a> BlobReader<'a> {
             .get(&id)
             .ok_or_else(|| anyhow!("Couldn't find pack {} manifest in the index", id))?;
 
-        let blob_stream =
-            ZstdDecoder::with_buffer(file).context("Decompression of blob stream failed")?;
+        let blob_stream = ZstdDecoder::new(file).context("Decompression of blob stream failed")?;
 
         let current_blob_index = 0;
 

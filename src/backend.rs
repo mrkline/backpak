@@ -2,14 +2,11 @@
 //! (eventually) cloud hosts, etc.
 
 use std::fs::File;
-use std::io::prelude::*;
-use std::io::Cursor;
-use std::sync::Mutex;
+use std::io::{self, prelude::*};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::Utf8Path;
 use log::*;
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -82,56 +79,48 @@ pub enum CachedBackend {
     /// Since a filesystem backend is, well, on the file system,
     /// we don't win anything by caching.
     /// Just read and write files directly. Nice.
-    File { backend: fs::FilesystemBackend },
+    File {
+        backend: fs::FilesystemBackend,
+    },
     // The usual case: the backend is some remotely-hosted storage,
     // or local, but the files are filtered first.
     // Here we can benefit from a write-through cache.
     Cached {
-        cache: Mutex<Cache>,
+        cache: Cache,
         backend: Box<dyn Backend + Send + Sync>,
     },
-    /// An arbitrary backend without the cache.
-    /// Mostly just useful for testing with an in-memory backend.
-    Direct {
-        backend: Box<dyn Backend + Send + Sync>,
+    // Test backend please ignore
+    Memory {
+        backend: memory::MemoryBackend,
     },
 }
 
+pub trait SeekableRead: Read + Seek + Send + 'static {}
+impl<T> SeekableRead for T where T: Read + Seek + Send + 'static {}
+
 impl CachedBackend {
-    /// Read the object at the given key and return its buffer.
-    ///
-    /// This could just be the Vec<u8>, but most users are streaming and seeking.
-    /// Provide a cursor for convenience; we can get the buf with an .into_inner()
-    fn read(&self, name: &str) -> Result<Cursor<Vec<u8>>> {
+    /// Read the object at the given key and return its file.
+    fn read(&self, name: &str) -> Result<Box<dyn SeekableRead>> {
         match &self {
             CachedBackend::File { backend } => {
                 let from = backend.path_of(name);
-                Ok(Cursor::new(
-                    std::fs::read(&from).with_context(|| format!("Couldn't read {from}"))?,
-                ))
+                let fd = File::open(&from).with_context(|| format!("Couldn't open {from}"))?;
+                Ok(Box::new(fd))
             }
             CachedBackend::Cached { cache, backend } => {
-                let tr = cache.lock().unwrap().try_read(name)?;
+                let tr = cache.try_read(name)?;
                 if let Some(hit) = tr {
                     bump(Op::BackendCacheHit);
-                    Ok(Cursor::new(hit))
+                    Ok(Box::new(hit))
                 } else {
                     bump(Op::BackendCacheMiss);
-                    let mut buf = vec![];
-                    backend.read(name)?.read_to_end(&mut buf)?;
-                    let mut c = cache.lock().unwrap();
-                    // TODO: Should these just be one transaction?
-                    // Or do we get better perf and no downsides this way?
-                    c.insert(name, &buf)?;
-                    c.prune()?;
-                    Ok(Cursor::new(buf))
+                    let mut inserted = cache.insert(name, &mut *backend.read(name)?)?;
+                    cache.prune()?;
+                    inserted.seek(io::SeekFrom::Start(0))?;
+                    Ok(Box::new(inserted))
                 }
             }
-            CachedBackend::Direct { backend } => {
-                let mut buf = vec![];
-                backend.read(name)?.read_to_end(&mut buf)?;
-                Ok(Cursor::new(buf))
-            }
+            CachedBackend::Memory { backend } => Ok(Box::new(backend.read_cursor(name)?)),
         }
     }
 
@@ -146,24 +135,16 @@ impl CachedBackend {
             }
             CachedBackend::Cached { cache, backend } => {
                 // Write through!
-                // Seek fh to the beginning, read it all to a buf.
                 bump(Op::BackendCacheWrite);
                 fh.seek(std::io::SeekFrom::Start(0))?;
-                let mut buf = vec![];
-                fh.read_to_end(&mut buf)?;
-                drop(fh);
                 // Write it through to the backend.
-                backend.write(&mut Cursor::new(&buf), name)?;
+                backend.write(&mut fh, name)?;
                 // Insert it into the cache.
-                let mut c = cache.lock().unwrap();
-                c.insert(name, &buf)?;
+                cache.insert_file(name, fh)?;
                 // Prune the cache.
-                c.prune()?;
-                drop(c);
-                // _Then_ unlink the file once we've persisted it in both places.
-                std::fs::remove_file(name)?;
+                cache.prune()?;
             }
-            CachedBackend::Direct { backend } => {
+            CachedBackend::Memory { backend } => {
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 backend.write(&mut fh, name)?;
                 std::fs::remove_file(name)?;
@@ -178,11 +159,12 @@ impl CachedBackend {
             CachedBackend::Cached { cache, backend } => {
                 // Remove it from the cache too.
                 // No worries if it isn't there, no need to prune.
-                cache.lock().unwrap().evict(name)?;
+                bump(Op::BackendCacheEviction);
+                cache.evict(name)?;
                 backend.remove(name)?;
                 Ok(())
             }
-            CachedBackend::Direct { backend } => backend.remove(name),
+            CachedBackend::Memory { backend } => backend.remove(name),
         }
     }
 
@@ -193,7 +175,7 @@ impl CachedBackend {
         match &self {
             CachedBackend::File { backend } => backend.list(which),
             CachedBackend::Cached { backend, .. } => backend.list(which),
-            CachedBackend::Direct { backend } => backend.list(which),
+            CachedBackend::Memory { backend } => backend.list(which),
         }
     }
 
@@ -225,20 +207,20 @@ impl CachedBackend {
         }
     }
 
-    pub fn read_pack(&self, id: &ObjectId) -> Result<Cursor<Vec<u8>>> {
+    pub fn read_pack(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead>> {
         let base32 = id.to_string();
         let pack_path = format!("{}.pack", base32);
         self.read(&pack_path)
             .with_context(|| format!("Couldn't open {}", pack_path))
     }
 
-    pub fn read_index(&self, id: &ObjectId) -> Result<Cursor<Vec<u8>>> {
+    pub fn read_index(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead>> {
         let index_path = format!("{}.index", id);
         self.read(&index_path)
             .with_context(|| format!("Couldn't open {}", index_path))
     }
 
-    pub fn read_snapshot(&self, id: &ObjectId) -> Result<Cursor<Vec<u8>>> {
+    pub fn read_snapshot(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead>> {
         let snapshot_path = format!("{}.snapshot", id);
         self.read(&snapshot_path)
             .with_context(|| format!("Couldn't open {}", snapshot_path))
@@ -268,8 +250,8 @@ pub fn initialize(repository: &Utf8Path) -> Result<()> {
 
 /// Initializes an in-memory cache for testing purposes.
 pub fn in_memory() -> CachedBackend {
-    CachedBackend::Direct {
-        backend: Box::new(memory::MemoryBackend::new()),
+    CachedBackend::Memory {
+        backend: memory::MemoryBackend::new(),
     }
 }
 
@@ -304,7 +286,7 @@ pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
         CachedBackend::Cached {
             backend: filtered,
             // TODO: load global cache
-            cache: Mutex::new(cache::Cache::new(Connection::open("cache.sqlite")?)?),
+            cache: cache::Cache::new(Utf8Path::new("cache"))?,
         }
     } else {
         CachedBackend::File { backend }

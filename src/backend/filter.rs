@@ -146,6 +146,8 @@ impl Backend for BackendFilter {
 mod test {
     use super::*;
 
+    use std::io::Cursor;
+
     #[test]
     fn smoke() -> Result<()> {
         let f = BackendFilter {
