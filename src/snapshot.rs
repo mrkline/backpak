@@ -6,8 +6,10 @@ use std::io::prelude::*;
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
+use lazy_static::lazy_static;
 use log::*;
 use rayon::prelude::*;
+use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::{
@@ -118,11 +120,30 @@ pub fn load_chronologically(
 }
 
 pub fn find(prefix: &str, cached_backend: &backend::CachedBackend) -> Result<ObjectId> {
-    if prefix == "last" {
-        match load_chronologically(cached_backend)?.iter().next_back() {
-            None => bail!("No snapshots taken yet"),
+    lazy_static! {
+        // Git-like syntax:
+        // Match LAST (or HEAD; git habits die hard), and either a single tilde
+        // (meaning one before the last) or ~<num> (meaning <num> before last).
+        static ref LAST_REGEX: Regex =
+            Regex::new(r"^(?:LAST|HEAD)(?:(~)|(?:~([0-9]+)))?$").unwrap();
+    }
+
+    if let Some(cap) = LAST_REGEX.captures(prefix) {
+        let groups = cap.iter().collect::<Vec<_>>();
+        let index = match groups[..] {
+            [_, None, None] => 0,
+            [_, Some(_), None] => 1,
+            [_, None, Some(n)] => n.as_str().parse().unwrap(),
+            _ => unreachable!(),
+        };
+        match load_chronologically(cached_backend)?
+            .iter()
+            .rev()
+            .nth(index)
+        {
             Some((_snap, id)) => return Ok(*id),
-        }
+            None => bail!("Don't have {} snapshots yet", index + 1),
+        };
     }
 
     // Like Git, require at least a few digits of an ID.

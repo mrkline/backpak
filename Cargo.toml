@@ -39,6 +39,9 @@ memmap2 = "0.9"
 num_cpus = "1.0"
 # par_iter
 rayon = "1.4"
+# Snapshots LAST~N parsing
+# Don't need Unicode for now.
+regex = { version = "1.0", default_features = false, features = [ "std", "perf" ] }
 # Local cache
 rusqlite = "0.30.0"
 # We don't need DDOS-resistant hashes

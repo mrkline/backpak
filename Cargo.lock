@@ -177,6 +177,7 @@ dependencies = [
  "num_cpus",
  "predicates",
  "rayon",
+ "regex",
  "rusqlite",
  "rustc-hash",
  "rustix",
