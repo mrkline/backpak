@@ -10,9 +10,11 @@ use log::*;
 use rayon::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 
-use crate::backend;
-use crate::file_util::check_magic;
-use crate::hashing::{HashingReader, HashingWriter, ObjectId};
+use crate::{
+    backend,
+    file_util::check_magic,
+    hashing::{HashingReader, HashingWriter, ObjectId},
+};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
@@ -99,7 +101,7 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Sn
 
 /// Load all snapshots from the given backend and sort them by date taken.
 pub fn load_chronologically(
-    cached_backend: &crate::backend::CachedBackend,
+    cached_backend: &backend::CachedBackend,
 ) -> Result<Vec<(Snapshot, ObjectId)>> {
     debug!("Reading snapshots");
     let mut snapshots = cached_backend
@@ -115,7 +117,7 @@ pub fn load_chronologically(
     Ok(snapshots)
 }
 
-pub fn find(prefix: &str, cached_backend: &crate::backend::CachedBackend) -> Result<ObjectId> {
+pub fn find(prefix: &str, cached_backend: &backend::CachedBackend) -> Result<ObjectId> {
     if prefix == "last" {
         match load_chronologically(cached_backend)?.iter().next_back() {
             None => bail!("No snapshots taken yet"),
