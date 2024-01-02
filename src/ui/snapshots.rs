@@ -1,9 +1,17 @@
 use anyhow::Result;
+use clap::Parser;
 
-use crate::backend;
-use crate::snapshot;
+use crate::{backend, hashing, snapshot};
 
-pub fn run(repository: &camino::Utf8Path) -> Result<()> {
+/// List the snapshots in this repository from oldest to newest
+#[derive(Debug, Parser)]
+pub struct Args {
+    /// Print newest to oldest
+    #[clap(short, long)]
+    reverse: bool,
+}
+
+pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
@@ -11,7 +19,13 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     let (_cfg, cached_backend) = backend::open(repository)?;
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
 
-    for (snapshot, id) in snapshots.into_iter().rev() {
+    let it: Box<dyn Iterator<Item = (snapshot::Snapshot, hashing::ObjectId)>> = if !args.reverse {
+        Box::new(snapshots.into_iter())
+    } else {
+        Box::new(snapshots.into_iter().rev())
+    };
+
+    for (snapshot, id) in it {
         print!("snapshot {}", id);
         if snapshot.tags.is_empty() {
             println!();

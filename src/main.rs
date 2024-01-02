@@ -51,8 +51,7 @@ enum Command {
     Ls(ls::Args),
     Prune(prune::Args),
     Restore(restore::Args),
-    /// List the snapshots in this repository
-    Snapshots,
+    Snapshots(snapshots::Args),
     /// Build a new index from all existing packs and delete all old ones
     RebuildIndex,
 }
@@ -83,7 +82,7 @@ fn run() -> Result<()> {
         Command::Ls(l) => ls::run(&args.repository, l),
         Command::Prune(p) => prune::run(&args.repository, p),
         Command::Restore(r) => restore::run(&args.repository, r),
-        Command::Snapshots => snapshots::run(&args.repository),
+        Command::Snapshots(s) => snapshots::run(&args.repository, s),
         Command::RebuildIndex => rebuild_index::run(&args.repository),
     }?;
 
