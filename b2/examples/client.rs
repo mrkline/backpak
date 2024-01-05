@@ -37,7 +37,10 @@ fn read_creds(p: &Utf8Path) -> Result<Credentials> {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    List,
+    List {
+        #[clap(short, long)]
+        bucket: String,
+    },
     Get,
     Put,
 }
@@ -52,10 +55,19 @@ fn main() {
 fn run() -> Result<()> {
     let args = Args::parse();
     init_logger(&args);
-
     let creds = read_creds(&args.credentials)?;
 
-    b2::Session::new(&creds.key_id, &creds.application_key)?;
+    match args.subcommand {
+        Command::List { bucket } => {
+            let s = b2::Session::new(&creds.key_id, &creds.application_key, bucket)?;
+            let files = s.list()?;
+            for f in files {
+                println!("{f}");
+            }
+        }
+        Command::Get => todo!(),
+        Command::Put => todo!(),
+    };
     Ok(())
 }
 

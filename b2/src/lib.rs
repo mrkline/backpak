@@ -5,11 +5,13 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("B2 HTTP error")]
-    Http(#[from] ureq::Error),
-    #[error("The B2 response was not valid JSON")]
-    BadJson(#[from] std::io::Error),
+    Http(#[from] minreq::Error),
+    #[error("B2 HTTP {code}: {reason}")]
+    BadReply { code: i32, reason: String },
     #[error("B2 {why}: {response}")]
     UnexpectedResponse { why: String, response: String },
+    #[error("B2: Couldn't find {what}")]
+    NotFound { what: String },
 }
 
 fn unexpected(w: &str, r: &json::Value) -> Error {
@@ -23,30 +25,41 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Session {
-    agent: ureq::Agent,
-    id: String,
+    token: String,
     url: String,
+    bucket_id: String,
+}
+
+fn check_response(r: minreq::Response) -> Result<json::Value> {
+    if r.status_code != 200 {
+        return Err(Error::BadReply {
+            code: r.status_code,
+            reason: r.as_str()?.to_owned(),
+        });
+    }
+    Ok(r.json()?)
 }
 
 impl Session {
-    pub fn new(key_id: &str, application_key: &str) -> Result<Self> {
-        let agent = ureq::Agent::new();
-
+    pub fn new(key_id: &str, application_key: &str, bucket: String) -> Result<Self> {
         let creds = String::from(key_id) + ":" + application_key;
-        let auth = String::from("Basic") + &BASE64_STANDARD.encode(&creds);
-        let v: json::Value = agent
-            .get("https://api.backblazeb2.com/b2api/v3/b2_authorize_account")
-            .set("Authorization", &auth)
-            .call()?
-            .into_json()?;
-
-        println!("{v}"); // DEBUG
+        let auth = String::from("Basic") + &BASE64_STANDARD.encode(creds);
+        let v: json::Value = check_response(
+            minreq::get("https://api.backblazeb2.com/b2api/v3/b2_authorize_account")
+                .with_header("Authorization", auth)
+                .send()?,
+        )?;
 
         let bad = |s| unexpected(s, &v);
 
         let id: String = v["accountId"]
             .as_str()
-            .ok_or_else(|| bad("login response missing ID"))?
+            .ok_or_else(|| bad("login response missing authorization token"))?
+            .to_owned();
+
+        let token: String = v["authorizationToken"]
+            .as_str()
+            .ok_or_else(|| bad("login response missing authorization token"))?
             .to_owned();
 
         let url = v["apiInfo"]["storageApi"]["apiUrl"]
@@ -78,6 +91,69 @@ impl Session {
             return Err(bad("credentials can not delete files"));
         }
 
-        Ok(Session { agent, id, url })
+        let br: json::Value = check_response(
+            minreq::get(url.clone() + "/b2api/v2/b2_list_buckets")
+                .with_header("Authorization", &token)
+                .with_param("accountId", &id)
+                .with_param("bucketName", &bucket)
+                .send()?,
+        )?;
+
+        let bucket_id = match br["buckets"].as_array() {
+            Some(bs) => {
+                match bs
+                    .iter()
+                    .find(|b| b["bucketName"].as_str() == Some(&bucket))
+                {
+                    Some(mah_bukkit) => mah_bukkit["bucketId"]
+                        .as_str()
+                        .ok_or_else(|| unexpected("bucket was missing ID", &br))?
+                        .to_owned(),
+                    None => return Err(Error::NotFound { what: bucket }),
+                }
+            }
+            None => return Err(Error::NotFound { what: bucket }),
+        };
+
+        Ok(Session {
+            token,
+            url,
+            bucket_id,
+        })
+    }
+
+    pub fn list(&self) -> Result<Vec<String>> {
+        let mut fs = vec![];
+        let mut start_name = None;
+        loop {
+            let mut req = minreq::get(self.url.clone() + "/b2api/v2/b2_list_file_names")
+                .with_header("Authorization", &self.token)
+                .with_param("bucketId", &self.bucket_id)
+                .with_param("maxFileCount", "10000");
+            if let Some(sn) = start_name {
+                req = req.with_param("startFileName", sn);
+            }
+
+            let lfn = check_response(req.send()?)?;
+
+            let bad = |s| unexpected(s, &lfn);
+
+            let files = lfn["files"]
+                .as_array()
+                .ok_or_else(|| bad("didn't list file names"))?;
+            for fj in files
+                .iter()
+                .filter(|f| f["action"].as_str() == Some("upload"))
+                .filter_map(|f| f["fileName"].as_str())
+            {
+                fs.push(fj.to_owned());
+            }
+
+            start_name = lfn["nextFileName"].as_str().map(|s| s.to_owned());
+            if start_name.is_none() {
+                break;
+            }
+        }
+        Ok(fs)
     }
 }
