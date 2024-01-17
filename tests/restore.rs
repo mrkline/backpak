@@ -41,7 +41,7 @@ fn backup_src() -> Result<()> {
     let restoreit = || {
         let restore_run = cli_run(working_path, backup_path)
             .unwrap()
-            .args(&["restore", "--delete", "--times", "--permissions", "last"])
+            .args(&["restore", "--delete", "--times", "--permissions", "LAST"])
             .assert()
             .success();
         let restore_err = stderr(&restore_run).trim();

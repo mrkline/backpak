@@ -41,7 +41,7 @@ fn backup_src() -> Result<()> {
     let diffit = || {
         let diff_run = cli_run(working_path, backup_path)
             .unwrap()
-            .args(&["diff", "--metadata", "last"])
+            .args(&["diff", "--metadata", "LAST"])
             .assert()
             .success();
         let diff_output = stdout(&diff_run).trim();
