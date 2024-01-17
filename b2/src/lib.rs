@@ -27,6 +27,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Session {
     token: String,
     url: String,
+    upload_url: String,
+    upload_token: String,
+    bucket_name: String,
     bucket_id: String,
 }
 
@@ -41,85 +44,108 @@ fn check_response(r: minreq::Response) -> Result<json::Value> {
 }
 
 impl Session {
-    pub fn new(key_id: &str, application_key: &str, bucket: String) -> Result<Self> {
-        let creds = String::from(key_id) + ":" + application_key;
-        let auth = String::from("Basic") + &BASE64_STANDARD.encode(creds);
-        let v: json::Value = check_response(
-            minreq::get("https://api.backblazeb2.com/b2api/v3/b2_authorize_account")
-                .with_header("Authorization", auth)
-                .send()?,
-        )?;
+    pub fn new<S: Into<String>>(key_id: &str, application_key: &str, bukkit: S) -> Result<Self> {
+        let inner = |bucket: String| -> Result<Self> {
+            let creds = String::from(key_id) + ":" + application_key;
+            let auth = String::from("Basic") + &BASE64_STANDARD.encode(creds);
+            let v: json::Value = check_response(
+                minreq::get("https://api.backblazeb2.com/b2api/v3/b2_authorize_account")
+                    .with_header("Authorization", auth)
+                    .send()?,
+            )?;
 
-        let bad = |s| unexpected(s, &v);
+            let bad = |s| unexpected(s, &v);
 
-        let id: String = v["accountId"]
-            .as_str()
-            .ok_or_else(|| bad("login response missing authorization token"))?
-            .to_owned();
+            let id: String = v["accountId"]
+                .as_str()
+                .ok_or_else(|| bad("login response missing authorization token"))?
+                .to_owned();
 
-        let token: String = v["authorizationToken"]
-            .as_str()
-            .ok_or_else(|| bad("login response missing authorization token"))?
-            .to_owned();
+            let token: String = v["authorizationToken"]
+                .as_str()
+                .ok_or_else(|| bad("login response missing authorization token"))?
+                .to_owned();
 
-        let url = v["apiInfo"]["storageApi"]["apiUrl"]
-            .as_str()
-            .ok_or_else(|| bad("login response missing API URL"))?
-            .to_owned();
+            let url = v["apiInfo"]["storageApi"]["apiUrl"]
+                .as_str()
+                .ok_or_else(|| bad("login response missing API URL"))?
+                .to_owned();
 
-        let capes = v["apiInfo"]["storageApi"]["capabilities"]
-            .as_array()
-            .ok_or_else(|| bad("login response missing capabilities"))?;
-        let capes = capes
-            .iter()
-            .map(|v| {
-                v.as_str()
-                    .ok_or_else(|| bad("login response had malformed capabilities"))
-            })
-            .collect::<Result<Vec<&str>>>()?;
+            let capes = v["apiInfo"]["storageApi"]["capabilities"]
+                .as_array()
+                .ok_or_else(|| bad("login response missing capabilities"))?;
+            let capes = capes
+                .iter()
+                .map(|v| {
+                    v.as_str()
+                        .ok_or_else(|| bad("login response had malformed capabilities"))
+                })
+                .collect::<Result<Vec<&str>>>()?;
 
-        if !capes.iter().any(|c| *c == "listKeys") {
-            return Err(bad("credentials can not list files"));
-        }
-        if !capes.iter().any(|c| *c == "readFiles") {
-            return Err(bad("credentials can not read files"));
-        }
-        if !capes.iter().any(|c| *c == "writeFiles") {
-            return Err(bad("credentials can not write files"));
-        }
-        if !capes.iter().any(|c| *c == "deleteFiles") {
-            return Err(bad("credentials can not delete files"));
-        }
-
-        let br: json::Value = check_response(
-            minreq::get(url.clone() + "/b2api/v2/b2_list_buckets")
-                .with_header("Authorization", &token)
-                .with_param("accountId", &id)
-                .with_param("bucketName", &bucket)
-                .send()?,
-        )?;
-
-        let bucket_id = match br["buckets"].as_array() {
-            Some(bs) => {
-                match bs
-                    .iter()
-                    .find(|b| b["bucketName"].as_str() == Some(&bucket))
-                {
-                    Some(mah_bukkit) => mah_bukkit["bucketId"]
-                        .as_str()
-                        .ok_or_else(|| unexpected("bucket was missing ID", &br))?
-                        .to_owned(),
-                    None => return Err(Error::NotFound { what: bucket }),
-                }
+            if !capes.iter().any(|c| *c == "listKeys") {
+                return Err(bad("credentials can not list files"));
             }
-            None => return Err(Error::NotFound { what: bucket }),
-        };
+            if !capes.iter().any(|c| *c == "readFiles") {
+                return Err(bad("credentials can not read files"));
+            }
+            if !capes.iter().any(|c| *c == "writeFiles") {
+                return Err(bad("credentials can not write files"));
+            }
+            if !capes.iter().any(|c| *c == "deleteFiles") {
+                return Err(bad("credentials can not delete files"));
+            }
 
-        Ok(Session {
-            token,
-            url,
-            bucket_id,
-        })
+            let br: json::Value = check_response(
+                minreq::get(url.clone() + "/b2api/v2/b2_list_buckets")
+                    .with_header("Authorization", &token)
+                    .with_param("accountId", id)
+                    .with_param("bucketName", &bucket)
+                    .send()?,
+            )?;
+
+            let bucket_id = match br["buckets"].as_array() {
+                Some(bs) => {
+                    match bs
+                        .iter()
+                        .find(|b| b["bucketName"].as_str() == Some(&bucket))
+                    {
+                        Some(mah_bukkit) => mah_bukkit["bucketId"]
+                            .as_str()
+                            .ok_or_else(|| unexpected("bucket was missing ID", &br))?
+                            .to_owned(),
+                        None => return Err(Error::NotFound { what: bucket }),
+                    }
+                }
+                None => return Err(Error::NotFound { what: bucket }),
+            };
+
+            let ur: json::Value = check_response(
+                minreq::get(url.clone() + "/b2api/v2/b2_get_upload_url")
+                    .with_header("Authorization", &token)
+                    .with_param("bucketId", &bucket_id)
+                    .send()?,
+            )?;
+
+            let upload_url = ur["uploadUrl"]
+                .as_str()
+                .ok_or_else(|| unexpected("couldn't get bucket upload URL", &ur))?
+                .to_owned();
+
+            let upload_token = ur["authorizationToken"]
+                .as_str()
+                .ok_or_else(|| unexpected("couldn't get bucket upload token", &ur))?
+                .to_owned();
+
+            Ok(Session {
+                token,
+                url,
+                upload_url,
+                upload_token,
+                bucket_name: bucket,
+                bucket_id,
+            })
+        };
+        inner(bukkit.into())
     }
 
     pub fn list(&self) -> Result<Vec<String>> {
@@ -155,5 +181,48 @@ impl Session {
             }
         }
         Ok(fs)
+    }
+
+    // TODO: minreq needs a streming API that doesn't copy byte-by-byte,
+    //       and this needs to return a Read.
+    pub fn get(&self, name: &str) -> Result<Vec<u8>> {
+        let r = minreq::get(self.url.clone() + "/file/" + &self.bucket_name + "/" + name)
+            .with_header("Authorization", &self.token)
+            .send()?;
+
+        if r.status_code != 200 {
+            return Err(Error::BadReply {
+                code: r.status_code,
+                reason: r.as_str()?.to_owned(),
+            });
+        }
+        Ok(r.into_bytes())
+    }
+
+    // TODO: minreq needs a streaming API that doesn't only take buffers.
+    //       This should take a Read and it should write it.
+    pub fn put(&self, name: &str, contents: &[u8]) -> Result<()> {
+        use data_encoding::HEXLOWER;
+        use sha1::{Digest, Sha1};
+
+        let mut hasher = Sha1::new();
+        hasher.update(contents);
+        let sha = hasher.finalize();
+
+        let r = minreq::post(&self.upload_url)
+            .with_header("Authorization", &self.upload_token)
+            .with_header("Content-Length", contents.len().to_string())
+            .with_header("X-Bz-File-Name", name) // No need to URL-encode, our names are boring.
+            .with_header("Content-Type", "b2/x-auto") // Go ahead and guess
+            .with_header("X-Bz-Content-Sha1", HEXLOWER.encode(&sha).to_string())
+            .with_body(contents)
+            .send()?;
+
+        check_response(r)?;
+        Ok(())
+    }
+
+    pub fn delete(&self, name: &str) -> Result<()> {
+        todo!()
     }
 }
