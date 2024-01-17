@@ -1,4 +1,5 @@
 // Smoke test of gets and puts we need for B2 usage.
+use std::io::prelude::*;
 
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -21,6 +22,9 @@ struct Args {
 
     #[clap(short, long)]
     credentials: Utf8PathBuf,
+
+    #[clap(short, long)]
+    bucket: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,12 +41,9 @@ fn read_creds(p: &Utf8Path) -> Result<Credentials> {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    List {
-        #[clap(short, long)]
-        bucket: String,
-    },
-    Get,
-    Put,
+    List,
+    Get { name: String },
+    Put { name: String },
 }
 
 fn main() {
@@ -58,17 +59,28 @@ fn run() -> Result<()> {
     let creds = read_creds(&args.credentials)?;
 
     match args.subcommand {
-        Command::List { bucket } => {
-            let s = b2::Session::new(&creds.key_id, &creds.application_key, bucket)?;
+        Command::List => {
+            let s = b2::Session::new(&creds.key_id, &creds.application_key, &args.bucket)?;
             let files = s.list()?;
             for f in files {
                 println!("{f}");
             }
+            Ok(())
         }
-        Command::Get => todo!(),
-        Command::Put => todo!(),
-    };
-    Ok(())
+        Command::Get { name } => {
+            let s = b2::Session::new(&creds.key_id, &creds.application_key, &args.bucket)?;
+            let bytes = s.get(&name)?;
+            std::io::stdout().lock().write_all(&bytes)?;
+            Ok(())
+        }
+        Command::Put { name } => {
+            let s = b2::Session::new(&creds.key_id, &creds.application_key, &args.bucket)?;
+            let mut to_put = vec![];
+            std::io::stdin().lock().read_to_end(&mut to_put)?;
+            s.put(&name, &to_put)?;
+            Ok(())
+        }
+    }
 }
 
 // Copied from the backpak main:
