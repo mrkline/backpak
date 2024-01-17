@@ -29,7 +29,7 @@ fn backup_src() -> Result<()> {
 
     // Dump a directory (works like a non-recursive ls)
     let dump_src = cli_run(working_path, backup_path)?
-        .args(&["dump", "last", "src"])
+        .args(&["dump", "LAST", "src"])
         .assert()
         .success();
     let dump_src_output = stdout(&dump_src);
@@ -52,7 +52,7 @@ fn backup_src() -> Result<()> {
 
     // Dump main.rs and compare it to the real deal
     let dump_main = cli_run(working_path, backup_path)?
-        .args(&["dump", "last", "src/main.rs"])
+        .args(&["dump", "LAST", "src/main.rs"])
         .assert()
         .success();
     let main_output = stdout(&dump_main);
@@ -61,21 +61,21 @@ fn backup_src() -> Result<()> {
 
     // Cool, we dumped a directory and a file. Let's try some errors
     let mut fail = cli_run(working_path, backup_path)?
-        .args(&["dump", "last", "src/nope.rs"])
+        .args(&["dump", "LAST", "src/nope.rs"])
         .assert()
         .failure();
     let mut fail_output = stderr(&fail);
     assert!(fail_output.contains("Couldn't find src/nope.rs in the given snapshot"));
 
     fail = cli_run(working_path, backup_path)?
-        .args(&["dump", "last", "src/main.rs/nope"])
+        .args(&["dump", "LAST", "src/main.rs/nope"])
         .assert()
         .failure();
     fail_output = stderr(&fail);
     assert!(fail_output.contains("src/main.rs is a file, not a directory"));
 
     fail = cli_run(working_path, backup_path)?
-        .args(&["dump", "last", "src/../src/main.rs"])
+        .args(&["dump", "LAST", "src/../src/main.rs"])
         .assert()
         .failure();
     fail_output = stderr(&fail);
