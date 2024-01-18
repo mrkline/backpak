@@ -60,7 +60,7 @@ impl FilesystemBackend {
     }
 
     pub fn path_of(&self, p: &str) -> Utf8PathBuf {
-        self.base_directory.join(super::destination(p))
+        self.base_directory.join(p)
     }
 }
 
