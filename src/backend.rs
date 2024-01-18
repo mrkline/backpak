@@ -35,9 +35,8 @@ pub enum Kind {
     Backblaze {
         key_id: String,
         application_key: String,
-        bucket: String
-    }
-    // ...?
+        bucket: String,
+    }, // ...?
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -104,12 +103,15 @@ pub enum CachedBackend {
 pub trait SeekableRead: Read + Seek + Send + 'static {}
 impl<T> SeekableRead for T where T: Read + Seek + Send + 'static {}
 
+// NB: We use a flat cache structure (where every file is just <hash>.pack/index/etc)
+// but prepend prefixes with `destination()` prior to giving the path to the backend.
+// (This allows prefix-based listing, which can save us a bunch on a big cloud store.)
 impl CachedBackend {
     /// Read the object at the given key and return its file.
     fn read(&self, name: &str) -> Result<Box<dyn SeekableRead>> {
         match &self {
             CachedBackend::File { backend } => {
-                let from = backend.path_of(name);
+                let from = backend.path_of(&destination(name));
                 let fd = File::open(&from).with_context(|| format!("Couldn't open {from}"))?;
                 Ok(Box::new(fd))
             }
@@ -120,13 +122,16 @@ impl CachedBackend {
                     Ok(Box::new(hit))
                 } else {
                     bump(Op::BackendCacheMiss);
-                    let mut inserted = cache.insert(name, &mut *backend.read(name)?)?;
+                    let mut inserted =
+                        cache.insert(name, &mut *backend.read(&destination(name))?)?;
                     cache.prune()?;
                     inserted.seek(io::SeekFrom::Start(0))?;
                     Ok(Box::new(inserted))
                 }
             }
-            CachedBackend::Memory { backend } => Ok(Box::new(backend.read_cursor(name)?)),
+            CachedBackend::Memory { backend } => {
+                Ok(Box::new(backend.read_cursor(&destination(name))?))
+            }
         }
     }
 
@@ -136,7 +141,7 @@ impl CachedBackend {
     pub fn write(&self, name: &str, mut fh: File) -> Result<()> {
         match &self {
             CachedBackend::File { backend } => {
-                let to = backend.path_of(name);
+                let to = backend.path_of(&destination(name));
                 file_util::move_opened(name, fh, to)?;
             }
             CachedBackend::Cached { cache, backend } => {
@@ -144,7 +149,7 @@ impl CachedBackend {
                 bump(Op::BackendCacheWrite);
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
-                backend.write(&mut fh, name)?;
+                backend.write(&mut fh, &destination(name))?;
                 // Insert it into the cache.
                 cache.insert_file(name, fh)?;
                 // Prune the cache.
@@ -152,7 +157,7 @@ impl CachedBackend {
             }
             CachedBackend::Memory { backend } => {
                 fh.seek(std::io::SeekFrom::Start(0))?;
-                backend.write(&mut fh, name)?;
+                backend.write(&mut fh, &destination(name))?;
                 std::fs::remove_file(name)?;
             }
         }
@@ -161,16 +166,16 @@ impl CachedBackend {
 
     fn remove(&self, name: &str) -> Result<()> {
         match &self {
-            CachedBackend::File { backend } => backend.remove(name),
+            CachedBackend::File { backend } => backend.remove(&destination(name)),
             CachedBackend::Cached { cache, backend } => {
                 // Remove it from the cache too.
                 // No worries if it isn't there, no need to prune.
                 bump(Op::BackendCacheEviction);
                 cache.evict(name)?;
-                backend.remove(name)?;
+                backend.remove(&destination(name))?;
                 Ok(())
             }
-            CachedBackend::Memory { backend } => backend.remove(name),
+            CachedBackend::Memory { backend } => backend.remove(&destination(name)),
         }
     }
 
@@ -287,9 +292,16 @@ pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
     } else {
         // It's not a filesystem backend, what is it?
         let mut backend: Box<dyn Backend + Send + Sync> = match &c.kind {
-            Kind::Backblaze { key_id, application_key, bucket } =>
-                Box::new(backblaze::BackblazeBackend::open(key_id, application_key, bucket)?),
-            _ => unreachable!()
+            Kind::Backblaze {
+                key_id,
+                application_key,
+                bucket,
+            } => Box::new(backblaze::BackblazeBackend::open(
+                key_id,
+                application_key,
+                bucket,
+            )?),
+            _ => unreachable!(),
         };
         // TODO: load global cache
         let cache = cache::Cache::new(Utf8Path::new("cache"))?;
@@ -303,10 +315,7 @@ pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
             });
         }
 
-        CachedBackend::Cached {
-            backend,
-            cache
-        }
+        CachedBackend::Cached { backend, cache }
     };
     Ok((c, cached_backend))
 }
