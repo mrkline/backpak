@@ -44,6 +44,7 @@ enum Command {
     List,
     Get { name: String },
     Put { name: String },
+    Delete { name: String },
 }
 
 fn main() {
@@ -58,9 +59,10 @@ fn run() -> Result<()> {
     init_logger(&args);
     let creds = read_creds(&args.credentials)?;
 
+    let s = b2::Session::new(&creds.key_id, &creds.application_key, &args.bucket)?;
+
     match args.subcommand {
         Command::List => {
-            let s = b2::Session::new(&creds.key_id, &creds.application_key, &args.bucket)?;
             let files = s.list()?;
             for f in files {
                 println!("{f}");
@@ -68,16 +70,18 @@ fn run() -> Result<()> {
             Ok(())
         }
         Command::Get { name } => {
-            let s = b2::Session::new(&creds.key_id, &creds.application_key, &args.bucket)?;
             let bytes = s.get(&name)?;
             std::io::stdout().lock().write_all(&bytes)?;
             Ok(())
         }
         Command::Put { name } => {
-            let s = b2::Session::new(&creds.key_id, &creds.application_key, &args.bucket)?;
             let mut to_put = vec![];
             std::io::stdin().lock().read_to_end(&mut to_put)?;
             s.put(&name, &to_put)?;
+            Ok(())
+        }
+        Command::Delete { name } => {
+            s.delete(&name)?;
             Ok(())
         }
     }

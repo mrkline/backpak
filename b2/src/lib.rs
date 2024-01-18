@@ -222,6 +222,38 @@ impl Session {
     }
 
     pub fn delete(&self, name: &str) -> Result<()> {
-        todo!()
+        let req = minreq::get(self.url.clone() + "/b2api/v2/b2_list_file_versions")
+            .with_header("Authorization", &self.token)
+            .with_param("bucketId", &self.bucket_id)
+            .with_param("prefix", name);
+
+        let lfv = check_response(req.send()?)?;
+        let where_name = || unexpected(&format!("couldn't find {name}"), &lfv);
+
+        let versions = lfv["files"].as_array().ok_or_else(where_name)?;
+
+        if versions.is_empty() {
+            return Err(where_name());
+        }
+        if versions.len() != 1 {
+            return Err(unexpected(
+                &format!("found multiple versions of {name}"),
+                &lfv,
+            ));
+        }
+        let id = versions[0]["fileId"]
+            .as_str()
+            .ok_or_else(|| unexpected(&format!("couldn't find ID for {name}"), &lfv))?;
+
+        let del = minreq::post(self.url.clone() + "/b2api/v2/b2_delete_file_version")
+            .with_header("Authorization", &self.token)
+            .with_json(&json::json!({
+                "fileName": name,
+                "fileId": id
+            }))?
+            .send()?;
+
+        check_response(del)?;
+        Ok(())
     }
 }
