@@ -41,7 +41,7 @@ fn read_creds(p: &Utf8Path) -> Result<Credentials> {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    List,
+    List { prefix: Option<String> },
     Get { name: String },
     Put { name: String },
     Delete { name: String },
@@ -62,8 +62,8 @@ fn run() -> Result<()> {
     let s = b2::Session::new(&creds.key_id, &creds.application_key, &args.bucket)?;
 
     match args.subcommand {
-        Command::List => {
-            let files = s.list()?;
+        Command::List { prefix } => {
+            let files = s.list(prefix.as_deref())?;
             for f in files {
                 println!("{f}");
             }
