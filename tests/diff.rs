@@ -70,6 +70,7 @@ fn backup_src() -> Result<()> {
     compare(&[
         "+ src/aNewFile",
         "- src/backend/",
+        "- src/backend/backblaze.rs",
         "- src/backend/cache.rs",
         "- src/backend/filter.rs",
         "- src/backend/fs.rs",
@@ -78,6 +79,7 @@ fn backup_src() -> Result<()> {
         "M src/lib.rs",
         "U src/main.rs",
         "+ src/wackend/",
+        "+ src/wackend/backblaze.rs",
         "+ src/wackend/cache.rs",
         "+ src/wackend/filter.rs",
         "+ src/wackend/fs.rs",

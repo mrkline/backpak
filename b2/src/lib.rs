@@ -147,7 +147,7 @@ impl Session {
         })
     }
 
-    pub fn list(&self) -> Result<Vec<String>> {
+    pub fn list(&self, prefix: Option<&str>) -> Result<Vec<String>> {
         let mut fs = vec![];
         let mut start_name = None;
         loop {
@@ -155,6 +155,9 @@ impl Session {
                 .with_header("Authorization", &self.token)
                 .with_param("bucketId", &self.bucket_id)
                 .with_param("maxFileCount", "10000");
+            if let Some(p) = prefix {
+                req = req.with_param("prefix", p);
+            }
             if let Some(sn) = start_name {
                 req = req.with_param("startFileName", sn);
             }
