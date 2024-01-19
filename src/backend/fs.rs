@@ -20,35 +20,35 @@ fn ensure_exists(e: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-impl FilesystemBackend {
-    pub fn initialize(repository: &Utf8Path) -> Result<()> {
-        if repository.exists() {
-            ensure!(
-                fs::read_dir(repository)
-                    .with_context(|| format!("Couldn't read {repository}"))?
-                    .count()
-                    == 0,
-                "The directory {repository} already exists and isn't empty"
-            );
-        } else {
-            create_dir(repository)?;
-        }
-
-        create_dir(&repository.join("packs"))?;
-        create_dir(&repository.join("indexes"))?;
-        create_dir(&repository.join("snapshots"))?;
-
-        let c = super::Config {
-            pack_size: crate::pack::DEFAULT_PACK_SIZE,
-            kind: super::Kind::Filesystem,
-            filter: None,
-            unfilter: None,
-        };
-        fs::write(repository.join("config.toml"), toml::to_string(&c)?)?;
-
-        Ok(())
+pub fn initialize(repository: &Utf8Path, pack_size: u64) -> Result<()> {
+    if repository.exists() {
+        ensure!(
+            fs::read_dir(repository)
+                .with_context(|| format!("Couldn't read {repository}"))?
+                .count()
+                == 0,
+            "The directory {repository} already exists and isn't empty"
+        );
+    } else {
+        create_dir(repository)?;
     }
 
+    create_dir(&repository.join("packs"))?;
+    create_dir(&repository.join("indexes"))?;
+    create_dir(&repository.join("snapshots"))?;
+
+    let c = super::Config {
+        pack_size,
+        kind: super::Kind::Filesystem,
+        filter: None,
+        unfilter: None,
+    };
+    fs::write(repository.join("config.toml"), toml::to_string(&c)?)?;
+
+    Ok(())
+}
+
+impl FilesystemBackend {
     pub fn open(repository: &Utf8Path) -> Result<Self> {
         let base_directory = Utf8PathBuf::from(repository);
         ensure_exists(&base_directory)?;

@@ -41,7 +41,7 @@ enum Color {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Initialize a backup repository
-    Init,
+    Init(init::Args),
     Backup(backup::Args),
     Cat(cat::Args),
     Check(check::Args),
@@ -72,7 +72,7 @@ fn run() -> Result<()> {
     }
 
     match args.subcommand {
-        Command::Init => init::run(&args.repository),
+        Command::Init(i) => init::run(&args.repository, i),
         Command::Backup(b) => backup::run(&args.repository, b),
         Command::Cat(c) => cat::run(&args.repository, c),
         Command::Check(c) => check::run(&args.repository, c),
