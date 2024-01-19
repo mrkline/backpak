@@ -16,10 +16,10 @@ use crate::{
     pack,
 };
 
-mod backblaze;
+pub mod backblaze;
 mod cache;
 mod filter;
-mod fs;
+pub mod fs;
 mod memory;
 
 use cache::Cache;
@@ -254,11 +254,6 @@ impl CachedBackend {
     }
 }
 
-/// Initializes the appropriate type of backend from the repository path
-pub fn initialize(repository: &Utf8Path) -> Result<()> {
-    fs::FilesystemBackend::initialize(repository)
-}
-
 /// Initializes an in-memory cache for testing purposes.
 pub fn in_memory() -> CachedBackend {
     CachedBackend::Memory {
@@ -284,14 +279,17 @@ pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
         c.filter.is_some() == c.unfilter.is_some(),
         "{repository} config should set `filter` and `unfilter` or neither."
     );
-    let cached_backend = if c.kind == Kind::Filesystem {
-        // Filesystem backends are a special case
-        // (they let us directly manipulate files and skip a cache.)
-        let backend = fs::FilesystemBackend::open(repository)?;
-        CachedBackend::File { backend }
+    // Don't bother checking unfilter; we ensure both are set if one is above.
+    let cached_backend = if c.kind == Kind::Filesystem && c.filter.is_none() {
+        // Uncached filesystem backends are a special case
+        // (they let us directly manipulate files.)
+        CachedBackend::File {
+            backend: fs::FilesystemBackend::open(repository)?,
+        }
     } else {
         // It's not a filesystem backend, what is it?
         let mut backend: Box<dyn Backend + Send + Sync> = match &c.kind {
+            Kind::Filesystem => Box::new(fs::FilesystemBackend::open(repository)?),
             Kind::Backblaze {
                 key_id,
                 application_key,
@@ -301,12 +299,10 @@ pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
                 application_key,
                 bucket,
             )?),
-            _ => unreachable!(),
         };
         // TODO: load global cache
         let cache = cache::Cache::new(Utf8Path::new("cache"))?;
 
-        // Don't bother checking unfilter; we ensure both are set if one is above.
         if c.filter.is_some() {
             backend = Box::new(filter::BackendFilter {
                 filter: c.filter.clone().unwrap(),

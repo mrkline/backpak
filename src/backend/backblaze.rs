@@ -1,11 +1,45 @@
 use super::*;
 
-use std::io::Cursor;
+use std::{fs, io::Cursor};
 
+use anyhow::{ensure, Result};
 use b2::Session;
 
 pub struct BackblazeBackend {
     pub session: Session,
+}
+
+pub fn initialize(
+    repository: &camino::Utf8Path,
+    pack_size: u64,
+    key_id: String,
+    application_key: String,
+    bucket: String,
+    filter: Option<String>,
+    unfilter: Option<String>,
+) -> Result<()> {
+    ensure!(
+        filter.is_some() == unfilter.is_some(),
+        "{repository} config should set `filter` and `unfilter` or neither."
+    );
+    let c = super::Config {
+        pack_size,
+        kind: super::Kind::Backblaze {
+            key_id,
+            application_key,
+            bucket,
+        },
+        filter,
+        unfilter,
+    };
+    let mut fh = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(repository)
+        .with_context(|| format!("Couldn't open {repository}"))?;
+
+    fh.write_all(toml::to_string(&c).unwrap().as_bytes())?;
+    Ok(())
 }
 
 impl BackblazeBackend {
