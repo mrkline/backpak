@@ -74,6 +74,17 @@ pub trait Backend {
     fn list(&self, prefix: &str) -> Result<Vec<String>>;
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum CacheBehavior {
+    /// Always write through to the backend,
+    /// but backend reads are skipped if the entry is in-cache.
+    Normal,
+    /// Always write through to the backend **and**
+    /// always read from the backend (and insert in the cache).
+    /// Useful for commands like `check` where we want to ensure what's actually there.
+    AlwaysRead,
+}
+
 /// Cached backends do what they say on the tin,
 /// _or_ for the narrow case when we're writing unfiltered content to the filesystem,
 /// a direct passthrough for that.
@@ -89,10 +100,11 @@ pub enum CachedBackend {
         backend: fs::FilesystemBackend,
     },
     // The usual case: the backend is some remotely-hosted storage,
-    // or local, but the files are filtered first.
+    // or local but the files are filtered first.
     // Here we can benefit from a write-through cache.
     Cached {
         cache: Cache,
+        behavior: CacheBehavior,
         backend: Box<dyn Backend + Send + Sync>,
     },
     // Test backend please ignore
@@ -112,17 +124,26 @@ impl CachedBackend {
     fn read(&self, name: &str) -> Result<Box<dyn SeekableRead>> {
         match &self {
             CachedBackend::File { backend } => {
+                bump(Op::BackendRead);
                 let from = backend.path_of(&destination(name));
                 let fd = File::open(&from).with_context(|| format!("Couldn't open {from}"))?;
                 Ok(Box::new(fd))
             }
-            CachedBackend::Cached { cache, backend } => {
-                let tr = cache.try_read(name)?;
+            CachedBackend::Cached {
+                cache,
+                behavior,
+                backend,
+            } => {
+                let tr = if *behavior == CacheBehavior::AlwaysRead {
+                    None
+                } else {
+                    cache.try_read(name)?
+                };
                 if let Some(hit) = tr {
                     bump(Op::BackendCacheHit);
                     Ok(Box::new(hit))
                 } else {
-                    bump(Op::BackendCacheMiss);
+                    bump(Op::BackendRead);
                     let mut inserted =
                         cache.insert(name, &mut *backend.read(&destination(name))?)?;
                     cache.prune()?;
@@ -131,6 +152,7 @@ impl CachedBackend {
                 }
             }
             CachedBackend::Memory { backend } => {
+                bump(Op::BackendRead);
                 Ok(Box::new(backend.read_cursor(&destination(name))?))
             }
         }
@@ -140,14 +162,14 @@ impl CachedBackend {
     /// store it to an object with the appropriate key per
     /// `destination()`
     pub fn write(&self, name: &str, mut fh: File) -> Result<()> {
+        bump(Op::BackendWrite);
         match &self {
             CachedBackend::File { backend } => {
                 let to = backend.path_of(&destination(name));
                 file_util::move_opened(name, fh, to)?;
             }
-            CachedBackend::Cached { cache, backend } => {
+            CachedBackend::Cached { cache, backend, .. } => {
                 // Write through!
-                bump(Op::BackendCacheWrite);
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
                 backend.write(&mut fh, &destination(name))?;
@@ -166,12 +188,12 @@ impl CachedBackend {
     }
 
     fn remove(&self, name: &str) -> Result<()> {
+        bump(Op::BackendDelete);
         match &self {
             CachedBackend::File { backend } => backend.remove(&destination(name)),
-            CachedBackend::Cached { cache, backend } => {
+            CachedBackend::Cached { cache, backend, .. } => {
                 // Remove it from the cache too.
                 // No worries if it isn't there, no need to prune.
-                bump(Op::BackendCacheEviction);
                 cache.evict(name)?;
                 backend.remove(&destination(name))?;
                 Ok(())
@@ -263,7 +285,7 @@ pub fn in_memory() -> CachedBackend {
 }
 
 /// Factory function to open the appropriate type of backend from the repository path
-pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
+pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, CachedBackend)> {
     info!("Opening repository {repository}");
     let stat =
         std::fs::metadata(repository).with_context(|| format!("Couldn't stat {repository}"))?;
@@ -312,7 +334,11 @@ pub fn open(repository: &Utf8Path) -> Result<(Config, CachedBackend)> {
             });
         }
 
-        CachedBackend::Cached { backend, cache }
+        CachedBackend::Cached {
+            backend,
+            behavior,
+            cache,
+        }
     };
     Ok((c, cached_backend))
 }

@@ -29,7 +29,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
 
     assert!(!args.to_forget.is_empty());
 
-    let (_cfg, cached_backend) = backend::open(repository)?;
+    let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
 
     let success = if args.to_forget == ["duplicates"] {
         forget_duplicate_snapshots(&cached_backend, args.dry_run)?

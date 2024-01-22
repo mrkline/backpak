@@ -16,7 +16,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         crate::prettify::prettify_serialize();
     }
 
-    let (_cfg, cached_backend) = backend::open(repository)?;
+    let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
 
     let it: Box<dyn Iterator<Item = (snapshot::Snapshot, hashing::ObjectId)>> = if !args.reverse {
