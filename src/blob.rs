@@ -31,6 +31,17 @@ pub enum Type {
 ///
 /// Formerly this was some `Box<AsRef<u8> + Send + Sync>`,
 /// but let's cut down on the indirection where there's only a few choices.
+///
+/// We could _almost_ elminate [`Blob::kind`] and make this
+///
+///     pub enum Contents {
+///         Tree(Vec<u8>),
+///         Chunk(FileSpan),
+///     }
+///
+/// since chunks are almost always / `FileSpan`s and trees are almost always `Buffer`s. Almost...
+/// Except for the fact that chunks read from an existing pack file (e.g., when repacking)
+/// are also `Buffer`s.
 #[derive(Debug, Clone)]
 pub enum Contents {
     Buffer(Vec<u8>),
