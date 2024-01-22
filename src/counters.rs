@@ -8,6 +8,7 @@ use log::*;
 
 #[derive(Debug, Copy, Clone, Enum)]
 pub enum Op {
+    SnapshotLoad,
     IndexLoad,
     BackendRead,
     BackendWrite,
@@ -50,6 +51,7 @@ pub fn log_counts() {
     }
 
     let opname = |op| match op {
+        Op::SnapshotLoad => "snapshots loaded",
         Op::IndexLoad => "indexes loaded",
         Op::BackendRead => "backend reads",
         Op::BackendWrite => "backend writes",
