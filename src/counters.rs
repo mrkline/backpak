@@ -9,10 +9,10 @@ use log::*;
 #[derive(Debug, Copy, Clone, Enum)]
 pub enum Op {
     IndexLoad,
-    BackendCacheWrite,
+    BackendRead,
+    BackendWrite,
+    BackendDelete,
     BackendCacheHit,
-    BackendCacheMiss,
-    BackendCacheEviction,
     BackendCacheSpill,
     FileToBuffer,
     FileToMmap,
@@ -51,10 +51,10 @@ pub fn log_counts() {
 
     let opname = |op| match op {
         Op::IndexLoad => "indexes loaded",
-        Op::BackendCacheWrite => "backend cache writes",
+        Op::BackendRead => "backend reads",
+        Op::BackendWrite => "backend writes",
+        Op::BackendDelete => "backend delete (and cache evictions)",
         Op::BackendCacheHit => "backend cache hits",
-        Op::BackendCacheMiss => "backend cache misses",
-        Op::BackendCacheEviction => "backend cache evictions",
         Op::BackendCacheSpill => "backend cache spills",
         Op::FileToBuffer => "input files buffered",
         Op::FileToMmap => "input files memory mapped",

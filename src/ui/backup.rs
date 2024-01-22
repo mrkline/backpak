@@ -59,7 +59,8 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // and threads and all manner of craziness going.
     check_paths(&paths).context("Failed FS check prior to backup")?;
 
-    let (backend_config, cached_backend) = backend::open(repository)?;
+    let (backend_config, cached_backend) =
+        backend::open(repository, backend::CacheBehavior::Normal)?;
 
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;

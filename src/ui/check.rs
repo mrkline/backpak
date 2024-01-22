@@ -30,7 +30,9 @@ pub struct Args {
 pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let mut trouble = false;
 
-    let (_cfg, cached_backend) = backend::open(repository)?;
+    // NB: We always want to read when checking the backend!
+    // Just because it's in-cache doesn't mean it's backed up.
+    let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::AlwaysRead)?;
 
     let index = index::build_master_index(&cached_backend)?;
 
