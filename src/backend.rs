@@ -30,6 +30,7 @@ fn defsize() -> u64 {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum Kind {
     Filesystem,
     Backblaze {
@@ -43,7 +44,7 @@ pub enum Kind {
 pub struct Config {
     #[serde(default = "defsize")]
     pub pack_size: u64,
-    #[serde(rename = "type")]
+    #[serde(rename = "backend")]
     pub kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
