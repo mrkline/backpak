@@ -36,7 +36,7 @@ pub fn initialize(
         .write(true)
         .create_new(true)
         .open(repository)
-        .with_context(|| format!("Couldn't open {repository}"))?;
+        .with_context(|| format!("Couldn't create {repository}"))?;
 
     fh.write_all(toml::to_string(&c).unwrap().as_bytes())?;
     Ok(())
