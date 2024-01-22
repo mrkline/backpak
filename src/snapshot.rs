@@ -14,6 +14,7 @@ use serde_derive::{Deserialize, Serialize};
 
 use crate::{
     backend,
+    counters,
     file_util::check_magic,
     hashing::{HashingReader, HashingWriter, ObjectId},
 };
@@ -98,6 +99,7 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Sn
         id,
         calculated_id
     );
+    counters::bump(counters::Op::SnapshotLoad);
     Ok(snapshot)
 }
 
