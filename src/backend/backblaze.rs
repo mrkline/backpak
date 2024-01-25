@@ -1,6 +1,6 @@
 use super::*;
 
-use std::{fs, io::Cursor};
+use std::fs;
 
 use anyhow::{ensure, Result};
 use b2::Session;
@@ -54,14 +54,12 @@ impl BackblazeBackend {
 
 impl Backend for BackblazeBackend {
     fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
-        let buf = self.session.get(from)?;
-        Ok(Box::new(Cursor::new(buf)))
+        let r = self.session.get(from)?;
+        Ok(Box::new(r))
     }
 
-    fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
-        let mut buf = vec![];
-        from.read_to_end(&mut buf)?;
-        self.session.put(to, &buf)?;
+    fn write(&self, len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+        self.session.put(to, len, from)?;
         Ok(())
     }
 

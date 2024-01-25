@@ -38,7 +38,7 @@ impl Backend for MemoryBackend {
         Ok(Box::new(self.read_cursor(from)?))
     }
 
-    fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+    fn write(&self, _len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
         let mut vec = Vec::new();
         io::copy(from, &mut vec)?;
         self.files.lock().unwrap().insert(to.to_owned(), vec);

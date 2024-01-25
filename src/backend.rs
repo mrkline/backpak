@@ -66,7 +66,7 @@ pub trait Backend {
     fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>>;
 
     /// Write the given read stream to the given key
-    fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()>;
+    fn write(&self, len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()>;
 
     fn remove(&self, which: &str) -> Result<()>;
 
@@ -170,17 +170,19 @@ impl CachedBackend {
             }
             CachedBackend::Cached { cache, backend, .. } => {
                 // Write through!
+                let len = fh.metadata()?.len();
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
-                backend.write(&mut fh, &destination(name))?;
+                backend.write(len, &mut fh, &destination(name))?;
                 // Insert it into the cache.
                 cache.insert_file(name, fh)?;
                 // Prune the cache.
                 cache.prune()?;
             }
             CachedBackend::Memory { backend } => {
+                let len = fh.metadata()?.len();
                 fh.seek(std::io::SeekFrom::Start(0))?;
-                backend.write(&mut fh, &destination(name))?;
+                backend.write(len, &mut fh, &destination(name))?;
                 std::fs::remove_file(name)?;
             }
         }
