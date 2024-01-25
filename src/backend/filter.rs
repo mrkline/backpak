@@ -156,10 +156,8 @@ mod test {
             raw: Box::new(crate::backend::memory::MemoryBackend::new()),
         };
 
-        f.write(
-            &mut Cursor::new("Everything was beautiful and nothing hurt"),
-            "epitaph",
-        )?;
+        let epitaph = "Everything was beautiful and nothing hurt";
+        f.write(epitaph.len() as u64, &mut Cursor::new(epitaph), "epitaph")?;
 
         let mut so_it_goes = String::new();
         f.read("epitaph")?.read_to_string(&mut so_it_goes)?;

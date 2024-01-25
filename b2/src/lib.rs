@@ -55,7 +55,6 @@ fn noredir() -> ureq::Agent {
     ureq::builder().redirects(0).build()
 }
 
-
 impl Session {
     pub fn new<S: Into<String>>(key_id: &str, application_key: &str, bucket: S) -> Result<Self> {
         let bucket = bucket.into();

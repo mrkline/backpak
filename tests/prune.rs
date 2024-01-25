@@ -18,7 +18,7 @@ fn backup_src() -> Result<()> {
     let working_path = working_dir.path();
 
     cli_run(working_path, backup_path)?
-        .arg("init")
+        .args(["init", "filesystem"])
         .assert()
         .success();
 
@@ -126,7 +126,7 @@ fn no_repacks_needed() -> Result<()> {
     let working_path = working_dir.path();
 
     cli_run(working_path, backup_path)?
-        .arg("init")
+        .args(["init", "filesystem"])
         .assert()
         .success();
 

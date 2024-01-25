@@ -16,7 +16,7 @@ fn bad_filename() -> Result<()> {
     let working_path = working_dir.path();
 
     cli_run(working_path, backup_path)?
-        .arg("init")
+        .args(["init", "filesystem"])
         .assert()
         .success();
 
