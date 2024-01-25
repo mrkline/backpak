@@ -1,5 +1,5 @@
 // Smoke test of gets and puts we need for B2 usage.
-use std::io::prelude::*;
+use std::io::{copy, prelude::*, Cursor};
 
 use anyhow::{Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -70,14 +70,14 @@ fn run() -> Result<()> {
             Ok(())
         }
         Command::Get { name } => {
-            let bytes = s.get(&name)?;
-            std::io::stdout().lock().write_all(&bytes)?;
+            let mut bytes = s.get(&name)?;
+            copy(&mut bytes, &mut std::io::stdout().lock())?;
             Ok(())
         }
         Command::Put { name } => {
             let mut to_put = vec![];
             std::io::stdin().lock().read_to_end(&mut to_put)?;
-            s.put(&name, &to_put)?;
+            s.put(&name, to_put.len() as u64, &mut Cursor::new(to_put))?;
             Ok(())
         }
         Command::Delete { name } => {

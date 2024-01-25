@@ -87,7 +87,7 @@ impl Backend for BackendFilter {
         }))
     }
 
-    fn write(&self, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+    fn write(&self, len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
         debug!("{} > {to}", self.filter);
 
         let mut f = Command::new("sh")
@@ -114,7 +114,7 @@ impl Backend for BackendFilter {
                 .unwrap(); // Panic if we can't spawn a thread.
 
             // Meanwhile, in this thread, copy to the underlying backend.
-            self.raw.write(&mut from_filter, to)?;
+            self.raw.write(len, &mut from_filter, to)?;
 
             // Unwrap the result of the join (i.e., that the child didn't panic)
             // and check that copying to the filter didn't fail.

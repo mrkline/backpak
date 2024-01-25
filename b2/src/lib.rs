@@ -2,16 +2,32 @@ use base64::prelude::*;
 use serde_json as json;
 use thiserror::Error;
 
+use std::io::{prelude::*, Cursor};
+
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("B2 HTTP error")]
-    Http(#[from] minreq::Error),
+    #[error("B2 I/O failure: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("B2 HTTP transport: {0}")]
+    Http(Box<ureq::Transport>),
     #[error("B2 HTTP {code}: {reason}")]
-    BadReply { code: i32, reason: String },
+    BadReply { code: u16, reason: String },
     #[error("B2 {why}: {response}")]
     UnexpectedResponse { why: String, response: String },
     #[error("B2: Couldn't find {what}")]
     NotFound { what: String },
+}
+
+impl From<ureq::Error> for Error {
+    fn from(e: ureq::Error) -> Self {
+        match e {
+            ureq::Error::Status(code, resp) => {
+                let reason = resp.into_string().unwrap_or_else(|e| e.to_string());
+                Self::BadReply { code, reason }
+            }
+            ureq::Error::Transport(t) => Self::Http(Box::new(t)),
+        }
+    }
 }
 
 fn unexpected(w: &str, r: &json::Value) -> Error {
@@ -33,15 +49,12 @@ pub struct Session {
     bucket_id: String,
 }
 
-fn check_response(r: minreq::Response) -> Result<json::Value> {
-    if r.status_code != 200 {
-        return Err(Error::BadReply {
-            code: r.status_code,
-            reason: r.as_str()?.to_owned(),
-        });
-    }
-    Ok(r.json()?)
+// Once we authenticate in Session::new,
+// we shouldn't have any redirects as the API gives us URLs to use.
+fn noredir() -> ureq::Agent {
+    ureq::builder().redirects(0).build()
 }
+
 
 impl Session {
     pub fn new<S: Into<String>>(key_id: &str, application_key: &str, bucket: S) -> Result<Self> {
@@ -49,11 +62,10 @@ impl Session {
 
         let creds = String::from(key_id) + ":" + application_key;
         let auth = String::from("Basic") + &BASE64_STANDARD.encode(creds);
-        let v: json::Value = check_response(
-            minreq::get("https://api.backblazeb2.com/b2api/v3/b2_authorize_account")
-                .with_header("Authorization", auth)
-                .send()?,
-        )?;
+        let v: json::Value = ureq::get("https://api.backblazeb2.com/b2api/v3/b2_authorize_account")
+            .set("Authorization", &auth)
+            .call()?
+            .into_json()?;
 
         let bad = |s| unexpected(s, &v);
 
@@ -96,13 +108,12 @@ impl Session {
             return Err(bad("credentials can not delete files"));
         }
 
-        let br: json::Value = check_response(
-            minreq::get(url.clone() + "/b2api/v2/b2_list_buckets")
-                .with_header("Authorization", &token)
-                .with_param("accountId", id)
-                .with_param("bucketName", &bucket)
-                .send()?,
-        )?;
+        let br: json::Value = ureq::get(&(url.clone() + "/b2api/v2/b2_list_buckets"))
+            .set("Authorization", &token)
+            .query("accountId", &id)
+            .query("bucketName", &bucket)
+            .call()?
+            .into_json()?;
 
         let bucket_id = match br["buckets"].as_array() {
             Some(bs) => {
@@ -120,12 +131,11 @@ impl Session {
             None => return Err(Error::NotFound { what: bucket }),
         };
 
-        let ur: json::Value = check_response(
-            minreq::get(url.clone() + "/b2api/v2/b2_get_upload_url")
-                .with_header("Authorization", &token)
-                .with_param("bucketId", &bucket_id)
-                .send()?,
-        )?;
+        let ur: json::Value = ureq::get(&(url.clone() + "/b2api/v2/b2_get_upload_url"))
+            .set("Authorization", &token)
+            .query("bucketId", &bucket_id)
+            .call()?
+            .into_json()?;
 
         let upload_url = ur["uploadUrl"]
             .as_str()
@@ -149,20 +159,21 @@ impl Session {
 
     pub fn list(&self, prefix: Option<&str>) -> Result<Vec<String>> {
         let mut fs = vec![];
-        let mut start_name = None;
+        let mut start_name: Option<String> = None;
         loop {
-            let mut req = minreq::get(self.url.clone() + "/b2api/v2/b2_list_file_names")
-                .with_header("Authorization", &self.token)
-                .with_param("bucketId", &self.bucket_id)
-                .with_param("maxFileCount", "10000");
+            let mut req = noredir()
+                .get(&(self.url.clone() + "/b2api/v2/b2_list_file_names"))
+                .set("Authorization", &self.token)
+                .query("bucketId", &self.bucket_id)
+                .query("maxFileCount", "10000");
             if let Some(p) = prefix {
-                req = req.with_param("prefix", p);
+                req = req.query("prefix", p);
             }
-            if let Some(sn) = start_name {
-                req = req.with_param("startFileName", sn);
+            if let Some(sn) = &start_name {
+                req = req.query("startFileName", sn);
             }
 
-            let lfn = check_response(req.send()?)?;
+            let lfn = req.call()?.into_json()?;
 
             let bad = |s| unexpected(s, &lfn);
 
@@ -182,55 +193,87 @@ impl Session {
                 break;
             }
         }
+        fs.shrink_to_fit(); // We won't be growing this any more.
         Ok(fs)
     }
 
-    // TODO: minreq needs a streming API that doesn't copy byte-by-byte,
-    //       and this needs to return a Read.
-    pub fn get(&self, name: &str) -> Result<Vec<u8>> {
-        let r = minreq::get(self.url.clone() + "/file/" + &self.bucket_name + "/" + name)
-            .with_header("Authorization", &self.token)
-            .send()?;
+    pub fn get(&self, name: &str) -> Result<impl Read> {
+        let r = noredir()
+            .get(&(self.url.clone() + "/file/" + &self.bucket_name + "/" + name))
+            .set("Authorization", &self.token)
+            .call()?;
 
-        if r.status_code != 200 {
-            return Err(Error::BadReply {
-                code: r.status_code,
-                reason: r.as_str()?.to_owned(),
-            });
-        }
-        Ok(r.into_bytes())
+        Ok(r.into_reader())
     }
 
-    // TODO: minreq needs a streaming API that doesn't only take buffers.
-    //       This should take a Read and it should write it.
-    pub fn put(&self, name: &str, contents: &[u8]) -> Result<()> {
+    pub fn put(&self, name: &str, len: u64, contents: &mut dyn Read) -> Result<()> {
         use data_encoding::HEXLOWER;
         use sha1::{Digest, Sha1};
 
-        let mut hasher = Sha1::new();
-        hasher.update(contents);
-        let sha = hasher.finalize();
+        // B2 wants the SHA1 hash (as hex), but we can provide it at the end.
+        // Very nice.
+        enum HashAppendingReader<R> {
+            Contents { inner: R, hasher: Option<Sha1> },
+            HashSuffix(Cursor<Vec<u8>>),
+        }
 
-        let r = minreq::post(&self.upload_url)
-            .with_header("Authorization", &self.upload_token)
-            .with_header("Content-Length", contents.len().to_string())
-            .with_header("X-Bz-File-Name", name) // No need to URL-encode, our names are boring.
-            .with_header("Content-Type", "b2/x-auto") // Go ahead and guess
-            .with_header("X-Bz-Content-Sha1", HEXLOWER.encode(&sha).to_string())
-            .with_body(contents)
-            .send()?;
+        impl<R> HashAppendingReader<R> {
+            fn new(inner: R) -> Self {
+                Self::Contents {
+                    inner,
+                    hasher: Some(Sha1::new()),
+                }
+            }
+        }
 
-        check_response(r)?;
+        impl<R: Read> Read for HashAppendingReader<R> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                match self {
+                    Self::Contents { inner, hasher } => {
+                        // Read some bytes from the inner Read trait object.
+                        let bytes_read = inner.read(buf)?;
+                        if bytes_read > 0 {
+                            // If we got some bytes, update the SHA1 hash with those and return.
+                            hasher.as_mut().unwrap().update(&buf[..bytes_read]);
+                            Ok(bytes_read)
+                        } else {
+                            // Otherwise we're done reading.
+                            // Consume the hasher, get the hash,
+                            // and start feeding that to whoever's reading.
+                            let sha = hasher.take().unwrap().finalize();
+                            let sha_hex = HEXLOWER.encode(&sha).to_string().into_bytes();
+                            *self = Self::HashSuffix(Cursor::new(sha_hex));
+                            // Recurse (to the HashSuffix match arm).
+                            self.read(buf)
+                        }
+                    }
+                    Self::HashSuffix(c) => c.read(buf),
+                }
+            }
+        }
+
+        let hr = HashAppendingReader::new(contents);
+
+        noredir()
+            .post(&self.upload_url)
+            .set("Authorization", &self.upload_token)
+            .set("Content-Length", &(len + 40).to_string()) // SHA1 is 40 hex digits long.
+            .set("X-Bz-File-Name", name) // No need to URL-encode, our names are boring
+            .set("Content-Type", "b2/x-auto") // Go ahead and guess
+            .set("X-Bz-Content-Sha1", "hex_digits_at_end")
+            .send(hr)?;
+
         Ok(())
     }
 
     pub fn delete(&self, name: &str) -> Result<()> {
-        let req = minreq::get(self.url.clone() + "/b2api/v2/b2_list_file_versions")
-            .with_header("Authorization", &self.token)
-            .with_param("bucketId", &self.bucket_id)
-            .with_param("prefix", name);
+        let req = noredir()
+            .get(&(self.url.clone() + "/b2api/v2/b2_list_file_versions"))
+            .set("Authorization", &self.token)
+            .query("bucketId", &self.bucket_id)
+            .query("prefix", name);
 
-        let lfv = check_response(req.send()?)?;
+        let lfv = req.call()?.into_json()?;
         let where_name = || unexpected(&format!("couldn't find {name}"), &lfv);
 
         let versions = lfv["files"].as_array().ok_or_else(where_name)?;
@@ -248,15 +291,13 @@ impl Session {
             .as_str()
             .ok_or_else(|| unexpected(&format!("couldn't find ID for {name}"), &lfv))?;
 
-        let del = minreq::post(self.url.clone() + "/b2api/v2/b2_delete_file_version")
-            .with_header("Authorization", &self.token)
-            .with_json(&json::json!({
+        ureq::post(&(self.url.clone() + "/b2api/v2/b2_delete_file_version"))
+            .set("Authorization", &self.token)
+            .send_json(json::json!({
                 "fileName": name,
                 "fileId": id
-            }))?
-            .send()?;
+            }))?;
 
-        check_response(del)?;
         Ok(())
     }
 }
