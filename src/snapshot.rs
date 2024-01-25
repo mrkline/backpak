@@ -13,8 +13,7 @@ use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::{
-    backend,
-    counters,
+    backend, counters,
     file_util::check_magic,
     hashing::{HashingReader, HashingWriter, ObjectId},
 };
