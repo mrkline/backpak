@@ -93,6 +93,8 @@ fn run() -> Result<()> {
 /// Set up simplelog to spit messages to stderr.
 fn init_logger(args: &Args) {
     let mut builder = ConfigBuilder::new();
+    builder.add_filter_allow_str("backpak");
+    // Comment out to look at crate::module locations for setting allow string above
     builder.set_target_level(LevelFilter::Off);
     builder.set_thread_level(LevelFilter::Off);
     if args.timestamps {
