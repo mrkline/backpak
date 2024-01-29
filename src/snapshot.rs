@@ -121,6 +121,13 @@ pub fn load_chronologically(
 }
 
 pub fn find(prefix: &str, cached_backend: &backend::CachedBackend) -> Result<ObjectId> {
+    use std::str::FromStr;
+
+    // See if we can skip all the below with an exact match.
+    if let Ok(id) = ObjectId::from_str(prefix) {
+        return Ok(id);
+    }
+
     lazy_static! {
         // Git-like syntax:
         // Match LAST (or HEAD; git habits die hard), and either a single tilde
