@@ -6,7 +6,9 @@ use std::io::{self, prelude::*};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::Utf8Path;
+use crossbeam::atomic::AtomicCell;
 use log::*;
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -72,6 +74,51 @@ pub trait Backend {
 
     /// Lists all keys with the given prefix
     fn list(&self, prefix: &str) -> Result<Vec<String>>;
+}
+
+// Ugh, once_cell::sync::Lazy doesn't have something like try_force
+struct LazyBackend<F> {
+    // We almost certainly don't need this to be atomic, since
+    // once_cell::sync::OnceCell guarantees that get_or_try_init will only call
+    // *one* of the provided functions *once*.
+    // But it makes the type Sync and we're doing it once, so, who cares?
+    init: AtomicCell<Option<F>>,
+    backend: OnceCell<Box<dyn Backend + Send + Sync>>,
+}
+
+impl<F: FnOnce() -> Result<Box<dyn Backend + Send + Sync>>> LazyBackend<F> {
+    fn new(f: F) -> Self {
+        Self {
+            init: AtomicCell::new(Some(f)),
+            backend: OnceCell::new(),
+        }
+    }
+
+    fn try_force(&self) -> Result<&Box<dyn Backend + Send + Sync>> {
+        self.backend.get_or_try_init(|| match self.init.take() {
+            Some(f) => f(),
+            None => panic!("Lazy backend init poisoned"),
+        })
+    }
+}
+
+impl<F: FnOnce() -> Result<Box<dyn Backend + Send + Sync>>> Backend for LazyBackend<F> {
+    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
+        self.try_force()?.read(from)
+    }
+
+    /// Write the given read stream to the given key
+    fn write(&self, len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+        self.try_force()?.write(len, from, to)
+    }
+
+    fn remove(&self, which: &str) -> Result<()> {
+        self.try_force()?.remove(which)
+    }
+
+    fn list(&self, prefix: &str) -> Result<Vec<String>> {
+        self.try_force()?.list(prefix)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -288,7 +335,6 @@ pub fn in_memory() -> CachedBackend {
 
 /// Factory function to open the appropriate type of backend from the repository path
 pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, CachedBackend)> {
-    info!("Opening repository {repository}");
     let stat =
         std::fs::metadata(repository).with_context(|| format!("Couldn't stat {repository}"))?;
     let c = if stat.is_dir() {
@@ -306,38 +352,48 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
     );
     // Don't bother checking unfilter; we ensure both are set if one is above.
     let cached_backend = if c.kind == Kind::Filesystem && c.filter.is_none() {
+        info!("Opening repository {repository}");
         // Uncached filesystem backends are a special case
         // (they let us directly manipulate files.)
         CachedBackend::File {
             backend: fs::FilesystemBackend::open(repository)?,
         }
     } else {
-        // It's not a filesystem backend, what is it?
-        let mut backend: Box<dyn Backend + Send + Sync> = match &c.kind {
-            Kind::Filesystem => Box::new(fs::FilesystemBackend::open(repository)?),
-            Kind::Backblaze {
-                key_id,
-                application_key,
-                bucket,
-            } => Box::new(backblaze::BackblazeBackend::open(
-                key_id,
-                application_key,
-                bucket,
-            )?),
+        let repo = repository.to_owned();
+        let kind = c.kind.clone();
+        let filt = c.filter.clone();
+        let unfilt = c.unfilter.clone();
+        let make_backend = move || {
+            info!("Opening repository {repo}");
+            // It's not a filesystem backend, what is it?
+            let mut backend: Box<dyn Backend + Send + Sync> = match &kind {
+                Kind::Filesystem => Box::new(fs::FilesystemBackend::open(&repo)?),
+                Kind::Backblaze {
+                    key_id,
+                    application_key,
+                    bucket,
+                } => Box::new(backblaze::BackblazeBackend::open(
+                    key_id,
+                    application_key,
+                    bucket,
+                )?),
+            };
+
+            if filt.is_some() {
+                backend = Box::new(filter::BackendFilter {
+                    filter: filt.unwrap(),
+                    unfilter: unfilt.unwrap(),
+                    raw: backend,
+                });
+            }
+            Ok(backend)
         };
+
         // TODO: load global cache
         let cache = cache::Cache::new(Utf8Path::new("cache"))?;
 
-        if c.filter.is_some() {
-            backend = Box::new(filter::BackendFilter {
-                filter: c.filter.clone().unwrap(),
-                unfilter: c.unfilter.clone().unwrap(),
-                raw: backend,
-            });
-        }
-
         CachedBackend::Cached {
-            backend,
+            backend: Box::new(LazyBackend::new(make_backend)),
             behavior,
             cache,
         }

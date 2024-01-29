@@ -24,6 +24,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 ciborium = "0.2.1"
 # Arg parsing
 clap = { version = "4.0", features = ["derive"] }
+# Lazy backend init (see also: once_cell)
+crossbeam = "0.8.4"
 # Base-32 encoding
 data-encoding = "2.3"
 # Stats map
@@ -40,6 +42,8 @@ log = "0.4"
 memmap2 = "0.9"
 # How many cores? Tell Zstd
 num_cpus = "1.0"
+# Lazy backend init
+once_cell = { version = "1.19", default_features = false, features = [ "alloc", "std" ] }
 # par_iter
 rayon = "1.4"
 # Snapshots LAST~N parsing
