@@ -136,7 +136,6 @@ impl<'a> BlobReader<'a> {
     // pack.rs, but is it worth breaking up?
 
     fn load_pack(&mut self, id: ObjectId) -> Result<()> {
-        debug!("Loading pack {}", id);
         let mut file = self.cached_backend.read_pack(&id)?;
         pack::check_magic(&mut file)?;
 

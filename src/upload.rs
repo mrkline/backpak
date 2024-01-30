@@ -4,8 +4,9 @@
 use std::fs::File;
 use std::sync::mpsc::Receiver;
 
-use crate::backend;
 use anyhow::Result;
+
+use crate::backend;
 
 pub fn upload(cached_backend: &backend::CachedBackend, rx: Receiver<(String, File)>) -> Result<()> {
     while let Ok((path, fh)) = rx.recv() {

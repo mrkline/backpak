@@ -7,7 +7,6 @@ use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
 use lazy_static::lazy_static;
-use log::*;
 use rayon::prelude::*;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
@@ -89,7 +88,6 @@ pub fn find_and_load(
 /// Loads the snapshot with the given ID from the backend,
 /// verifying its contents match its ID.
 pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Snapshot> {
-    debug!("Loading snapshot {}", id);
     let (snapshot, calculated_id) = from_reader(&mut cached_backend.read_snapshot(id)?)
         .with_context(|| format!("Couldn't load snapshot {}", id))?;
     ensure!(
@@ -106,7 +104,6 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Sn
 pub fn load_chronologically(
     cached_backend: &backend::CachedBackend,
 ) -> Result<Vec<(Snapshot, ObjectId)>> {
-    debug!("Reading snapshots");
     let mut snapshots = cached_backend
         .list_snapshots()?
         .par_iter()

@@ -218,7 +218,7 @@ impl Restorer<'_> {
                 NodeMetadata::Posix(p) => fs::Permissions::from_mode(p.mode),
                 NodeMetadata::Windows(_w) => todo!("Windows -> Posix perms mapping"),
             };
-            trace!("chown {:o} {node_path}", permissions.mode());
+            trace!("chmod {:o} {node_path}", permissions.mode());
             fs::set_permissions(node_path, permissions)
                 .with_context(|| format!("Couldn't chmod {node_path}"))?;
         }

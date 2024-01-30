@@ -341,7 +341,7 @@ impl<'a> Cache<'a> {
     /// fishing it out of its packfile if required.
     pub fn read(&mut self, id: &ObjectId) -> Result<Arc<Tree>> {
         if let Some(t) = self.tree_cache.get(id) {
-            trace!("Tree {} is in-cache", id);
+            debug!("Found tree {id} in-cache");
             counters::bump(counters::Op::TreeCacheHit);
             return Ok(t.clone());
         } else {
@@ -353,7 +353,7 @@ impl<'a> Cache<'a> {
             .get(id)
             .ok_or_else(|| anyhow!("No pack contains tree {}", id))?;
 
-        trace!("Reading pack {} to get tree {}", pack_id, id);
+        debug!("Reading pack {pack_id} to get tree {id}");
         let mut pack_containing_tree = self.pack_cache.read_pack(pack_id)?;
         let manifest = self
             .index
