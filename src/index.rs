@@ -304,7 +304,6 @@ pub fn read_wip() -> Result<Option<Index>> {
 /// Load the index with the given ID from the backend,
 /// verifying its contents match its ID.
 pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Index> {
-    debug!("Loading index {}", id);
     let (index, calculated_id) = from_reader(&mut cached_backend.read_index(id)?)
         .with_context(|| format!("Couldn't load index {}", id))?;
     ensure!(

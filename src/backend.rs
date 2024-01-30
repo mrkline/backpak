@@ -124,6 +124,7 @@ impl CachedBackend {
     fn read(&self, name: &str) -> Result<Box<dyn SeekableRead>> {
         match &self {
             CachedBackend::File { backend } => {
+                info!("Loading {name}");
                 bump(Op::BackendRead);
                 let from = backend.path_of(&destination(name));
                 let fd = File::open(&from).with_context(|| format!("Couldn't open {from}"))?;
@@ -140,9 +141,11 @@ impl CachedBackend {
                     cache.try_read(name)?
                 };
                 if let Some(hit) = tr {
+                    debug!("Found {name} in the backend cache");
                     bump(Op::BackendCacheHit);
                     Ok(Box::new(hit))
                 } else {
+                    info!("Downloading {name}");
                     bump(Op::BackendRead);
                     let mut inserted =
                         cache.insert(name, &mut *backend.read(&destination(name))?)?;
@@ -152,6 +155,7 @@ impl CachedBackend {
                 }
             }
             CachedBackend::Memory { backend } => {
+                info!("Loading {name} (in-memory)");
                 bump(Op::BackendRead);
                 Ok(Box::new(backend.read_cursor(&destination(name))?))
             }
@@ -165,10 +169,12 @@ impl CachedBackend {
         bump(Op::BackendWrite);
         match &self {
             CachedBackend::File { backend } => {
+                info!("Saving {name}");
                 let to = backend.path_of(&destination(name));
                 file_util::move_opened(name, fh, to)?;
             }
             CachedBackend::Cached { cache, backend, .. } => {
+                info!("Uploading {name}");
                 // Write through!
                 let len = fh.metadata()?.len();
                 fh.seek(std::io::SeekFrom::Start(0))?;
@@ -180,6 +186,7 @@ impl CachedBackend {
                 cache.prune()?;
             }
             CachedBackend::Memory { backend } => {
+                info!("Saving {name} (in-memory)");
                 let len = fh.metadata()?.len();
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 backend.write(len, &mut fh, &destination(name))?;
@@ -190,6 +197,7 @@ impl CachedBackend {
     }
 
     fn remove(&self, name: &str) -> Result<()> {
+        info!("Deleting {name}");
         bump(Op::BackendDelete);
         match &self {
             CachedBackend::File { backend } => backend.remove(&destination(name)),
@@ -208,6 +216,7 @@ impl CachedBackend {
     // spread throughout the codebase.
 
     fn list(&self, which: &str) -> Result<Vec<String>> {
+        debug!("Querying backend for {which}*"); // Should this be info?
         match &self {
             CachedBackend::File { backend } => backend.list(which),
             CachedBackend::Cached { backend, .. } => backend.list(which),
