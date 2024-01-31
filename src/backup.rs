@@ -5,7 +5,7 @@
 //! ```text
 //!     chunk_tx --blobs--> chunk packer --files------->---------
 //!                                     \                        \
-//!                                    ---chunks--> indexer ---> uploader
+//!                                    ---manifests--> indexer ---> uploader
 //!                                   /                          /
 //!     tree_tx --blobs--> tree packer---files--------->---------
 //! ```
@@ -47,7 +47,7 @@
 //! the partially-used packs to the packers for compaction. And so on, and so forth.
 
 use std::fs::File;
-use std::sync::mpsc::{channel, sync_channel, Receiver, Sender, SyncSender};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
 use std::thread;
 
@@ -61,8 +61,8 @@ use crate::pack;
 use crate::upload;
 
 pub struct Backup {
-    pub chunk_tx: Sender<Blob>,
-    pub tree_tx: Sender<Blob>,
+    pub chunk_tx: SyncSender<Blob>,
+    pub tree_tx: SyncSender<Blob>,
     pub upload_tx: SyncSender<(String, File)>,
     pub threads: thread::JoinHandle<Result<()>>,
 }
@@ -83,9 +83,17 @@ pub fn spawn_backup_threads(
     cached_backend: Arc<backend::CachedBackend>,
     starting_index: index::Index,
 ) -> Backup {
-    let (chunk_tx, chunk_rx) = channel();
-    let (tree_tx, tree_rx) = channel();
-    let (upload_tx, upload_rx) = sync_channel(1);
+    // Channels are all handoffs holding no elements - this simplifies reasoning about:
+    // - When data is flowing through the system
+    // - When some tasks are waiting on others
+    // - In turn, how well we've broken up all our work into different threads.
+    //
+    // We can revisit this if profiling shows us spending a lot of time sleeping/waking
+    // that could be eased by adding some slack in the channels.
+
+    let (chunk_tx, chunk_rx) = sync_channel(0);
+    let (tree_tx, tree_rx) = sync_channel(0);
+    let (upload_tx, upload_rx) = sync_channel(0);
     let upload_tx2 = upload_tx.clone();
 
     let threads = thread::Builder::new()
@@ -121,8 +129,11 @@ fn backup_master_thread(
     starting_index: index::Index,
 ) -> Result<()> {
     // ALL THE CONCURRENCY
-    let (chunk_pack_tx, pack_rx) = channel();
-    let tree_pack_tx = chunk_pack_tx.clone();
+
+    // We shouldn't be swamped with a bunch of indexes at once since packing is the slow part,
+    // and we only have two packers (chunks and trees) feeding this.
+    let (chunk_index_tx, index_rx) = sync_channel(0);
+    let tree_index_tx = chunk_index_tx.clone();
     let chunk_pack_upload_tx = upload_tx;
     let tree_pack_upload_tx = chunk_pack_upload_tx.clone();
     let index_upload_tx = chunk_pack_upload_tx.clone();
@@ -130,17 +141,17 @@ fn backup_master_thread(
 
     let chunk_packer = thread::Builder::new()
         .name(String::from("chunk packer"))
-        .spawn(move || pack::pack(pack_size, chunk_rx, chunk_pack_tx, chunk_pack_upload_tx))
+        .spawn(move || pack::pack(pack_size, chunk_rx, chunk_index_tx, chunk_pack_upload_tx))
         .unwrap();
 
     let tree_packer = thread::Builder::new()
         .name(String::from("tree packer"))
-        .spawn(move || pack::pack(pack_size, tree_rx, tree_pack_tx, tree_pack_upload_tx))
+        .spawn(move || pack::pack(pack_size, tree_rx, tree_index_tx, tree_pack_upload_tx))
         .unwrap();
 
     let indexer = thread::Builder::new()
         .name(String::from("indexer"))
-        .spawn(move || index::index(starting_index, pack_rx, index_upload_tx))
+        .spawn(move || index::index(starting_index, index_rx, index_upload_tx))
         .unwrap();
 
     let uploader = thread::Builder::new()
