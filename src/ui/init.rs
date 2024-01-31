@@ -8,6 +8,9 @@ pub struct Args {
     #[clap(short, long, default_value_t = crate::pack::DEFAULT_PACK_SIZE)]
     pack_size: u64,
 
+    #[clap(long)]
+    gpg: Option<String>,
+
     #[clap(subcommand)]
     subcommand: Command,
 }
@@ -26,8 +29,17 @@ enum Command {
 }
 
 pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
+    let (filter, unfilter) = match args.gpg {
+        Some(g) => (
+            Some("gpg --encrypt --recipient ".to_owned() + &g),
+            Some("gpg --decrypt".to_owned()),
+        ),
+        None => (None, None),
+    };
     match args.subcommand {
-        Command::Filesystem => backend::fs::initialize(repository, args.pack_size),
+        Command::Filesystem => {
+            backend::fs::initialize(repository, args.pack_size, filter, unfilter)
+        }
         Command::Backblaze {
             key_id,
             application_key,
@@ -38,8 +50,8 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
             key_id,
             application_key,
             bucket,
-            None,
-            None,
+            filter,
+            unfilter,
         ),
     }
 }
