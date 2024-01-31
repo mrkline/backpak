@@ -322,16 +322,26 @@ fn backup_tree(
                 let chunks = chunk::chunk_file(path)?;
 
                 let mut chunk_ids = Vec::new();
-                for chunk in chunks {
+                let num_chunks = chunks.len();
+                for (i, chunk) in chunks.into_iter().enumerate() {
+                    let i = i + 1; // chunk 1/5, not 0/5
                     chunk_ids.push(chunk.id);
 
                     if packed_blobs.borrow_mut().insert(chunk.id) {
-                        info!("{:>9} {}", "backup", path);
+                        if num_chunks <= 1 {
+                            info!("{:>9} {}", "backup", path);
+                        } else {
+                            info!("{:>9} {} (chunk {}/{})", "backup", path, i, num_chunks);
+                        }
                         chunk_tx
                             .send(chunk)
                             .context("backup -> chunk packer channel exited early")?;
                     } else {
-                        info!("{:>9} {}", "deduped", path);
+                        if num_chunks <= 1 {
+                            info!("{:>9} {}", "deduped", path);
+                        } else {
+                            info!("{:>9} {} (chunk {}/{})", "deduped", path, i, num_chunks);
+                        }
                         trace!("chunk {} already packed", chunk.id);
                     }
                 }
