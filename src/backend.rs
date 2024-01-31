@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     counters::{bump, Op},
-    file_util,
+    file_util::{move_opened, nice_size},
     hashing::ObjectId,
     pack,
 };
@@ -167,18 +167,18 @@ impl CachedBackend {
     /// `destination()`
     pub fn write(&self, name: &str, mut fh: File) -> Result<()> {
         bump(Op::BackendWrite);
+        let len = fh.metadata()?.len();
         match &self {
             CachedBackend::File { backend } => {
-                info!("Saving {name}");
+                info!("Saving {name} ({})", nice_size(len));
                 let to = backend.path_of(&destination(name));
-                file_util::move_opened(name, fh, to)?;
+                move_opened(name, fh, to)?;
             }
             CachedBackend::Cached { cache, backend, .. } => {
-                info!("Uploading {name}");
                 // Write through!
-                let len = fh.metadata()?.len();
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
+                info!("Uploading {name} ({})", nice_size(len));
                 backend.write(len, &mut fh, &destination(name))?;
                 // Insert it into the cache.
                 cache.insert_file(name, fh)?;
@@ -186,8 +186,7 @@ impl CachedBackend {
                 cache.prune()?;
             }
             CachedBackend::Memory { backend } => {
-                info!("Saving {name} (in-memory)");
-                let len = fh.metadata()?.len();
+                info!("Saving {name} ({}, in-memory)", nice_size(len));
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 backend.write(len, &mut fh, &destination(name))?;
                 std::fs::remove_file(name)?;
