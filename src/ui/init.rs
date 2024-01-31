@@ -31,8 +31,8 @@ enum Command {
 pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let (filter, unfilter) = match args.gpg {
         Some(g) => (
-            Some("gpg --encrypt --recipient ".to_owned() + &g),
-            Some("gpg --decrypt".to_owned()),
+            Some("gpg --encrypt --quiet --recipient ".to_owned() + &g),
+            Some("gpg --decrypt --quiet".to_owned()),
         ),
         None => (None, None),
     };
