@@ -5,6 +5,8 @@ use std::io;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
+use crate::file_util;
+
 pub struct FilesystemBackend {
     pub base_directory: Utf8PathBuf,
 }
@@ -20,7 +22,12 @@ fn ensure_exists(e: &Utf8Path) -> Result<()> {
     Ok(())
 }
 
-pub fn initialize(repository: &Utf8Path, pack_size: u64) -> Result<()> {
+pub fn initialize(
+    repository: &Utf8Path,
+    pack_size: u64,
+    filter: Option<String>,
+    unfilter: Option<String>,
+) -> Result<()> {
     if repository.exists() {
         ensure!(
             fs::read_dir(repository)
@@ -40,8 +47,8 @@ pub fn initialize(repository: &Utf8Path, pack_size: u64) -> Result<()> {
     let c = super::Config {
         pack_size,
         kind: super::Kind::Filesystem,
-        filter: None,
-        unfilter: None,
+        filter,
+        unfilter,
     };
     fs::write(repository.join("config.toml"), toml::to_string(&c)?)?;
 
