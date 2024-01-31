@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::str::FromStr;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 
 use anyhow::{bail, ensure, Context, Result};
@@ -219,7 +219,7 @@ fn find_resumable_backup(
     info!("WIP index file found, resuming backup...");
 
     debug!("Looking for packfiles that haven't been uploaded...");
-    // Since we currently bound the upload channel to size 1,
+    // Since we currently bound the upload channel to size 0,
     // we'll only find at most 1, but that's neither here nor there...
     let cwd_packfiles = find_cwd_packfiles(&wip)?;
 
@@ -273,8 +273,8 @@ fn backup_tree(
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
     packed_blobs: &mut FxHashSet<ObjectId>,
-    chunk_tx: &mut Sender<Blob>,
-    tree_tx: &mut Sender<Blob>,
+    chunk_tx: &mut SyncSender<Blob>,
+    tree_tx: &mut SyncSender<Blob>,
 ) -> Result<ObjectId> {
     use fs_tree::DirectoryEntry;
 

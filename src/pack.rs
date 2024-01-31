@@ -4,7 +4,7 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
-use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::sync::mpsc::{Receiver, SyncSender};
 
 use anyhow::{ensure, Context, Result};
 use log::*;
@@ -53,7 +53,7 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
 pub fn pack(
     target_size: u64,
     rx: Receiver<Blob>,
-    to_index: Sender<PackMetadata>,
+    to_index: SyncSender<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
 ) -> Result<()> {
     let mut writer = PackfileWriter::new()?;
@@ -429,7 +429,7 @@ mod test {
     use super::*;
 
     use std::fs;
-    use std::sync::mpsc::{channel, sync_channel};
+    use std::sync::mpsc::sync_channel;
 
     use crate::chunk;
 
@@ -481,9 +481,9 @@ mod test {
 
         let chunks = chunk::chunk_file("tests/references/sr71.txt")
             .context("Couldn't chunk reference file")?;
-        let (chunk_tx, chunk_rx) = channel();
-        let (pack_tx, pack_rx) = channel();
-        let (upload_tx, upload_rx) = sync_channel(1);
+        let (chunk_tx, chunk_rx) = sync_channel(0);
+        let (pack_tx, pack_rx) = sync_channel(0);
+        let (upload_tx, upload_rx) = sync_channel(0);
 
         let chunk_packer =
             std::thread::spawn(move || pack(DEFAULT_PACK_SIZE, chunk_rx, pack_tx, upload_tx));

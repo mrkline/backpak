@@ -205,7 +205,7 @@ mod test {
     use super::*;
 
     use std::collections::BTreeSet;
-    use std::sync::mpsc::{channel, sync_channel};
+    use std::sync::mpsc::sync_channel;
 
     use crate::blob;
     use crate::chunk;
@@ -229,9 +229,9 @@ mod test {
         chunks.extend(chunk::chunk_file("tests/references/README.md")?);
         assert_eq!(chunks.len(), 4);
 
-        let (chunk_tx, chunk_rx) = channel();
-        let (pack_tx, pack_rx) = channel();
-        let (upload_tx, upload_rx) = sync_channel(1);
+        let (chunk_tx, chunk_rx) = sync_channel(0);
+        let (pack_tx, pack_rx) = sync_channel(0);
+        let (upload_tx, upload_rx) = sync_channel(0);
 
         let chunk_packer = std::thread::spawn(move || {
             pack::pack(pack::DEFAULT_PACK_SIZE, chunk_rx, pack_tx, upload_tx)
