@@ -99,10 +99,7 @@ fn forget_snapshot(cached_backend: &backend::CachedBackend, id: &ObjectId, dry_r
     }
 
     match cached_backend.remove_snapshot(id) {
-        Ok(()) => {
-            info!("Removed snapshot {}", id);
-            true
-        }
+        Ok(()) => true,
         Err(e) => {
             error!("{:?}", e);
             false
