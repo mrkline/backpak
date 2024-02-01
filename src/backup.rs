@@ -46,12 +46,12 @@
 //! packs (passing it to the indexer as a starting point), then feeds blobs from
 //! the partially-used packs to the packers for compaction. And so on, and so forth.
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
 use std::thread;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use log::*;
 
 use crate::backend;
@@ -64,7 +64,7 @@ pub struct Backup {
     pub chunk_tx: SyncSender<Blob>,
     pub tree_tx: SyncSender<Blob>,
     pub upload_tx: SyncSender<(String, File)>,
-    pub threads: thread::JoinHandle<Result<()>>,
+    threads: thread::JoinHandle<Result<()>>,
 }
 
 impl Backup {
@@ -74,7 +74,13 @@ impl Backup {
         drop(self.chunk_tx);
         drop(self.tree_tx);
         drop(self.upload_tx);
-        self.threads.join().unwrap()
+        self.threads.join().unwrap()?;
+
+        // If everything exited cleanly, we uploaded the new index.
+        // We can axe the WIP one, which we kept around until now to make sure we're resumable.
+        fs::remove_file(index::WIP_NAME)
+            .with_context(|| format!("Couldn't remove {}", index::WIP_NAME))?;
+        Ok(())
     }
 }
 

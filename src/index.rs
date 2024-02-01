@@ -75,31 +75,35 @@ pub fn index(
         persisted = Some(to_temp_file(&index)?);
     }
 
-    if let Some((index_id, mut persisted)) = persisted {
+    if let Some((index_id, mut fh)) = persisted {
+        // We want to keep the WIP file around until we're sure we're uploaded it
+        // so that we're resumable all the way to the end.
+        // A simple but slightly kludgey way is to just copy the file and delete it
+        // once we know everything is uploaded.
+        // (Other options would complicated `CachedBackend` which assumes that files
+        // we're writing are passed over with their current name equalling the final one.
+        // It's not a big deal; indexes are small.
+        fh.seek(std::io::SeekFrom::Start(0))?;
         let index_name = format!("{}.index", index_id);
+        let mut renamed = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .read(true)
+            .write(true)
+            .open(&index_name)
+            .with_context(|| format!("Couldn't open {index_name} to write the final index"))?;
+        std::io::copy(&mut fh, &mut renamed)?;
+        renamed.sync_all()?;
+        drop(fh);
 
-        // On Windows, we can't move an open file. Boo, Windows.
-        if cfg!(windows) {
-            persisted
-                .sync_all()
-                .with_context(|| format!("Couldn't close {} to rename it", WIP_NAME))?;
-            drop(persisted);
-            fs::rename(WIP_NAME, &index_name)
-                .with_context(|| format!("Couldn't rename {} to {}", WIP_NAME, index_name))?;
-            persisted =
-                File::open(&index_name).with_context(|| "Couldn't reopen {} after renaming it.")?;
-        } else {
-            fs::rename(WIP_NAME, &index_name)
-                .with_context(|| format!("Couldn't rename {} to {}", WIP_NAME, index_name))?;
-        }
         debug!(
             "Index {} finished ({})",
             index_id,
-            nice_size(persisted.metadata()?.len())
+            nice_size(renamed.metadata()?.len())
         );
 
         to_upload
-            .send((index_name, persisted))
+            .send((index_name, renamed))
             .context("indexer -> uploader channel exited early")?;
         Ok(true)
     } else {
