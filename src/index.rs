@@ -11,7 +11,6 @@ use log::*;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::{Deserialize, Serialize};
-use tempfile::NamedTempFile;
 
 use crate::backend;
 use crate::counters;
@@ -51,21 +50,13 @@ pub fn index(
     to_upload: SyncSender<(String, File)>,
 ) -> Result<bool> {
     let mut index = starting_index;
-    let mut index_id = None;
     let mut persisted = None;
 
     // If we're given a non-empty index, write that out to start with.
     // (For example, it could be an index from `prune` that omits packs
     // we no longer need. If we don't write it but delete those packs anyways...)
     if !index.is_empty() {
-        let (id, temp_file) = to_temp_file(&index)?;
-        index_id = Some(id);
-
-        persisted = Some(
-            temp_file
-                .persist(WIP_NAME)
-                .with_context(|| format!("Couldn't persist WIP index to {}", WIP_NAME))?,
-        );
+        persisted = Some(to_temp_file(&index)?);
     }
 
     // For each pack...
@@ -81,19 +72,10 @@ pub fn index(
         // Rewrite the index every time we get a pack.
         // That way the temp index should always contain a complete list of packs,
         // allowing us to resume a backup from the last finished pack.
-
-        let (id, temp_file) = to_temp_file(&index)?;
-        index_id = Some(id);
-
-        persisted = Some(
-            temp_file
-                .persist(WIP_NAME)
-                .with_context(|| format!("Couldn't persist WIP index to {}", WIP_NAME))?,
-        );
+        persisted = Some(to_temp_file(&index)?);
     }
 
-    if let Some(mut persisted) = persisted {
-        let index_id = index_id.unwrap();
+    if let Some((index_id, mut persisted)) = persisted {
         let index_name = format!("{}.index", index_id);
 
         // On Windows, we can't move an open file. Boo, Windows.
@@ -126,19 +108,23 @@ pub fn index(
     }
 }
 
-fn to_temp_file(index: &Index) -> Result<(ObjectId, NamedTempFile)> {
+fn to_temp_file(index: &Index) -> Result<(ObjectId, File)> {
     // Could we speed things up by reusing the same file handle instead of
     // opening, writing, and closing each time we update the WIP index file?
     // Probably, but we'd have to seek back to the beginning each time,
     // _and_ we'd be assuming that the file grows larger each time.
     // (This _might_ not be true since its contents are compressed...)
-    let mut fh = tempfile::Builder::new()
+    let mut tf = tempfile::Builder::new()
         .prefix("temp-backpak-")
         .suffix(".index")
         .tempfile_in(".")
         .context("Couldn't open temporary index for writing")?;
 
-    Ok((to_file(fh.as_file_mut(), index)?, fh))
+    let id = to_file(tf.as_file_mut(), index)?;
+    let f = tf
+        .persist(WIP_NAME)
+        .with_context(|| format!("Couldn't persist WIP index to {}", WIP_NAME))?;
+    Ok((id, f))
 }
 
 fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
