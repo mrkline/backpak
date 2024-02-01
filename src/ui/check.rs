@@ -107,7 +107,6 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     }
 }
 
-#[inline]
 fn check_pack(
     cached_backend: &backend::CachedBackend,
     pack_id: &ObjectId,
