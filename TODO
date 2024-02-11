@@ -1,41 +1,26 @@
-When packfiles are moved from the backup to the CWD, currently failing on
+## Reporting sizes
 
-[ERROR] packer -> indexer channel exited early
+- When backing up, should report sizes:
+  - Bytes reused (sum of blobs deduplicated/skipped)
+  - Bytes of file data (chunks)
+  - Bytes of metadata (trees)
 
-Caused by:
-    sending on a closed channel
-    [ERROR] Duplicate pack received: 1brf1e64ai9otilha99bbnr06qqnjb6qio5l37u6feti8
-    [ERROR] backup failed
+  The last two should be simpleish - have the packers (chunk & tree) return sizes packed.
+  The first will probably need to be threaded through the backup tree walk.
 
-Root problem:
+## `show` command
 
-Loaded index needs to be merged into the master one so that we skip
-repacking things we don't need to.
+- Total bytes referenced (split into files/chunks and metadata/trees)
 
-Do we need to create a faux last snapshot as well? Without a snapshot,
-we don't compare _anything_ to its previous state.
+- Unique bytes vs reused bytes - need to separate the two a la `prune`,
+  but just for a single snapshot instead of all of them.
+  We can get each blob's length from the index!
+  No need to read blobs or plumb # bytes read back through the tree cache.
 
-...WIP snapshot?
-Even then, trees are descended from the top. How do we recognize that we're
-in a subtree that we packed before being interrupted? Can we walk up from the
-leaves somehow? But wouldn't that require a link to the parent?
-Seems prohibitive... or store that in some WIP?
+  ...prune should also probably show how many bytes it pruned, huh?
 
-==========================
+- # Packs referenced (note packs may contain data from other snapshots)
 
-Screw al that - linear log of what the last WIP run did?
-- files examined (size, mtime, to skip, then ID)
-- dirs examined (ID)
-- Packs sent to index?
+- Docs should explain that `cat` dumps raw data (JSON-ified records from files),
+  `show` gathers metadata from a particular snapshot.
 
-That way we know what we should already expect to be uploaded in packs
-(once we upload all in the WIP index)
-
-=============================
-OR
-
-Just make sure we append all blobs in the WIP index to packed_blobs?
-
-Seems to work great, we don't skip any hashing
-(to make sure we're getting the same everything)
-but skip packing/indexing/uploading everything in a pack so far.
