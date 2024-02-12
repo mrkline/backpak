@@ -148,6 +148,6 @@ pub fn nice_size(s: u64) -> String {
     use byte_unit::*;
 
     let b = Byte::from_u64(s);
-    let a = b.get_appropriate_unit(UnitType::Decimal); // power of 2 units
+    let a = b.get_appropriate_unit(UnitType::Decimal); // Human units please.
     format!("{a:.2}")
 }
