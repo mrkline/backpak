@@ -64,17 +64,23 @@ pub struct Backup {
     pub chunk_tx: SyncSender<Blob>,
     pub tree_tx: SyncSender<Blob>,
     pub upload_tx: SyncSender<(String, File)>,
-    threads: thread::JoinHandle<Result<()>>,
+    threads: thread::JoinHandle<Result<BackupStats>>,
+}
+
+#[derive(Debug)]
+pub struct BackupStats {
+    pub chunk_bytes: u64,
+    pub tree_bytes: u64,
 }
 
 impl Backup {
     /// Convenience function to join the threads
     /// assuming the channels haven't been moved out.
-    pub fn join(self) -> Result<()> {
+    pub fn join(self) -> Result<BackupStats> {
         drop(self.chunk_tx);
         drop(self.tree_tx);
         drop(self.upload_tx);
-        self.threads.join().unwrap()?;
+        let stats = self.threads.join().unwrap()?;
 
         // If everything exited cleanly, we uploaded the new index.
         // We can axe the WIP one, which we kept around until now to make sure we're resumable.
@@ -86,7 +92,7 @@ impl Backup {
             }
             otherwise => otherwise
         }.with_context(|| format!("Couldn't remove {}", index::WIP_NAME))?;
-        Ok(())
+        Ok(stats)
     }
 }
 
@@ -139,7 +145,7 @@ fn backup_master_thread(
     backend_config: Arc<backend::Config>,
     cached_backend: Arc<backend::CachedBackend>,
     starting_index: index::Index,
-) -> Result<()> {
+) -> Result<BackupStats> {
     // ALL THE CONCURRENCY
 
     // We shouldn't be swamped with a bunch of indexes at once since packing is the slow part,
@@ -172,19 +178,36 @@ fn backup_master_thread(
         .unwrap();
 
     let mut errors: Vec<anyhow::Error> = Vec::new();
+
+    let chunk_bytes = match chunk_packer.join().unwrap() {
+        Ok(cb) => Some(cb),
+        Err(e) => {
+            errors.push(e.context("Packing chunks failed"));
+            None
+        }
+    };
+    let tree_bytes = match tree_packer.join().unwrap() {
+        Ok(tb) => Some(tb),
+        Err(e) => {
+            errors.push(e.context("Packing trees failed"));
+            None
+        }
+    };
+
     let mut append_error = |thread: &'static str, result: Option<anyhow::Error>| {
         if let Some(e) = result {
             errors.push(e.context(thread));
         }
     };
 
-    append_error("Packing chunks failed", chunk_packer.join().unwrap().err());
-    append_error("Packing trees failed", tree_packer.join().unwrap().err());
     append_error("Indexing failed", indexer.join().unwrap().err());
     append_error("Uploading failed", uploader.join().unwrap().err());
 
     if errors.is_empty() {
-        Ok(())
+        Ok(BackupStats {
+            chunk_bytes: chunk_bytes.unwrap(),
+            tree_bytes: tree_bytes.unwrap(),
+        })
     } else {
         for e in errors {
             error!("{:?}", e);
