@@ -78,8 +78,14 @@ impl Backup {
 
         // If everything exited cleanly, we uploaded the new index.
         // We can axe the WIP one, which we kept around until now to make sure we're resumable.
-        fs::remove_file(index::WIP_NAME)
-            .with_context(|| format!("Couldn't remove {}", index::WIP_NAME))?;
+        match fs::remove_file(index::WIP_NAME) {
+            // Well, unless there was zero new data,
+            // in which case we didn't create a new index.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Ok(())
+            }
+            otherwise => otherwise
+        }.with_context(|| format!("Couldn't remove {}", index::WIP_NAME))?;
         Ok(())
     }
 }
