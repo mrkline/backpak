@@ -1,26 +1,21 @@
-## Reporting sizes
-
-- When backing up, should report sizes:
-  - Bytes reused (sum of blobs deduplicated/skipped)
-  - Bytes of file data (chunks)
-  - Bytes of metadata (trees)
-
-  The last two should be simpleish - have the packers (chunk & tree) return sizes packed.
-  The first will probably need to be threaded through the backup tree walk.
-
 ## `show` command
 
 - Total bytes referenced (split into files/chunks and metadata/trees)
 
-- Unique bytes vs reused bytes - need to separate the two a la `prune`,
-  but just for a single snapshot instead of all of them.
-  We can get each blob's length from the index!
-  No need to read blobs or plumb # bytes read back through the tree cache.
-
-  ...prune should also probably show how many bytes it pruned, huh?
+- Unique bytes vs reused bytes?
+  Would need to look at all the other snapshots, wouldn't we?
+  Maybe that's silly.
 
 - # Packs referenced (note packs may contain data from other snapshots)
 
 - Docs should explain that `cat` dumps raw data (JSON-ified records from files),
   `show` gathers metadata from a particular snapshot.
+
+## `usage` command (or `statistics`? `info`?)
+
+- # of all file types, size of those
+
+- total size vs "unshared" sizes of all snapshots? (% duplicated?)
+
+...prune should also probably show how many bytes it pruned, huh?
 
