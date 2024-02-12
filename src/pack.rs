@@ -50,17 +50,19 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
 }
 
 /// Packs blobs received from the given channel.
+/// Returns the number of bytes packed
 pub fn pack(
     target_size: u64,
     rx: Receiver<Blob>,
     to_index: SyncSender<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
-) -> Result<()> {
+) -> Result<u64> {
     let mut writer = PackfileWriter::new()?;
 
     let mut pass_bytes_written: u64 = 0; // Bytes written since the last size check
-    let mut total_bytes_written: u64 = 0;
+    let mut bytes_in_pack: u64 = 0;
     let mut bytes_before_next_check = target_size;
+    let mut total_bytes_written: u64 = 0;
 
     // For each blob...
     while let Ok(blob) = rx.recv() {
@@ -73,7 +75,7 @@ pub fn pack(
         // Write a blob and check how many (uncompressed) bytes we've written to the file so far.
         let blob_size = writer.write_blob(blob)?;
         pass_bytes_written += blob_size;
-        total_bytes_written += blob_size;
+        bytes_in_pack += blob_size;
 
         // We've written as many bytes as we want the pack size to to be,
         // but we don't know how much they've compressed to.
@@ -81,7 +83,7 @@ pub fn pack(
         if pass_bytes_written >= bytes_before_next_check {
             trace!(
                 "Wrote {} bytes into pack, checking compressed size...",
-                nice_size(total_bytes_written)
+                nice_size(bytes_in_pack)
             );
 
             let compressed_size = writer.flush_and_check_size()?;
@@ -104,15 +106,16 @@ pub fn pack(
                     .context("packer -> indexer channel exited early")?;
 
                 writer = PackfileWriter::new()?;
+                total_bytes_written += bytes_in_pack;
                 pass_bytes_written = 0;
-                total_bytes_written = 0;
+                bytes_in_pack = 0;
                 bytes_before_next_check = target_size;
             }
             // Otherwise, write some more
             else {
                 // Take our current compression ratio to estimate how much more
                 // we need to write to hit the target pack size.
-                let current_ratio = total_bytes_written as f64 / compressed_size as f64;
+                let current_ratio = bytes_in_pack as f64 / compressed_size as f64;
                 bytes_before_next_check =
                     (current_ratio * (target_size - compressed_size) as f64) as u64;
                 pass_bytes_written = 0;
@@ -125,7 +128,7 @@ pub fn pack(
             }
         }
     }
-    if total_bytes_written > 0 {
+    if bytes_in_pack > 0 {
         let (metadata, persisted) = writer.finalize()?;
         let finalized_path = format!("{}.pack", metadata.id);
         to_upload
@@ -134,8 +137,9 @@ pub fn pack(
         to_index
             .send(metadata)
             .context("packer -> indexer channel exited early")?;
+        total_bytes_written += bytes_in_pack;
     }
-    Ok(())
+    Ok(total_bytes_written)
 }
 
 type ZstdEncoder<W> = zstd::stream::write::Encoder<'static, W>;

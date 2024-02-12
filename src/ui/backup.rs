@@ -14,6 +14,7 @@ use rustc_hash::FxHashSet;
 use crate::backend;
 use crate::blob::{self, Blob};
 use crate::chunk;
+use crate::file_util::nice_size;
 use crate::fs_tree;
 use crate::hashing::ObjectId;
 use crate::index;
@@ -129,9 +130,14 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Important: make sure all blobs and indexes are written BEFORE
     // we upload the snapshot.
     // It's meaningless unless everything else is there first!
-    backup.join()?;
+    let stats = backup.join()?;
 
     debug!("Root tree packed as {}", root);
+
+    let total_bytes = nice_size(stats.chunk_bytes + stats.tree_bytes);
+    let chunk_bytes = nice_size(stats.chunk_bytes);
+    let tree_bytes = nice_size(stats.tree_bytes);
+    info!("{} new data ({} files, {} metadata)", total_bytes, chunk_bytes, tree_bytes);
 
     let author = match args.author {
         Some(a) => a,
