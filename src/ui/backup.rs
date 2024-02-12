@@ -116,7 +116,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             .join(", ")
     );
 
-    let root = backup_tree(
+    let (root, bytes_reused) = backup_tree(
         &paths,
         parent.map(|p| &p.tree),
         &parent_forest,
@@ -134,6 +134,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     debug!("Root tree packed as {}", root);
 
+    info!("{} reused", nice_size(bytes_reused));
     let total_bytes = nice_size(stats.chunk_bytes + stats.tree_bytes);
     let chunk_bytes = nice_size(stats.chunk_bytes);
     let tree_bytes = nice_size(stats.tree_bytes);
@@ -294,20 +295,20 @@ fn backup_tree(
     packed_blobs: &mut FxHashSet<ObjectId>,
     chunk_tx: &mut SyncSender<Blob>,
     tree_tx: &mut SyncSender<Blob>,
-) -> Result<ObjectId> {
+) -> Result<(ObjectId, u64)> {
     use fs_tree::DirectoryEntry;
 
     // Both closures need to get at packed_blobs at some point...
     let packed_blobs = RefCell::new(packed_blobs);
 
-    let mut visit = |tree: &mut tree::Tree,
+    let mut visit = |(tree, bytes_reused): &mut (tree::Tree, u64),
                      path: &Utf8Path,
                      metadata: tree::NodeMetadata,
                      previous_node: Option<&tree::Node>,
-                     entry: DirectoryEntry<ObjectId>|
+                     entry: DirectoryEntry<(ObjectId, u64)>|
      -> Result<()> {
-        let subnode = match entry {
-            DirectoryEntry::Directory(subtree) => {
+        let (subnode, subnode_bytes_reused) = match entry {
+            DirectoryEntry::Directory((subtree, subtree_bytes_reused)) => {
                 trace!(
                     "{}{} packed as {}",
                     path,
@@ -316,31 +317,36 @@ fn backup_tree(
                 );
                 info!("{:>9} {}{}", "finished", path, std::path::MAIN_SEPARATOR);
 
-                tree::Node {
+                let t = tree::Node {
                     metadata,
                     contents: tree::NodeContents::Directory { subtree },
-                }
+                };
+                (t, subtree_bytes_reused)
             }
             DirectoryEntry::Symlink { target } => {
                 info!("{:>9} {}", "symlink", path);
 
-                tree::Node {
+                let t = tree::Node {
                     metadata,
                     contents: tree::NodeContents::Symlink { target },
-                }
+                };
+                (t, 0)
             }
             DirectoryEntry::UnchangedFile => {
                 info!("{:>9} {}", "unchanged", path);
 
-                tree::Node {
+                let reused_bytes = metadata.size();
+                let t = tree::Node {
                     metadata,
                     contents: previous_node.unwrap().contents.clone(),
-                }
+                };
+                (t, reused_bytes)
             }
             DirectoryEntry::ChangedFile => {
                 let chunks = chunk::chunk_file(path)?;
 
                 let mut chunk_ids = Vec::new();
+                let mut reused_bytes = 0;
                 let num_chunks = chunks.len();
                 for (i, chunk) in chunks.into_iter().enumerate() {
                     let i = i + 1; // chunk 1/5, not 0/5
@@ -356,6 +362,7 @@ fn backup_tree(
                             .send(chunk)
                             .context("backup -> chunk packer channel exited early")?;
                     } else {
+                        reused_bytes += chunk.bytes().len() as u64;
                         if num_chunks <= 1 {
                             info!("{:>9} {}", "deduped", path);
                         } else {
@@ -365,10 +372,11 @@ fn backup_tree(
                     }
                 }
 
-                tree::Node {
+                let t = tree::Node {
                     metadata,
                     contents: tree::NodeContents::File { chunks: chunk_ids },
-                }
+                };
+                (t, reused_bytes)
             }
         };
         ensure!(
@@ -376,10 +384,11 @@ fn backup_tree(
                 .is_none(),
             "Duplicate tree entries"
         );
+        *bytes_reused += subnode_bytes_reused;
         Ok(())
     };
 
-    let mut finalize = |tree: tree::Tree| -> Result<ObjectId> {
+    let mut finalize = |(tree, mut bytes_reused): (tree::Tree, u64)| -> Result<(ObjectId, u64)> {
         let (bytes, id) = tree::serialize_and_hash(&tree)?;
 
         if packed_blobs.borrow_mut().insert(id) {
@@ -392,8 +401,9 @@ fn backup_tree(
                 .context("backup -> tree packer channel exited early")?;
         } else {
             trace!("tree {} already packed", id);
+            bytes_reused += bytes.len() as u64;
         }
-        Ok(id)
+        Ok((id, bytes_reused))
     };
 
     fs_tree::walk_fs(
