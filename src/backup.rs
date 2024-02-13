@@ -87,11 +87,10 @@ impl Backup {
         match fs::remove_file(index::WIP_NAME) {
             // Well, unless there was zero new data,
             // in which case we didn't create a new index.
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Ok(())
-            }
-            otherwise => otherwise
-        }.with_context(|| format!("Couldn't remove {}", index::WIP_NAME))?;
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            otherwise => otherwise,
+        }
+        .with_context(|| format!("Couldn't remove {}", index::WIP_NAME))?;
         Ok(stats)
     }
 }

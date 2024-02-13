@@ -38,6 +38,8 @@ lazy_static = "1.0"
 log = "0.4"
 # Memmap1 is unmaintained
 memmap2 = "0.9"
+# Numeric traits are nice
+num = { version = "0.4", default_features = false }
 # How many cores? Tell Zstd
 num_cpus = "1.0"
 # par_iter

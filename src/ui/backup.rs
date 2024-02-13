@@ -79,7 +79,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         .unwrap_or_default();
     drop(tree_cache);
 
-    let mut packed_blobs = index::blob_set(&index)?;
+    let mut packed_blobs = index::blob_id_set(&index)?;
 
     let (maybe_wip_index, maybe_cwd_packfiles) =
         find_resumable_backup(&cached_backend)?.unwrap_or_default();
@@ -138,7 +138,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let total_bytes = nice_size(stats.chunk_bytes + stats.tree_bytes);
     let chunk_bytes = nice_size(stats.chunk_bytes);
     let tree_bytes = nice_size(stats.tree_bytes);
-    info!("{} new data ({} files, {} metadata)", total_bytes, chunk_bytes, tree_bytes);
+    info!("{total_bytes} new data ({chunk_bytes} files, {tree_bytes} metadata)");
 
     let author = match args.author {
         Some(a) => a,
