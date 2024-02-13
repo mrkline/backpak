@@ -246,9 +246,9 @@ pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap> {
     Ok(mapping)
 }
 
-/// Gather the set of all blobs in a given index.
-pub fn blob_set(index: &Index) -> Result<FxHashSet<ObjectId>> {
-    debug!("Building a set of all blobs");
+/// Gather the set of all blob IDs in a given index.
+pub fn blob_id_set(index: &Index) -> Result<FxHashSet<ObjectId>> {
+    debug!("Building a set of all blob IDs");
     let mut blobs = FxHashSet::default();
 
     for (pack_id, manifest) in &index.packs {
@@ -261,6 +261,22 @@ pub fn blob_set(index: &Index) -> Result<FxHashSet<ObjectId>> {
     }
 
     Ok(blobs)
+}
+
+/// Map all blob IDs to their blob size.
+pub fn blob_to_size_map(index: &Index) -> Result<FxHashMap<ObjectId, u32>> {
+    debug!("Mapping blobs IDs to their size");
+    let mut size_map = FxHashMap::default();
+
+    for (pack_id, manifest) in &index.packs {
+        for blob in manifest {
+            if size_map.insert(blob.id, blob.length).is_some() {
+                bail!("Duplicate blob {} in pack {}", blob.id, pack_id);
+            }
+        }
+    }
+
+    Ok(size_map)
 }
 
 /// Load the index from the given reader,

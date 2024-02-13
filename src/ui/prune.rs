@@ -126,7 +126,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     };
 
     // As we repack our snapshots, skip blobs in the 100% reachable packs.
-    let mut packed_blobs = index::blob_set(&new_index)?;
+    let mut packed_blobs = index::blob_id_set(&new_index)?;
 
     let backend_config = Arc::new(backend_config);
     let cached_backend = Arc::new(cached_backend);
