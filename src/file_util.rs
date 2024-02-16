@@ -145,9 +145,14 @@ pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Utf8Path) -> Result<File> {
 
 /// File size but nice.
 pub fn nice_size(s: u64) -> String {
+    use byte_unit::Unit::*;
     use byte_unit::*;
 
     let b = Byte::from_u64(s);
     let a = b.get_appropriate_unit(UnitType::Decimal); // Human units please.
-    format!("{a:.2}")
+    match a.get_unit() {
+        // Don't split hairs, or KB.
+        Bit | B | Kbit | Kibit | KB | KiB => format!("{a:.0}"),
+        _ => format!("{a:.2}"),
+    }
 }
