@@ -439,57 +439,6 @@ fn chunks_in_node(node: &Node) -> &[ObjectId] {
     }
 }
 
-pub struct ForestSizes {
-    pub tree_bytes: u64,
-    pub chunk_bytes: u64,
-}
-
-/// Gets the total size of the given forest.
-pub fn forest_sizes(forest: &Forest, size_map: &FxHashMap<ObjectId, u32>) -> Result<ForestSizes> {
-    let tree_bytes = fallible_sum(forest.keys().map(|t| {
-        size_map
-            .get(t)
-            .copied()
-            .ok_or_else(|| anyhow!("Couldn't find tree {t} to get size"))
-    }))?;
-    let chunk_bytes = fallible_sum(forest.values().map(|t| tree_chunks_size(t, size_map)))?;
-    Ok(ForestSizes {
-        tree_bytes,
-        chunk_bytes,
-    })
-}
-
-/// Get the size of chunks in the given tree
-fn tree_chunks_size(tree: &Tree, size_map: &FxHashMap<ObjectId, u32>) -> Result<u64> {
-    fallible_sum(tree.values().map(|n| file_size(n, size_map)))
-}
-
-/// Get the size of the node if it's a file.
-///
-/// We've already accounted for tree sizes by summing the forest in [`forest_size`].
-fn file_size(node: &Node, size_map: &FxHashMap<ObjectId, u32>) -> Result<u64> {
-    match &node.contents {
-        NodeContents::File { chunks, .. } => fallible_sum(chunks.iter().map(|c| {
-            size_map
-                .get(c)
-                .copied()
-                .ok_or_else(|| anyhow!("Couldn't find chunk {c} to get size"))
-        })),
-        NodeContents::Directory { .. } | NodeContents::Symlink { .. } => Ok(0),
-    }
-}
-
-fn fallible_sum<Iter, I>(mut it: Iter) -> Result<u64>
-where
-    Iter: Iterator<Item = Result<I>>,
-    I: num::ToPrimitive,
-{
-    it.try_fold(0u64, |acc, maybe_size| match maybe_size {
-        Ok(s) => Ok(acc + s.to_u64().unwrap()),
-        Err(e) => Err(e),
-    })
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
