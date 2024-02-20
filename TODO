@@ -2,20 +2,23 @@
 
 - Total bytes referenced (split into files/chunks and metadata/trees)
 
-- Unique bytes vs reused bytes?
-  Would need to look at all the other snapshots, wouldn't we?
-  Maybe that's silly.
+- Number of packs referenced (note packs may contain data from other snapshots)?
 
-- # Packs referenced (note packs may contain data from other snapshots)
+- Tree? merge with ls?
 
 - Docs should explain that `cat` dumps raw data (JSON-ified records from files),
   `show` gathers metadata from a particular snapshot.
 
 ## `usage` command (or `statistics`? `info`?)
 
-- # of all file types, size of those
+- Number of of all file types, size of those
 
 - total size vs "unshared" sizes of all snapshots? (% duplicated?)
+
+- Unused info in index? (a la prune)
+
+The info we're showing is a combination of `snapshots` sizes (but summed)
+and `prune`. Refactor their math into snapshot.rs?
 
 ...prune should also probably show how many bytes it pruned, huh?
 
