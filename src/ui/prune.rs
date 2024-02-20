@@ -253,6 +253,9 @@ fn blob_is_reachable(
     snapshots_and_forests: &[SnapshotAndForest],
     reachable_chunks: &FxHashSet<&ObjectId>,
 ) -> bool {
+    // A blob is reachable if it's either a chunk
+    // (Isn't it nice we conveniently precomputed the set of all chunks?)
+    // or it's a tree in the forst.
     reachable_chunks.contains(blob)
         || snapshots_and_forests
             .iter()
