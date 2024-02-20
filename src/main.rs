@@ -54,6 +54,7 @@ enum Command {
     Snapshots(snapshots::Args),
     /// Build a new index from all existing packs and delete all old ones
     RebuildIndex,
+    Usage,
 }
 
 fn main() {
@@ -84,6 +85,7 @@ fn run() -> Result<()> {
         Command::Restore(r) => restore::run(&args.repository, r),
         Command::Snapshots(s) => snapshots::run(&args.repository, s),
         Command::RebuildIndex => rebuild_index::run(&args.repository),
+        Command::Usage => usage::run(&args.repository),
     }?;
 
     counters::log_counts();

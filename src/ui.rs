@@ -10,3 +10,4 @@ pub mod prune;
 pub mod rebuild_index;
 pub mod restore;
 pub mod snapshots;
+pub mod usage;
