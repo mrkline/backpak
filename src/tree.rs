@@ -406,19 +406,7 @@ fn append_tree(
     Ok(())
 }
 
-/// Collect the set of chunks for the files in the given forest
-pub fn chunks_in_forest(forest: &Forest) -> FxHashSet<&ObjectId> {
-    forest
-        .values()
-        .map(|t| chunks_in_tree(t))
-        .reduce(|mut a, b| {
-            a.extend(b);
-            a
-        })
-        .unwrap_or_default()
-}
-
-/// Collect the set of chunks for the files the given tree
+/// Collect the set of chunks for the files in the given tree
 pub fn chunks_in_tree(tree: &Tree) -> FxHashSet<&ObjectId> {
     tree.values()
         .map(chunks_in_node)
