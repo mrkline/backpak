@@ -314,7 +314,7 @@ pub struct Cache<'a> {
     index: &'a index::Index,
 
     /// Finds the pack that contains a given blob
-    blob_to_pack_map: &'a index::BlobMap,
+    blob_to_pack_map: &'a index::BlobMap<'a>,
 
     /// Gets packs on-demand from the backend.
     pack_cache: &'a backend::CachedBackend,
