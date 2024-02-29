@@ -116,7 +116,7 @@ impl fmt::Display for ForestSizes {
 /// Gets the total size of the given forest.
 fn forest_sizes(
     forest: &tree::Forest,
-    size_map: &FxHashMap<ObjectId, u32>,
+    size_map: &FxHashMap<&ObjectId, u32>,
     visited_blobs: &mut FxHashSet<ObjectId>,
 ) -> Result<ForestSizes> {
     let mut s = ForestSizes::default();
@@ -145,7 +145,7 @@ fn forest_sizes(
 /// Get the size of chunks in the given tree
 fn tree_chunks_size(
     tree: &tree::Tree,
-    size_map: &FxHashMap<ObjectId, u32>,
+    size_map: &FxHashMap<&ObjectId, u32>,
     visited_blobs: &mut FxHashSet<ObjectId>,
     s: &mut ForestSizes,
 ) -> Result<()> {
@@ -160,7 +160,7 @@ fn tree_chunks_size(
 /// We've already accounted for tree sizes by summing the forest in [`forest_size`].
 fn file_size(
     node: &tree::Node,
-    size_map: &FxHashMap<ObjectId, u32>,
+    size_map: &FxHashMap<&ObjectId, u32>,
     visited_blobs: &mut FxHashSet<ObjectId>,
     s: &mut ForestSizes,
 ) -> Result<()> {
