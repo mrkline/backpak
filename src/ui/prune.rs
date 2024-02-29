@@ -11,6 +11,7 @@ use rustc_hash::FxHashSet;
 use crate::backend;
 use crate::backup;
 use crate::blob;
+use crate::file_util::nice_size;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
@@ -45,21 +46,32 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     let snapshots_and_forests = load_snapshots_and_forests(
         &cached_backend,
+        // We can drop the tree cache immediately once we have all our forests.
         &mut tree::Cache::new(&index, &blob_map, &cached_backend),
     )?;
 
-    let reachable_chunks = reachable_chunks(snapshots_and_forests.par_iter().map(|s| &s.forest));
-    let (reusable_packs, packs_to_prune) =
-        partition_reusable_packs(&index, &snapshots_and_forests, &reachable_chunks);
+    // Build a set of all the blobs referenced by any snapshot.
+    // Try to save memory (8 bytes per entry instead of 28) by using references
+    // since this is one of the largest collections we'll build.
+    // Previously we tried to save even more memory by only building a *chunk* set
+    // and checking tree reachability via the list of forests,
+    // but this is a crappy space-time tradeoff.
+    // Instead of a constant-time lookup per packed blob (is that blob in this set?),
+    // each got a linear lookup over the number of snapshot forests.
+    // (Overall, O(n) vs. O(n * m), where n = # of packed blobs and m = # of snapshots.)
+    let reachable_blobs = reachable_blobs(snapshots_and_forests.par_iter().map(|s| &s.forest));
+
+    let (reusable_packs, packs_to_prune) = partition_reusable_packs(&index, &reachable_blobs);
     let (droppable_packs, sparse_packs) =
-        partition_droppable_packs(&packs_to_prune, &snapshots_and_forests, &reachable_chunks);
+        partition_droppable_packs(&packs_to_prune, &reachable_blobs);
 
-    // Once we've partitioned packs, we don't need every single reachable chunk.
+    // Once we've partitioned packs, we don't need our reachable blob set.
     // Drop that, since it could be huge.
-    drop(reachable_chunks);
+    drop(reachable_blobs);
 
+    let reusable_size = packs_blob_size(reusable_packs.values());
     if packs_to_prune.is_empty() {
-        info!("No unused blobs in any packs! Nothing to do.");
+        info!("All {reusable_size} in use! Nothing to do.");
         return Ok(());
     }
 
@@ -71,44 +83,25 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         .map(backend::id_from_path)
         .collect::<Result<BTreeSet<ObjectId>>>()?;
 
-    // We care much less about packs in use
+    // `[ObjectId] -> String` helper for logs below
+    fn idlist<S: ToString, I: Iterator<Item = S>>(p: I) -> String {
+        p.map(|id| id.to_string()).collect::<Vec<_>>().join(", ")
+    }
+    // We care much less about packs in use, just trace.
     trace!(
         "Packs [{}] are entirely in use",
-        reusable_packs
-            .keys()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
+        idlist(reusable_packs.keys())
     );
-    debug!(
-        "Packs [{}] could be repacked",
-        sparse_packs
-            .keys()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    debug!(
-        "Packs [{}] can be dropped",
-        droppable_packs
-            .keys()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    debug!(
-        "Indexes [{}] could be replaced",
-        superseded
-            .iter()
-            .map(|id| id.to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    debug!("Packs [{}] could be repacked", idlist(sparse_packs.keys()));
+    debug!("Packs [{}] can be dropped", idlist(droppable_packs.keys()));
+    debug!("Indexes [{}] could be replaced", idlist(superseded.iter()));
     info!(
-        "Keep {} packs, rewrite {}, drop {}, and replace the {} current indexes",
+        "Keep {} packs ({reusable_size}), rewrite {} ({}), drop {} ({}), and replace the {} current indexes",
         reusable_packs.len(),
         sparse_packs.len(),
+        packs_blob_size(sparse_packs.values()),
         droppable_packs.len(),
+        packs_blob_size(droppable_packs.values()),
         superseded.len()
     );
 
@@ -191,16 +184,25 @@ fn load_snapshots_and_forests(
         .collect()
 }
 
-/// Collect all file chunks from the provided forests
-fn reachable_chunks<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
+/// Collect all blobs from the provided forests
+fn reachable_blobs<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
     forests: I,
 ) -> FxHashSet<&'a ObjectId> {
     forests
-        .map(tree::chunks_in_forest)
+        .map(blobs_in_forest)
         .reduce(FxHashSet::default, |mut a, b| {
             a.extend(b);
             a
         })
+}
+
+fn blobs_in_forest(forest: &tree::Forest) -> FxHashSet<&ObjectId> {
+    let mut blobs = FxHashSet::default();
+    for (f, t) in forest {
+        blobs.insert(f);
+        blobs.extend(tree::chunks_in_tree(t));
+    }
+    blobs
 }
 
 /// Partition packs into those that have 100% reachable blobs
@@ -210,8 +212,7 @@ fn reachable_chunks<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
 #[allow(clippy::type_complexity)]
 fn partition_reusable_packs<'a>(
     index: &'a index::Index,
-    snapshots_and_forests: &[SnapshotAndForest],
-    reachable_chunks: &FxHashSet<&ObjectId>,
+    reachable_blobs: &FxHashSet<&ObjectId>,
 ) -> (
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
@@ -221,7 +222,7 @@ fn partition_reusable_packs<'a>(
         manifest
             .iter()
             .map(|entry| &entry.id)
-            .all(|id| blob_is_reachable(id, snapshots_and_forests, reachable_chunks))
+            .all(|id| reachable_blobs.contains(id))
     })
 }
 
@@ -233,8 +234,7 @@ fn partition_reusable_packs<'a>(
 #[allow(clippy::type_complexity)]
 fn partition_droppable_packs<'a>(
     packs_to_prune: &BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
-    snapshots_and_forests: &[SnapshotAndForest],
-    reachable_chunks: &FxHashSet<&ObjectId>,
+    reachable_blobs: &FxHashSet<&ObjectId>,
 ) -> (
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
@@ -244,23 +244,19 @@ fn partition_droppable_packs<'a>(
         !manifest
             .iter()
             .map(|entry| &entry.id)
-            .any(|id| blob_is_reachable(id, snapshots_and_forests, reachable_chunks))
+            .any(|id| reachable_blobs.contains(id))
     })
 }
 
-fn blob_is_reachable(
-    blob: &ObjectId,
-    snapshots_and_forests: &[SnapshotAndForest],
-    reachable_chunks: &FxHashSet<&ObjectId>,
-) -> bool {
-    // A blob is reachable if it's either a chunk
-    // (Isn't it nice we conveniently precomputed the set of all chunks?)
-    // or it's a tree in the forst.
-    reachable_chunks.contains(blob)
-        || snapshots_and_forests
-            .iter()
-            .map(|snap_and_forest| &snap_and_forest.forest)
-            .any(|forest| forest.contains_key(blob))
+// All I want is a god-dang generic function over my maps
+fn packs_blob_size<'a, 'b: 'a, I: Iterator<Item = &'a &'b pack::PackManifest>>(
+    manifests: I,
+) -> String {
+    nice_size(
+        manifests
+            .map(|m| m.iter().map(|e| e.length as u64).sum::<u64>())
+            .sum(),
+    )
 }
 
 fn walk_snapshots(
