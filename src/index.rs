@@ -264,13 +264,13 @@ pub fn blob_id_set(index: &Index) -> Result<FxHashSet<ObjectId>> {
 }
 
 /// Map all blob IDs to their blob size.
-pub fn blob_to_size_map(index: &Index) -> Result<FxHashMap<ObjectId, u32>> {
+pub fn blob_to_size_map(index: &Index) -> Result<FxHashMap<&ObjectId, u32>> {
     debug!("Mapping blobs IDs to their size");
     let mut size_map = FxHashMap::default();
 
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {
-            if size_map.insert(blob.id, blob.length).is_some() {
+            if size_map.insert(&blob.id, blob.length).is_some() {
                 bail!("Duplicate blob {} in pack {}", blob.id, pack_id);
             }
         }
