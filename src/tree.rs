@@ -314,7 +314,7 @@ pub struct Cache<'a> {
     index: &'a index::Index,
 
     /// Finds the pack that contains a given blob
-    blob_to_pack_map: &'a index::BlobMap<'a>,
+    blob_to_pack_map: &'a index::BlobMap,
 
     /// Gets packs on-demand from the backend.
     pack_cache: &'a backend::CachedBackend,
@@ -407,12 +407,12 @@ fn append_tree(
 }
 
 /// Collect the set of chunks for the files in the given tree
-pub fn chunks_in_tree(tree: &Tree) -> FxHashSet<&ObjectId> {
+pub fn chunks_in_tree(tree: &Tree) -> FxHashSet<ObjectId> {
     tree.values()
         .map(chunks_in_node)
         .fold(FxHashSet::default(), |mut set, node_chunks| {
             for chunk in node_chunks {
-                set.insert(chunk);
+                set.insert(*chunk);
             }
             set
         })

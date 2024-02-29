@@ -145,7 +145,7 @@ fn map_chunks_to_snapshots(
         {
             for chunk in chunks {
                 let needed_by: &mut FxHashSet<ObjectId> =
-                    chunks_to_snapshots.entry(*chunk).or_default();
+                    chunks_to_snapshots.entry(chunk).or_default();
                 needed_by.insert(snapshot_id);
             }
         }
