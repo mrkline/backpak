@@ -76,10 +76,12 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
-    let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
     let (snapshot, id) = snapshot::find_and_load(&args.restore_from, &cached_backend)?;
-    let snapshot_forest = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
+    let snapshot_forest = tree::forest_from_root(
+        &snapshot.tree,
+        &mut tree::Cache::new(&index, &blob_map, &cached_backend),
+    )?;
 
     let tree_and_mapping =
         load_fs_tree_and_mapping(&id, &snapshot, &snapshot_forest, &args.output)?;

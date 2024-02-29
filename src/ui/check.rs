@@ -69,10 +69,12 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
 
     info!("Checking that all chunks in snapshots are reachable");
     let blob_map = index::blob_to_pack_map(&index)?;
-    let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
 
     // Map the chunks that belong in each snapshot.
-    let chunks_to_snapshots = map_chunks_to_snapshots(&cached_backend, &mut tree_cache)?;
+    let chunks_to_snapshots = map_chunks_to_snapshots(
+        &cached_backend,
+        &mut tree::Cache::new(&index, &blob_map, &cached_backend),
+    )?;
 
     let mut missing_chunks: usize = 0;
     for (chunk, snapshots) in &chunks_to_snapshots {
