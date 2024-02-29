@@ -427,6 +427,100 @@ fn chunks_in_node(node: &Node) -> &[ObjectId] {
     }
 }
 
+#[derive(Default)]
+pub struct ForestSizes {
+    pub tree_bytes: u64,
+    pub chunk_bytes: u64,
+    pub introduced: u64,
+    pub reused: u64,
+}
+
+// Useful for totals in `usage`:
+impl std::ops::AddAssign for ForestSizes {
+    fn add_assign(&mut self, o: Self) {
+        self.tree_bytes += o.tree_bytes;
+        self.chunk_bytes += o.chunk_bytes;
+        self.introduced += o.introduced;
+        self.reused += o.reused;
+    }
+}
+
+/// Gets size breakdowns of the given forest, appending to `visited_blobs` as it... visits blobs.
+///
+/// This is useful for walking the repo snapshot by snapshot, showing when data is introduced,
+/// when it is reused, and how much of each kind.
+pub fn forest_sizes(
+    forest: &Forest,
+    size_map: &FxHashMap<ObjectId, u32>,
+    visited_blobs: &mut FxHashSet<ObjectId>,
+) -> Result<ForestSizes> {
+    let mut s = ForestSizes::default();
+
+    for (tree_id, tree) in forest {
+        let tree_size = size_map
+            .get(tree_id)
+            .ok_or_else(|| anyhow!("Couldn't find tree {tree_id} to get size"))?;
+
+        let ts = *tree_size as u64;
+        s.tree_bytes += ts;
+        if visited_blobs.insert(*tree_id) {
+            s.introduced += ts;
+        } else {
+            s.reused += ts;
+        }
+
+        tree_chunks_size(tree, size_map, visited_blobs, &mut s)?;
+    }
+
+    assert_eq!(s.tree_bytes + s.chunk_bytes, s.introduced + s.reused);
+    Ok(s)
+}
+
+/// Get the size of chunks in the given tree
+fn tree_chunks_size(
+    tree: &Tree,
+    size_map: &FxHashMap<ObjectId, u32>,
+    visited_blobs: &mut FxHashSet<ObjectId>,
+    s: &mut ForestSizes,
+) -> Result<()> {
+    for node in tree.values() {
+        file_size(node, size_map, visited_blobs, s)?
+    }
+    Ok(())
+}
+
+/// Get the size of the node if it's a file.
+///
+/// We've already accounted for tree sizes by summing the forest in [`forest_size`].
+fn file_size(
+    node: &Node,
+    size_map: &FxHashMap<ObjectId, u32>,
+    visited_blobs: &mut FxHashSet<ObjectId>,
+    s: &mut ForestSizes,
+) -> Result<()> {
+    match &node.contents {
+        NodeContents::File { chunks, .. } => {
+            for c in chunks.iter().map(|c| {
+                size_map
+                    .get(c)
+                    .ok_or_else(|| anyhow!("Couldn't find chunk {c} to get size"))
+                    .map(|s| (c, *s))
+            }) {
+                let (chunk_id, chunk_size) = c?;
+                let cs = chunk_size as u64;
+                s.chunk_bytes += cs;
+                if visited_blobs.insert(*chunk_id) {
+                    s.introduced += cs;
+                } else {
+                    s.reused += cs;
+                }
+            }
+            Ok(())
+        }
+        NodeContents::Directory { .. } | NodeContents::Symlink { .. } => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
