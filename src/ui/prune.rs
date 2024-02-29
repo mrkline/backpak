@@ -246,7 +246,7 @@ fn partition_droppable_packs<'a>(
     })
 }
 
-// All I want is a god-dang generic function over my maps
+// All I want is a god-dang generic function over my index manifests
 fn packs_blob_size<'a, 'b: 'a, I: Iterator<Item = &'a &'b pack::PackManifest>>(
     manifests: I,
 ) -> String {
