@@ -97,10 +97,6 @@ struct ForestSizes {
 
 impl fmt::Display for ForestSizes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        assert_eq!(
-            self.tree_bytes + self.chunk_bytes,
-            self.introduced + self.reused
-        );
         let t = nice_size(self.tree_bytes + self.chunk_bytes);
         let m = nice_size(self.tree_bytes);
         let c = nice_size(self.chunk_bytes);
@@ -108,7 +104,7 @@ impl fmt::Display for ForestSizes {
         let r = nice_size(self.reused);
         write!(
             f,
-            "Sizes : {t} total ({c} files, {m} metadata / {i} new data, {r} reused)"
+            "Sizes: {t} total ({c} files, {m} metadata / {i} new data, {r} reused)"
         )
     }
 }
@@ -121,24 +117,26 @@ fn forest_sizes(
 ) -> Result<ForestSizes> {
     let mut s = ForestSizes::default();
 
-    for t in forest.keys().map(|t| {
-        size_map
-            .get(t)
-            .ok_or_else(|| anyhow!("Couldn't find tree {t} to get size"))
-            .map(|s| (t, *s))
-    }) {
-        let (tree_id, tree_size) = t?;
-        let ts = tree_size as u64;
+    for (tree_id, tree) in forest {
+        let tree_size = size_map
+            .get(tree_id)
+            .ok_or_else(|| anyhow!("Couldn't find tree {tree_id} to get size"))?;
+
+        let ts = *tree_size as u64;
         s.tree_bytes += ts;
         if visited_blobs.insert(*tree_id) {
             s.introduced += ts;
         } else {
             s.reused += ts;
         }
-    }
-    for tree in forest.values() {
+
         tree_chunks_size(tree, size_map, visited_blobs, &mut s)?;
     }
+
+    assert_eq!(
+        s.tree_bytes + s.chunk_bytes,
+        s.introduced + s.reused
+    );
     Ok(s)
 }
 
