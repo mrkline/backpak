@@ -51,9 +51,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     )?;
 
     // Build a set of all the blobs referenced by any snapshot.
-    // Try to save memory (8 bytes per entry instead of 28) by using references
-    // since this is one of the largest collections we'll build.
-    // Previously we tried to save even more memory by only building a *chunk* set
+    // Previously we tried to save memory by only building a *chunk* set
     // and checking tree reachability via the list of forests,
     // but this is a crappy space-time tradeoff.
     // Instead of a constant-time lookup per packed blob (is that blob in this set?),
@@ -187,7 +185,7 @@ fn load_snapshots_and_forests(
 /// Collect all blobs from the provided forests
 fn reachable_blobs<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
     forests: I,
-) -> FxHashSet<&'a ObjectId> {
+) -> FxHashSet<ObjectId> {
     forests
         .map(blobs_in_forest)
         .reduce(FxHashSet::default, |mut a, b| {
@@ -196,10 +194,10 @@ fn reachable_blobs<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
         })
 }
 
-fn blobs_in_forest(forest: &tree::Forest) -> FxHashSet<&ObjectId> {
+fn blobs_in_forest(forest: &tree::Forest) -> FxHashSet<ObjectId> {
     let mut blobs = FxHashSet::default();
     for (f, t) in forest {
-        blobs.insert(f);
+        blobs.insert(*f);
         blobs.extend(tree::chunks_in_tree(t));
     }
     blobs
@@ -212,7 +210,7 @@ fn blobs_in_forest(forest: &tree::Forest) -> FxHashSet<&ObjectId> {
 #[allow(clippy::type_complexity)]
 fn partition_reusable_packs<'a>(
     index: &'a index::Index,
-    reachable_blobs: &FxHashSet<&ObjectId>,
+    reachable_blobs: &FxHashSet<ObjectId>,
 ) -> (
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
@@ -234,7 +232,7 @@ fn partition_reusable_packs<'a>(
 #[allow(clippy::type_complexity)]
 fn partition_droppable_packs<'a>(
     packs_to_prune: &BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
-    reachable_blobs: &FxHashSet<&ObjectId>,
+    reachable_blobs: &FxHashSet<ObjectId>,
 ) -> (
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,
     BTreeMap<&'a ObjectId, &'a pack::PackManifest>,

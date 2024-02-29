@@ -219,17 +219,17 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
 
 /// A result of [`blob_to_pack_map()`],
 /// mapping [`Blob`](crate::blob::Blob) IDs to the the pack where each is stored
-pub type BlobMap<'a> = FxHashMap<&'a ObjectId, &'a ObjectId>;
+pub type BlobMap = FxHashMap<ObjectId, ObjectId>;
 
 /// Given an index, produce a mapping that traces [`Blob`](crate::blob::Blob)s
 /// to the packs where they're stored
-pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap<'_>> {
+pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap> {
     debug!("Building a blob -> pack map");
     let mut mapping = FxHashMap::default();
 
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {
-            if let Some(other_pack) = mapping.insert(&blob.id, pack_id) {
+            if let Some(other_pack) = mapping.insert(blob.id, *pack_id) {
                 // TODO: Should this just be a warning?
                 // This might happen in weird cases like concurrent backups
                 // but isn't a huge issue so long as the blobs are valid...
@@ -264,13 +264,13 @@ pub fn blob_id_set(index: &Index) -> Result<FxHashSet<ObjectId>> {
 }
 
 /// Map all blob IDs to their blob size.
-pub fn blob_to_size_map(index: &Index) -> Result<FxHashMap<&ObjectId, u32>> {
+pub fn blob_to_size_map(index: &Index) -> Result<FxHashMap<ObjectId, u32>> {
     debug!("Mapping blobs IDs to their size");
     let mut size_map = FxHashMap::default();
 
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {
-            if size_map.insert(&blob.id, blob.length).is_some() {
+            if size_map.insert(blob.id, blob.length).is_some() {
                 bail!("Duplicate blob {} in pack {}", blob.id, pack_id);
             }
         }
