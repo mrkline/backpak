@@ -30,7 +30,7 @@ struct CurrentPackfile<'a> {
 pub struct BlobReader<'a> {
     cached_backend: &'a backend::CachedBackend,
     index: &'a index::Index,
-    blob_map: &'a index::BlobMap,
+    blob_map: &'a index::BlobMap<'a>,
     current_pack: Option<CurrentPackfile<'a>>,
 }
 
@@ -38,7 +38,7 @@ impl<'a> BlobReader<'a> {
     pub fn new(
         cached_backend: &'a backend::CachedBackend,
         index: &'a index::Index,
-        blob_map: &'a index::BlobMap,
+        blob_map: &'a index::BlobMap<'a>,
     ) -> Self {
         Self {
             cached_backend,
@@ -49,18 +49,18 @@ impl<'a> BlobReader<'a> {
     }
 
     pub fn read_blob(&mut self, blob_id: &ObjectId) -> Result<Vec<u8>> {
-        let pack_id: ObjectId = *self
+        let pack_id: &ObjectId = *self
             .blob_map
             .get(blob_id)
             .ok_or_else(|| anyhow!("Blob {} not found in any pack", blob_id))?;
 
         let should_load_new_pack = match &self.current_pack {
             None => true,
-            Some(CurrentPackfile { id, .. }) => *id != pack_id,
+            Some(CurrentPackfile { id, .. }) => *id != *pack_id,
         };
 
         if should_load_new_pack {
-            self.load_pack(pack_id)
+            self.load_pack(*pack_id)
                 .with_context(|| format!("Couldn't load pack {}", pack_id))?;
         }
         let mut current_pack = self.current_pack.as_mut().unwrap();

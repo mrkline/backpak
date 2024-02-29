@@ -219,17 +219,17 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
 
 /// A result of [`blob_to_pack_map()`],
 /// mapping [`Blob`](crate::blob::Blob) IDs to the the pack where each is stored
-pub type BlobMap = FxHashMap<ObjectId, ObjectId>;
+pub type BlobMap<'a> = FxHashMap<&'a ObjectId, &'a ObjectId>;
 
 /// Given an index, produce a mapping that traces [`Blob`](crate::blob::Blob)s
 /// to the packs where they're stored
-pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap> {
+pub fn blob_to_pack_map(index: &Index) -> Result<BlobMap<'_>> {
     debug!("Building a blob -> pack map");
     let mut mapping = FxHashMap::default();
 
     for (pack_id, manifest) in &index.packs {
         for blob in manifest {
-            if let Some(other_pack) = mapping.insert(blob.id, *pack_id) {
+            if let Some(other_pack) = mapping.insert(&blob.id, pack_id) {
                 // TODO: Should this just be a warning?
                 // This might happen in weird cases like concurrent backups
                 // but isn't a huge issue so long as the blobs are valid...
