@@ -333,8 +333,7 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
                 bucket,
             )?),
         };
-        // TODO: load global cache
-        let cache = cache::Cache::new(Utf8Path::new("cache"))?;
+        let cache = cache::setup()?;
 
         if c.filter.is_some() {
             backend = Box::new(filter::BackendFilter {

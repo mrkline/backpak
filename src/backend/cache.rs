@@ -4,7 +4,7 @@ use std::{
     sync::Mutex,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use rusqlite::Connection;
 
@@ -194,6 +194,16 @@ impl Cache {
 
 fn now_nanos() -> i64 {
     chrono::Utc::now().timestamp_nanos_opt().unwrap()
+}
+
+pub fn setup() -> Result<Cache> {
+    let mut cachedir: Utf8PathBuf = home::home_dir()
+        .ok_or_else(|| anyhow!("Can't find home directory"))?
+        .try_into()
+        .context("Home directory isn't UTF-8")?;
+    cachedir.extend([".cache", "backpak"]);
+    fs::create_dir_all(&cachedir).with_context(|| format!("Couldn't create {cachedir}"))?;
+    Cache::new(&cachedir)
 }
 
 #[cfg(test)]
