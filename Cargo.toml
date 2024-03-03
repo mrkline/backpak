@@ -30,6 +30,8 @@ data-encoding = "2.3"
 enum-map = "2.5"
 # Chunkin'
 fastcdc = "3.0"
+# I want to go $HOME.
+home = "0.5"
 # Default author - the hostname
 hostname = "0.3"
 # Be lazy.
