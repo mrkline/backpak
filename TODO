@@ -1,3 +1,10 @@
+## `backup --ignore`
+
+- Take a regex
+
+- Add a filter function to `walk_fs`? We already have the full path of each node;
+  should be trivial to compare against.
+
 ## `show` command
 
 - Total bytes referenced (split into files/chunks and metadata/trees)
@@ -8,17 +15,3 @@
 
 - Docs should explain that `cat` dumps raw data (JSON-ified records from files),
   `show` gathers metadata from a particular snapshot.
-
-## `usage` command (or `statistics`? `info`?)
-
-- Number of of all file types, size of those
-
-- total size vs "unshared" sizes of all snapshots? (% duplicated?)
-
-- Unused info in index? (a la prune)
-
-The info we're showing is a combination of `snapshots` sizes (but summed)
-and `prune`. Refactor their math into snapshot.rs?
-
-...prune should also probably show how many bytes it pruned, huh?
-
