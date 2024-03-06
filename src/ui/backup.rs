@@ -148,12 +148,8 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             .to_string(),
     };
 
-    let now = Local::now();
-    // I'm probably missing somthing here;
-    // just trying to get the local timezone offset.
-    // https://stackoverflow.com/a/59603899
-    // .into() converts to UTC (+0)
-    let time = now.with_timezone(now.offset());
+    // DateTime<Local> -> DateTime<FixedOffset>
+    let time: DateTime<FixedOffset> = Local::now().into();
 
     let snapshot = Snapshot {
         time,
