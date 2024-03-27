@@ -56,7 +56,7 @@ pub struct Config {
 
 fn read_config(p: &Utf8Path) -> Result<Config> {
     let s = std::fs::read_to_string(p).with_context(|| format!("Couldn't read config from {p}"))?;
-    let c = toml::from_str(&s)?;
+    let c = toml::from_str(&s).with_context(|| format!("Couldn't parse config in {p}"))?;
     Ok(c)
 }
 
