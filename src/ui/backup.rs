@@ -9,6 +9,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
 use clap::Parser;
 use log::*;
+use regex::RegexSet;
 use rustc_hash::FxHashSet;
 
 use crate::backend;
@@ -31,6 +32,10 @@ pub struct Args {
     /// Add a metadata tag to the snapshot (can be specified multiple times)
     #[clap(short = 't', long = "tag", name = "tag")]
     pub tags: Vec<String>,
+
+    /// Skip anything whose absolute path matches the given regular expression
+    #[clap(short = 's', long = "skip", name = "regex")]
+    pub skips: Vec<String>,
 
     /// The paths to back up
     ///
@@ -118,6 +123,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     let (root, bytes_reused) = backup_tree(
         &paths,
+        &args.skips,
         parent.map(|p| &p.tree),
         &parent_forest,
         &mut packed_blobs,
@@ -193,6 +199,7 @@ fn parent_snapshot(
 
 fn check_paths(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
     debug!("Walking {paths:?} to check paths and if we can stat");
+    let mut no_op_filter = |_: &Utf8Path| Ok(true);
     let mut no_op_visit =
         |_nope: &mut (),
          _path: &Utf8Path,
@@ -204,6 +211,7 @@ fn check_paths(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
         paths,
         None,
         &tree::Forest::default(),
+        &mut no_op_filter,
         &mut no_op_visit,
         &mut no_op_finalize,
     )
@@ -286,6 +294,7 @@ fn find_cwd_packfiles(index: &index::Index) -> Result<Vec<ObjectId>> {
 
 fn backup_tree(
     paths: &BTreeSet<Utf8PathBuf>,
+    skips: &[String],
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
     packed_blobs: &mut FxHashSet<ObjectId>,
@@ -293,6 +302,21 @@ fn backup_tree(
     tree_tx: &mut SyncSender<Blob>,
 ) -> Result<(ObjectId, u64)> {
     use fs_tree::DirectoryEntry;
+
+    let skipset = RegexSet::new(skips).context("Skip rules are not valid regex")?;
+
+    let mut filter = |path: &Utf8Path| {
+        // We could lift the filter into fs_tree as a dedicated argument to walk_fs()
+        // to avoid getting this file's metadata only to skip it,
+        // or worse - walking a directory just to skip it,
+        // but for now just make it part of this visiter.
+        if skipset.is_match(path.as_str()) {
+            info!("{:>9} {}", "skip", path);
+            Ok(false)
+        } else {
+            Ok(true)
+        }
+    };
 
     // Both closures need to get at packed_blobs at some point...
     let packed_blobs = RefCell::new(packed_blobs);
@@ -406,6 +430,7 @@ fn backup_tree(
         paths,
         previous_tree,
         previous_forest,
+        &mut filter,
         &mut visit,
         &mut finalize,
     )

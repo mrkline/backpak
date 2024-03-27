@@ -76,14 +76,19 @@ pub enum DirectoryEntry<T> {
 /// The entire thing acts as a map-reduce, where `visit()` maps and `finalize()`
 /// reduces everything visited in that directory.
 /// See [`forest_from_fs`] or [`crate::ui::backup`]'s `backup_tree` for examples.
-pub fn walk_fs<T, Intermediate, Visit, Finalize>(
+pub fn walk_fs<T, Intermediate, Filter, Visit, Finalize>(
     paths: &BTreeSet<Utf8PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
+    filter: &mut Filter,
     visit: &mut Visit,
     finalize: &mut Finalize,
 ) -> Result<T>
 where
+    Filter: FnMut(
+        &Utf8Path,
+        // More some day?
+    ) -> Result<bool>,
     Visit: FnMut(
         &mut Intermediate,
         &Utf8Path,
@@ -99,6 +104,10 @@ where
     let previous_tree = previous_tree.and_then(|id| previous_forest.get(id));
 
     for path in paths {
+        if !filter(path)? {
+            continue;
+        }
+
         let entry_name = path.file_name().expect("Given path ended in ..");
 
         let previous_node = previous_tree
@@ -132,6 +141,7 @@ where
                     &subpaths,
                     previous_subtree,
                     previous_forest,
+                    filter,
                     visit,
                     finalize,
                 )
@@ -165,6 +175,7 @@ pub fn forest_from_fs(
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
 ) -> Result<(ObjectId, tree::Forest)> {
+    let mut filter = |_: &Utf8Path| Ok(true);
     fn visit(
         (tree, forest): &mut (tree::Tree, tree::Forest),
         path: &Utf8Path,
@@ -223,6 +234,7 @@ pub fn forest_from_fs(
         paths,
         previous_tree,
         previous_forest,
+        &mut filter,
         &mut visit,
         &mut finalize,
     )
