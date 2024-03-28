@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
+use byte_unit::Byte;
 use camino::{Utf8Path, Utf8PathBuf};
 use rusqlite::Connection;
 
@@ -30,7 +31,7 @@ pub struct Cache {
 }
 
 // 1G. Make this configurable with global settings (~/.config/backpak?)
-pub const DEFAULT_SIZE: u64 = 1024 * 1024 * 1024;
+pub const DEFAULT_SIZE: Byte = Byte::GIBIBYTE;
 
 impl Cache {
     /// Create a cache given the database connection - let users handle the creation
@@ -204,7 +205,7 @@ pub fn setup(conf: &config::Configuration) -> Result<Cache> {
         .context("Home directory isn't UTF-8")?;
     cachedir.extend([".cache", "backpak"]);
     fs::create_dir_all(&cachedir).with_context(|| format!("Couldn't create {cachedir}"))?;
-    Cache::new(&cachedir, conf.cache_size)
+    Cache::new(&cachedir, conf.cache_size.as_u64())
 }
 
 #[cfg(test)]

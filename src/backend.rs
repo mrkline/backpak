@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::{self, prelude::*};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
+use byte_unit::Byte;
 use camino::Utf8Path;
 use log::*;
 use serde::{Deserialize, Serialize};
@@ -25,9 +26,8 @@ mod memory;
 
 use cache::Cache;
 
-// lol: Serde wants a function to call for defaults.
 #[inline]
-fn defsize() -> u64 {
+fn defsize() -> Byte {
     pack::DEFAULT_PACK_SIZE
 }
 
@@ -45,7 +45,7 @@ pub enum Kind {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "defsize")]
-    pub pack_size: u64,
+    pub pack_size: Byte,
     #[serde(rename = "backend")]
     pub kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]

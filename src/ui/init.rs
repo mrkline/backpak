@@ -1,4 +1,5 @@
 use anyhow::Result;
+use byte_unit::Byte;
 use clap::{Parser, Subcommand};
 
 use crate::backend;
@@ -6,7 +7,7 @@ use crate::backend;
 #[derive(Debug, Parser)]
 pub struct Args {
     #[clap(short, long, default_value_t = crate::pack::DEFAULT_PACK_SIZE)]
-    pack_size: u64,
+    pack_size: Byte,
 
     #[clap(long)]
     gpg: Option<String>,

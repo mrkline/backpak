@@ -3,6 +3,7 @@ use super::*;
 use std::fs;
 
 use anyhow::{ensure, Result};
+use byte_unit::Byte;
 use b2::Session;
 
 pub struct BackblazeBackend {
@@ -11,7 +12,7 @@ pub struct BackblazeBackend {
 
 pub fn initialize(
     repository: &camino::Utf8Path,
-    pack_size: u64,
+    pack_size: Byte,
     key_id: String,
     application_key: String,
     bucket: String,
