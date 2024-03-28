@@ -3,6 +3,7 @@ use super::*;
 use std::fs;
 use std::io;
 
+use byte_unit::Byte;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::file_util;
@@ -24,7 +25,7 @@ fn ensure_exists(e: &Utf8Path) -> Result<()> {
 
 pub fn initialize(
     repository: &Utf8Path,
-    pack_size: u64,
+    pack_size: Byte,
     filter: Option<String>,
     unfilter: Option<String>,
 ) -> Result<()> {

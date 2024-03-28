@@ -7,6 +7,7 @@ use std::io::{self, SeekFrom};
 use std::sync::mpsc::{Receiver, SyncSender};
 
 use anyhow::{ensure, Context, Result};
+use byte_unit::Byte;
 use log::*;
 use serde_derive::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
@@ -20,7 +21,7 @@ use crate::tree;
 const MAGIC_BYTES: &[u8] = b"MKBAKPAK";
 
 /// The desired size of [crate::pack] files
-pub const DEFAULT_PACK_SIZE: u64 = 1024 * 1024 * 100; // 100 MiB
+pub const DEFAULT_PACK_SIZE: Byte = Byte::from_u64(1024 * 1024 * 100); // 100 MiB
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PackManifestEntry {
@@ -52,11 +53,12 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
 /// Packs blobs received from the given channel.
 /// Returns the number of bytes packed
 pub fn pack(
-    target_size: u64,
+    target_size: Byte,
     rx: Receiver<Blob>,
     to_index: SyncSender<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
 ) -> Result<u64> {
+    let target_size = target_size.as_u64();
     let mut writer = PackfileWriter::new()?;
 
     let mut pass_bytes_written: u64 = 0; // Bytes written since the last size check

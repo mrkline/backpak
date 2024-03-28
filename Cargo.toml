@@ -15,7 +15,7 @@ anyhow = { version = "1.0", features = ["backtrace"] }
 #
 b2 = { path = "./b2" }
 # Pretty-printing byte counts
-byte-unit = "5.0"
+byte-unit = { version = "5.0", features = ["serde"] }
 # Paths are UTF-8
 camino = { version = "1.0", features = ["serde1"] }
 # Tick tock
