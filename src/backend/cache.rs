@@ -9,9 +9,9 @@ use byte_unit::Byte;
 use camino::{Utf8Path, Utf8PathBuf};
 use rusqlite::Connection;
 
+use crate::config;
 use crate::counters::{bump, Op};
 use crate::file_util;
-use crate::config;
 
 /// Local cache for any and all backends.
 ///
@@ -36,7 +36,7 @@ pub const DEFAULT_SIZE: Byte = Byte::GIBIBYTE;
 impl Cache {
     /// Create a cache given the database connection - let users handle the creation
     /// to make it easy to pass in `Connection::open_in_memory()`, etc.
-    pub fn new(dir: &Utf8Path, cache_size: u64) -> Result<Self> {
+    pub fn new(dir: &Utf8Path, cache_size: Byte) -> Result<Self> {
         let mut conn = Connection::open(dir.join("cache_metadata.sqlite"))?;
 
         let t = conn.transaction()?;
@@ -70,7 +70,7 @@ impl Cache {
         // Last guy wins.
         conn.execute(
             "REPLACE INTO settings(key, value) VALUES ('size', ?1)",
-            [cache_size],
+            [cache_size.as_u64()],
         )?;
 
         Ok(Self {
@@ -205,7 +205,7 @@ pub fn setup(conf: &config::Configuration) -> Result<Cache> {
         .context("Home directory isn't UTF-8")?;
     cachedir.extend([".cache", "backpak"]);
     fs::create_dir_all(&cachedir).with_context(|| format!("Couldn't create {cachedir}"))?;
-    Cache::new(&cachedir, conf.cache_size.as_u64())
+    Cache::new(&cachedir, conf.cache_size)
 }
 
 #[cfg(test)]
@@ -217,7 +217,7 @@ mod test {
     #[test]
     fn smoke() -> Result<()> {
         let td = tempdir()?;
-        let mut cache = Cache::new(Utf8Path::from_path(td.path()).unwrap())?;
+        let mut cache = Cache::new(Utf8Path::from_path(td.path()).unwrap(), DEFAULT_SIZE)?;
 
         // We can put something in and read it out.
         cache.insert("foo", &mut [1, 2, 3, 4].as_slice())?;

@@ -11,8 +11,8 @@ use log::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    counters::{bump, Op},
     config,
+    counters::{bump, Op},
     file_util::{move_opened, nice_size},
     hashing::ObjectId,
     pack,

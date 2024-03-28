@@ -3,8 +3,8 @@ use super::*;
 use std::fs;
 
 use anyhow::{ensure, Result};
-use byte_unit::Byte;
 use b2::Session;
+use byte_unit::Byte;
 
 pub struct BackblazeBackend {
     pub session: Session,
