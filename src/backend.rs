@@ -11,13 +11,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     counters::{bump, Op},
+    config,
     file_util::{move_opened, nice_size},
     hashing::ObjectId,
     pack,
 };
 
 pub mod backblaze;
-mod cache;
+pub mod cache;
 mod filter;
 pub mod fs;
 mod memory;
@@ -25,6 +26,7 @@ mod memory;
 use cache::Cache;
 
 // lol: Serde wants a function to call for defaults.
+#[inline]
 fn defsize() -> u64 {
     pack::DEFAULT_PACK_SIZE
 }
@@ -333,7 +335,10 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
                 bucket,
             )?),
         };
-        let cache = cache::setup()?;
+        // If we ever configure more, move this somewhere central (main()?)
+        let conf = config::load()?;
+
+        let cache = cache::setup(&conf)?;
 
         if c.filter.is_some() {
             backend = Box::new(filter::BackendFilter {

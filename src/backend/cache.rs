@@ -10,6 +10,7 @@ use rusqlite::Connection;
 
 use crate::counters::{bump, Op};
 use crate::file_util;
+use crate::config;
 
 /// Local cache for any and all backends.
 ///
@@ -29,12 +30,12 @@ pub struct Cache {
 }
 
 // 1G. Make this configurable with global settings (~/.config/backpak?)
-const CACHE_SIZE: i64 = 1024 * 1024 * 1024;
+pub const DEFAULT_SIZE: u64 = 1024 * 1024 * 1024;
 
 impl Cache {
     /// Create a cache given the database connection - let users handle the creation
     /// to make it easy to pass in `Connection::open_in_memory()`, etc.
-    pub fn new(dir: &Utf8Path) -> Result<Self> {
+    pub fn new(dir: &Utf8Path, cache_size: u64) -> Result<Self> {
         let mut conn = Connection::open(dir.join("cache_metadata.sqlite"))?;
 
         let t = conn.transaction()?;
@@ -68,7 +69,7 @@ impl Cache {
         // Last guy wins.
         conn.execute(
             "REPLACE INTO settings(key, value) VALUES ('size', ?1)",
-            [CACHE_SIZE],
+            [cache_size],
         )?;
 
         Ok(Self {
@@ -196,14 +197,14 @@ fn now_nanos() -> i64 {
     chrono::Utc::now().timestamp_nanos_opt().unwrap()
 }
 
-pub fn setup() -> Result<Cache> {
+pub fn setup(conf: &config::Configuration) -> Result<Cache> {
     let mut cachedir: Utf8PathBuf = home::home_dir()
         .ok_or_else(|| anyhow!("Can't find home directory"))?
         .try_into()
         .context("Home directory isn't UTF-8")?;
     cachedir.extend([".cache", "backpak"]);
     fs::create_dir_all(&cachedir).with_context(|| format!("Couldn't create {cachedir}"))?;
-    Cache::new(&cachedir)
+    Cache::new(&cachedir, conf.cache_size)
 }
 
 #[cfg(test)]
