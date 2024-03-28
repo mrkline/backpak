@@ -1,6 +1,6 @@
 use std::{fs, io};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use byte_unit::Byte;
 use camino::Utf8PathBuf;
 use serde_derive::Deserialize;
@@ -21,7 +21,7 @@ pub struct Configuration {
 impl Default for Configuration {
     fn default() -> Self {
         Self {
-            cache_size: cache::DEFAULT_SIZE
+            cache_size: cache::DEFAULT_SIZE,
         }
     }
 }
@@ -33,11 +33,10 @@ pub fn load() -> Result<Configuration> {
         .context("Home directory isn't UTF-8")?;
     confpath.extend([".config", "backpak.toml"]);
     let s = match fs::read_to_string(&confpath) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Ok(Configuration::default())
-        }
-        found => found
-    }.context("Couldn't open {confpath}")?;
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Configuration::default()),
+        found => found,
+    }
+    .context("Couldn't open {confpath}")?;
     let conf = toml::from_str(&s).context("Couldn't parse {confpath}")?;
     Ok(conf)
 }
