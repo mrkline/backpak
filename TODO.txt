@@ -1,0 +1,8 @@
+## `copy` command
+
+- Reuse `walk_snapshots()` from `prune`
+
+- We want it to be resumable like backups. Resue `find_resumable_backup()`?
+
+- Move that into prune as well, with the starting index being WIP + reusable packs?
+  Any command that could cause a large upload (backup, prune, copy) should probably be resumable.
