@@ -220,19 +220,6 @@ fn check_paths(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
 fn find_resumable_backup(
     backend: &backend::CachedBackend,
 ) -> Result<Option<(index::Index, Vec<ObjectId>)>> {
-    // NB: If the index is already finished and renamed from the WIP name,
-    //     we won't find it here and will start all over.
-    //     This is sad, but:
-    //
-    //     1. We can minimize the chance of that happening by keeping queue sizes down,
-    //        which we do.
-    //
-    //     2. The alternative would be more complicated logic to name the file down the line
-    //        (e.g., `upload()` might need a current name & a desired name.
-    //
-    // This seems worth fixing, though. Maybe have `index()` just return the desired ID,
-    // wait for the whole backup thread graph to join, and then upload it right before
-    // the snapshot?
     let wip = match index::read_wip()? {
         Some(i) => i,
         None => {
