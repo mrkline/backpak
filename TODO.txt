@@ -6,3 +6,9 @@
 
 - Move that into prune as well, with the starting index being WIP + reusable packs?
   Any command that could cause a large upload (backup, prune, copy) should probably be resumable.
+
+  More thinking on that: I wanted to centralize `find_resumable_backup()` in the backup master thread,
+  but that might not be the cure. While everyone wants a set of already-packed blobs from WIP.index,
+  we can't just maintain that set internally to the backup threads...
+  The top level operation (a backup, or a prune, or a copy) wants that, both to avoid duplicate work,
+  and to print nicer, task-specific messages. Compare how backup and prune use `packed_blobs`.
