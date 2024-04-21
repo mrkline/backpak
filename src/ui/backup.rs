@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::str::FromStr;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 
@@ -86,10 +85,12 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     let mut packed_blobs = index::blob_id_set(&index)?;
 
-    let (maybe_wip_index, maybe_cwd_packfiles) =
-        find_resumable_backup(&cached_backend)?.unwrap_or_default();
+    let crate::backup::ResumableBackup {
+        wip_index,
+        cwd_packfiles,
+    } = crate::backup::find_resumable(&cached_backend)?.unwrap_or_default();
 
-    for manifest in maybe_wip_index.packs.values() {
+    for manifest in wip_index.packs.values() {
         for entry in manifest {
             packed_blobs.insert(entry.id);
         }
@@ -97,13 +98,10 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     let backend_config = Arc::new(backend_config);
     let cached_backend = Arc::new(cached_backend);
-    let mut backup = crate::backup::spawn_backup_threads(
-        backend_config,
-        cached_backend.clone(),
-        maybe_wip_index,
-    );
+    let mut backup =
+        crate::backup::spawn_backup_threads(backend_config, cached_backend.clone(), wip_index);
 
-    for p in maybe_cwd_packfiles {
+    for p in cwd_packfiles {
         let name = format!("{p}.pack");
         let fd = std::fs::File::open(&name).with_context(|| format!("Couldn't open {name}"))?;
         backup
@@ -215,68 +213,6 @@ fn check_paths(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
         &mut no_op_visit,
         &mut no_op_finalize,
     )
-}
-
-fn find_resumable_backup(
-    backend: &backend::CachedBackend,
-) -> Result<Option<(index::Index, Vec<ObjectId>)>> {
-    let wip = match index::read_wip()? {
-        Some(i) => i,
-        None => {
-            trace!("No WIP index file found, no backup to resume");
-            return Ok(None);
-        }
-    };
-    info!("WIP index file found, resuming backup...");
-
-    debug!("Looking for packfiles that haven't been uploaded...");
-    // Since we currently bound the upload channel to size 0,
-    // we'll only find at most 1, but that's neither here nor there...
-    let cwd_packfiles = find_cwd_packfiles(&wip)?;
-
-    let mut missing_packfiles: FxHashSet<ObjectId> = wip.packs.keys().copied().collect();
-    for p in &cwd_packfiles {
-        assert!(missing_packfiles.remove(p));
-    }
-
-    debug!("Checking backend for other packfiles in the index...");
-    // (We want to make sure that everything the index contains is backed up,
-    // or just has to be uploaded, so it's a valid starting point).
-    let mut errs = false;
-    for p in &missing_packfiles {
-        if let Err(e) = backend.probe_pack(p) {
-            error!("{e}");
-            errs = true;
-        } else {
-            trace!("Found pack {p}");
-        }
-    }
-    if errs {
-        bail!("WIP index file references packfiles not backed up or in the working directory.");
-    }
-    Ok(Some((wip, cwd_packfiles)))
-}
-
-fn find_cwd_packfiles(index: &index::Index) -> Result<Vec<ObjectId>> {
-    let mut packfiles = vec![];
-
-    for entry in Utf8Path::new(".").read_dir_utf8()? {
-        let entry = entry?;
-        let name_tokens: Vec<_> = entry.file_name().split('.').collect();
-        if name_tokens.len() != 2 || name_tokens[1] != "pack" || !entry.file_type()?.is_file() {
-            continue;
-        }
-        if let Ok(id) = ObjectId::from_str(name_tokens[0]) {
-            if index.packs.contains_key(&id) {
-                trace!("Found {} in the WIP index", entry.file_name());
-                packfiles.push(id);
-            } else {
-                warn!("Found {} but it isn't in the WIP index", entry.file_name());
-            }
-        }
-    }
-
-    Ok(packfiles)
 }
 
 fn backup_tree(

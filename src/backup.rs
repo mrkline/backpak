@@ -47,15 +47,19 @@
 //! the partially-used packs to the packers for compaction. And so on, and so forth.
 
 use std::fs::{self, File};
+use std::str::FromStr;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
 use std::thread;
 
 use anyhow::{bail, Context, Result};
+use camino::Utf8Path;
 use log::*;
+use rustc_hash::FxHashSet;
 
 use crate::backend;
 use crate::blob::Blob;
+use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
 use crate::upload;
@@ -213,4 +217,89 @@ fn backup_master_thread(
         }
         bail!("backup failed");
     }
+}
+
+#[derive(Default)]
+pub struct ResumableBackup {
+    /// Work-in-progress index found from a (presumably) interrupted backup.
+    pub wip_index: index::Index,
+    /// Packfiles found in the
+    pub cwd_packfiles: Vec<ObjectId>,
+}
+
+/// Usable by backup actions (`backup`, `prune`, `copy`, etc.)
+/// to support resuming from the last incomplete pack.
+///
+/// The actual resuming isn't built into the machinery above because it's command-specific!
+/// Backup will just upload the packfiles in the CWD and keep trucking.
+/// Prune will want to be more careful, since it's destructive.
+/// (Is the set of superseded packs the same? Are the packs to keep the same? Else chicken out.)
+pub fn find_resumable(backend: &backend::CachedBackend) -> Result<Option<ResumableBackup>> {
+    let wip_index = match index::read_wip()? {
+        Some(i) => i,
+        None => {
+            trace!("No WIP index file found, nothing to resume");
+            return Ok(None);
+        }
+    };
+    info!("WIP index file found, resuming from where we left off...");
+
+    debug!("Looking for packfiles that haven't been uploaded...");
+    // Since we currently bound the upload channel to size 0,
+    // we'll only find at most 1, but that's neither here nor there...
+    let cwd_packfiles = find_cwd_packfiles(&wip_index)?;
+
+    let mut missing_packfiles: FxHashSet<ObjectId> = wip_index.packs.keys().copied().collect();
+    for p in &cwd_packfiles {
+        // Invariant: find_cwd_packfiles only returns packs in the WIP index.
+        assert!(missing_packfiles.remove(p));
+    }
+
+    debug!("Checking backend for other packfiles in the index...");
+    // (We want to make sure that everything the index contains is backed up,
+    // or just has to be uploaded, so it's a valid starting point).
+    let mut errs = false;
+    for p in &missing_packfiles {
+        if let Err(e) = backend.probe_pack(p) {
+            error!("{e}");
+            errs = true;
+        } else {
+            trace!("Found pack {p}");
+        }
+    }
+    if errs {
+        bail!("WIP index file references packfiles not backed up or in the working directory.");
+    }
+    Ok(Some(ResumableBackup {
+        wip_index,
+        cwd_packfiles,
+    }))
+}
+
+fn find_cwd_packfiles(index: &index::Index) -> Result<Vec<ObjectId>> {
+    let mut packfiles = vec![];
+
+    let cwd = std::env::current_dir()?;
+    let cwd: &Utf8Path = TryFrom::try_from(cwd.as_path())
+        .with_context(|| format!("current directory {} isn't UTF-8", cwd.display()))?;
+    for entry in cwd.read_dir_utf8()? {
+        let entry = entry?;
+        let name_tokens: Vec<_> = entry.file_name().split('.').collect();
+        if name_tokens.len() != 2 || name_tokens[1] != "pack" || !entry.file_type()?.is_file() {
+            continue;
+        }
+        if let Ok(id) = ObjectId::from_str(name_tokens[0]) {
+            if index.packs.contains_key(&id) {
+                trace!("Found {} in the WIP index", entry.file_name());
+                packfiles.push(id);
+            } else {
+                warn!(
+                    "Found {} but it isn't in the WIP index. Ignoring",
+                    entry.file_name()
+                );
+            }
+        }
+    }
+
+    Ok(packfiles)
 }
