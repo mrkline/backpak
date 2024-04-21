@@ -101,14 +101,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let mut backup =
         crate::backup::spawn_backup_threads(backend_config, cached_backend.clone(), wip_index);
 
-    for p in cwd_packfiles {
-        let name = format!("{p}.pack");
-        let fd = std::fs::File::open(&name).with_context(|| format!("Couldn't open {name}"))?;
-        backup
-            .upload_tx
-            .send((name, fd))
-            .context("uploader channel exited early")?;
-    }
+    crate::backup::upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
 
     info!(
         "Backing up {}",

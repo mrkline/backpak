@@ -111,7 +111,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         .into_iter()
         .map(|(id, manifest)| (*id, manifest.clone()))
         .collect();
-    let new_index = index::Index {
+    let mut new_index = index::Index {
         packs: reusable_packs,
         supersedes: superseded.clone(),
     };
@@ -119,10 +119,52 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // As we repack our snapshots, skip blobs in the 100% reachable packs.
     let mut packed_blobs = index::blob_id_set(&new_index)?;
 
+    // Now that we know what we want to do, it's a good time to see if we already had
+    // something in progress, and if we can pick up there.
+    let maybe_resumable = backup::find_resumable(&cached_backend)?;
+    let mut packs_to_upload = vec![];
+    if let Some(backup::ResumableBackup {
+        wip_index,
+        cwd_packfiles,
+    }) = maybe_resumable
+    {
+        // Let's be very careful about what we pick up and run with since prune is destructive.
+        // Are we superseding the same set of indexes?
+        // Hopefully a good hint that something else hasn't run between the WIP and now.
+        if wip_index.supersedes != new_index.supersedes {
+            warn!("WIP index file supersedes a different set of indexes. Starting over.");
+        }
+        // Is the WIP a superset of where we'd start out?
+        else if !wip_index
+            .packs
+            .keys()
+            .collect::<FxHashSet<_>>()
+            .is_superset(&new_index.packs.keys().collect())
+        {
+            warn!("WIP index file isn't a superset of reusable packs. Starting over.");
+        } else {
+            // Once we're happy, do the same thing as resuming a backup.
+            // TODO: DRY this out?
+            for manifest in wip_index.packs.values() {
+                for entry in manifest {
+                    packed_blobs.insert(entry.id);
+                }
+            }
+            packs_to_upload = cwd_packfiles;
+            new_index = wip_index;
+        }
+    }
+
     let backend_config = Arc::new(backend_config);
     let cached_backend = Arc::new(cached_backend);
     let mut backup = (!args.dry_run)
         .then(|| backup::spawn_backup_threads(backend_config, cached_backend.clone(), new_index));
+
+    // Finish the WIP resume business.
+    if let Some(b) = &mut backup {
+        backup::upload_cwd_packfiles(&mut b.upload_tx, &packs_to_upload)?;
+    }
+    drop(packs_to_upload);
 
     // Get a reader to load the chunks we're repacking.
     let mut reader = read::BlobReader::new(&cached_backend, &index, &blob_map);

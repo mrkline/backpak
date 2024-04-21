@@ -242,7 +242,7 @@ pub fn find_resumable(backend: &backend::CachedBackend) -> Result<Option<Resumab
             return Ok(None);
         }
     };
-    info!("WIP index file found, resuming from where we left off...");
+    info!("WIP index file found, resuming where we left off...");
 
     debug!("Looking for packfiles that haven't been uploaded...");
     // Since we currently bound the upload channel to size 0,
@@ -302,4 +302,14 @@ fn find_cwd_packfiles(index: &index::Index) -> Result<Vec<ObjectId>> {
     }
 
     Ok(packfiles)
+}
+
+pub fn upload_cwd_packfiles(up: &mut SyncSender<(String, File)>, packs: &[ObjectId]) -> Result<()> {
+    for p in packs {
+        let name = format!("{p}.pack");
+        let fd = File::open(&name).with_context(|| format!("Couldn't open {name}"))?;
+        up.send((name, fd))
+            .context("uploader channel exited early")?;
+    }
+    Ok(())
 }
