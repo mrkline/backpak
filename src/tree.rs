@@ -69,8 +69,9 @@ pub struct PosixMetadata {
     pub access_time: DateTime<Utc>,
     #[serde(with = "prettify::date_time")]
     pub modify_time: DateTime<Utc>,
-    #[serde(with = "prettify::date_time")]
-    pub change_time: DateTime<Utc>,
+    // No change time - it's when the metadata changes, and since we can't set that
+    // when restoring a file, nor compare it meaningfully between snapshots,
+    // just leave it off.
 }
 
 /// Backup-relevant metadata taken from a `GetFileInformationByHandle()` call
@@ -79,6 +80,9 @@ pub struct PosixMetadata {
 pub struct WindowsMetadata {
     pub attributes: u32,
     pub size: u64,
+    // Unlike POSIX, all three of these can be set:
+    // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime
+    // so recording them is helpful.
     #[serde(with = "prettify::date_time_option")]
     pub creation_time: Option<DateTime<Utc>>,
     #[serde(with = "prettify::date_time_option")]
@@ -169,9 +173,6 @@ pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
     let modify_time = chrono::Utc
         .timestamp_opt(meta.mtime(), meta.mtime_nsec() as u32)
         .unwrap();
-    let change_time = chrono::Utc
-        .timestamp_opt(meta.ctime(), meta.ctime_nsec() as u32)
-        .unwrap();
 
     Ok(NodeMetadata::Posix(PosixMetadata {
         mode,
@@ -180,7 +181,6 @@ pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
         group_id,
         access_time,
         modify_time,
-        change_time,
     }))
 }
 
