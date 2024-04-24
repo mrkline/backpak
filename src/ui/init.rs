@@ -67,12 +67,12 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     }
 }
 
-fn round_trip_filter_test(filter: &str, unfilter: &str) -> Result<()> {
-    let plaintext = r"I'd like some help remembering stuff.
-    I wonder if I could come down and see you,
-    and we could drink and talk and remember.
-    r";
+const PLAINTEXT: &str = r"I'd like some help remembering stuff.
+I wonder if I could come down and see you,
+and we could drink and talk and remember.
+r";
 
+fn round_trip_filter_test(filter: &str, unfilter: &str) -> Result<()> {
     let mut f = process::Command::new("sh")
         .arg("-c")
         .arg(filter)
@@ -83,7 +83,7 @@ fn round_trip_filter_test(filter: &str, unfilter: &str) -> Result<()> {
     f.stdin
         .take()
         .unwrap()
-        .write_all(plaintext.as_bytes())
+        .write_all(PLAINTEXT.as_bytes())
         .with_context(|| format!("Couldn't write to {filter}"))?;
     let fr = f.wait_with_output().unwrap();
     ensure!(fr.status.success(), "{filter} failed");
@@ -105,9 +105,9 @@ fn round_trip_filter_test(filter: &str, unfilter: &str) -> Result<()> {
     ensure!(ufr.status.success(), "{unfilter} failed");
 
     let unfiltered = ufr.stdout;
-    if unfiltered != plaintext.as_bytes() {
+    if unfiltered != PLAINTEXT.as_bytes() {
         let nope = String::from_utf8_lossy(&unfiltered);
-        bail!("filter didn't round trip!\nExpected:\n{plaintext}\nGot:\n{nope}");
+        bail!("filter didn't round trip!\nExpected:\n{PLAINTEXT}\nGot:\n{nope}");
     }
     Ok(())
 }
