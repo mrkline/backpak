@@ -281,6 +281,13 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
 pub type Forest = FxHashMap<ObjectId, Arc<Tree>>;
 
 /// A read-through cache of trees that extracts them from packs on-demand
+///
+/// On cache misses, it uses a blob -> pack map to figure out which pack
+/// that tree is in, then caches the entire pack (of trees).
+/// This works well since:
+/// 1. Trees in the same hierarchy (forest) are usually in the same pack.
+/// 2. Packs are compressed, which means we can't just seek to the one tree we want.
+///    We might as well deserialize while we decompress.
 pub struct Cache<'a> {
     /// The master index, used to look up a pack's manifest from its ID
     index: &'a index::Index,
@@ -310,7 +317,7 @@ impl<'a> Cache<'a> {
     }
 
     /// Reads the given tree from the cache,
-    /// fishing it out of its packfile if required.
+    /// reading a new packfile if required.
     pub fn read(&mut self, id: &ObjectId) -> Result<Arc<Tree>> {
         if let Some(t) = self.tree_cache.get(id) {
             trace!("Found tree {id} in-cache");
