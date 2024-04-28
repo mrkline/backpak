@@ -83,6 +83,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         .unwrap_or_default();
     drop(tree_cache);
 
+    // Track all the blobs we've already backed up and use that set to deduplicate.
     let mut packed_blobs = index::blob_id_set(&index)?;
 
     let crate::backup::ResumableBackup {

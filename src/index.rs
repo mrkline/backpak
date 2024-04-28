@@ -1,4 +1,22 @@
 //! Build, read, and write [indexes](Index) of packs' contents.
+//!
+//! An index file contains magic bytes followed by a zstd-compressed CBOR record with:
+//!
+//! 1. A map of packs IDs to their manifests
+//!
+//! 2. A list of previous indexes that this one supersedes.
+//!    (This is a safety for `prune` and `rebuild_index` so that if they're interrupted
+//!    after uploading the new index but *before* deleting the old ones,
+//!    future commands will safely ignore the old indexes.)
+//!
+//! Each backup makes an index of the packs it uploaded.
+//! By gathering all of these (minus superseded ones) into a master index,
+//! we get the contents of every pack in the repo without having to download them
+//! and read their manifests.
+//! From there we can make hash maps for constant-time lookup of any blob in the repo.
+//!
+//! If anything ever happens to the index, we still have the same information in packs' manifests,
+//! so we can rebuild it.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};

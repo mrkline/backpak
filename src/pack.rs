@@ -1,5 +1,20 @@
 //! Build, read, and write compressed packs of [blobs](blob::Blob),
 //! suitable for storing in a [backend]
+//!
+//! A pack file contains:
+//! 1. Magic bytes
+//! 2. A zstd-compressed stream of all blobs in the file
+//! 3. A *separate* zstd stream of the CBOR-encoded manifest.
+//!    Each manifest entry contains its blob's type, length, and ID.
+//! 4. A 32-bit, big-endian manifest length.
+//!
+//! Compressing the manifest separately and ending with its length makes it trivial to read
+//! without having to decompress or read any blobs first.
+//!
+//! The hash of the manifest is the pack's ID, since it uniquely describes the file.
+//! At the end of a backup, each pack's manifest is stored in an index.
+//! This means future readers don't need to reference the manifest unless rebuilding an index
+//! or verifying the pack.
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -68,11 +83,29 @@ pub fn pack(
 
     // For each blob...
     while let Ok(blob) = rx.recv() {
-        // TODO: We previously checked against a set of already-packed blobs here
-        // to avoid double-packing, but to simplify concurrency issues, we moved
-        // it to the backup/prune threads.
-        // Should we have a second here to double-check?
-        // Sanity checks are nice, but maybe extra O(N) RAM usage, not so much.
+        // Each blob arriving here is assumed to be unique per backup run,
+        // i.e., the backup/prune/copy main thread handles deduplication.
+        // Handling it here seems better at first (DRY) but would only complicate things:
+        //
+        // 1. `backup` prints out the path of each chunk and whether it was deduped.
+        //    To do that here we'd have to pass each blob's path (or a closure?)
+        //    through the rx channel.
+        //
+        // 2. This set of "already backed up blobs" is prepopulated,
+        //    and in different ways for different commands.
+        //    `backup` and `copy` just use all blobs in the master index.
+        //    `prune` uses all blobs we *don't need to repack*.
+        //    We'd also have to pass that here, and then...
+        //
+        // 3. We're running two instances of this function in two threads,
+        //    one for trees and one for chunks.
+        //    They'd either have to share the set via a mutex,
+        //    or we'd have to write code here to figure out which packer we are and
+        //    split the set accordingly.
+        //    Please no! All the code so far is agnostic to which packer it is.
+        //
+        // We don't check this invariant here to avoid extra O(N) RAM usage,
+        // where N is every single blob in the backup run.
 
         // Write a blob and check how many (uncompressed) bytes we've written to the file so far.
         let blob_size = writer.write_blob(blob)?;

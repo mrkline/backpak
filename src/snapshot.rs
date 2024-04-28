@@ -1,4 +1,23 @@
-//! Build, read and write snapshots of the filesystem to create our backups
+//! Build, read and write snapshots of the filesystem to create our backups.
+//!
+//! Snapshot files represent a completed backup.
+//! They contain magic bytes and a small CBOR record with:
+//!
+//! - The ID of the tree that was packed up
+//!
+//! - The absolute paths of the directories in the tree.
+//!   (Backups compare their paths to those of previous snapshots.
+//!   If they find a match, they use that snapshot as a "parent",
+//!   saving time by only hashing modified files.)
+//!
+//! - Metadata like time, author, and tags.
+//!
+//! Like Git commits, this makes them very lightweight - this is so little data
+//! we don't bother with compression.
+//!
+//! Unlike Git commits, they don't record their ancestor(s) - we don't especially care
+//! about the order of the snapshots so long as all the blobs in their tree are reachable.
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;
