@@ -395,7 +395,6 @@ fn repack_chunk(
 fn repack_tree(
     id: &ObjectId,
     tree: &tree::Tree,
-
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     trace!("Repacking tree {}", id);
