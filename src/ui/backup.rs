@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 
 use anyhow::{bail, ensure, Context, Result};
@@ -12,6 +11,7 @@ use regex::RegexSet;
 use rustc_hash::FxHashSet;
 
 use crate::backend;
+use crate::backup::*;
 use crate::blob::{self, Blob};
 use crate::chunk;
 use crate::file_util::nice_size;
@@ -35,6 +35,9 @@ pub struct Args {
     /// Skip anything whose absolute path matches the given regular expression
     #[clap(short = 's', long = "skip", name = "regex")]
     pub skips: Vec<String>,
+
+    #[clap(short = 'n', long)]
+    pub dry_run: bool,
 
     /// The paths to back up
     ///
@@ -86,10 +89,10 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Track all the blobs we've already backed up and use that set to deduplicate.
     let mut packed_blobs = index::blob_id_set(&index)?;
 
-    let crate::backup::ResumableBackup {
+    let ResumableBackup {
         wip_index,
         cwd_packfiles,
-    } = crate::backup::find_resumable(&cached_backend)?.unwrap_or_default();
+    } = find_resumable(&cached_backend)?.unwrap_or_default();
 
     for manifest in wip_index.packs.values() {
         for entry in manifest {
@@ -99,10 +102,14 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     let backend_config = Arc::new(backend_config);
     let cached_backend = Arc::new(cached_backend);
-    let mut backup =
-        crate::backup::spawn_backup_threads(backend_config, cached_backend.clone(), wip_index);
+    let mut backup = (!args.dry_run)
+        .then(|| spawn_backup_threads(backend_config, cached_backend.clone(), wip_index));
 
-    crate::backup::upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
+    // Finish the WIP resume business.
+    if let Some(b) = &mut backup {
+        upload_cwd_packfiles(&mut b.upload_tx, &cwd_packfiles)?;
+    }
+    drop(cwd_packfiles);
 
     info!(
         "Backing up {}",
@@ -119,8 +126,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         parent.map(|p| &p.tree),
         &parent_forest,
         &mut packed_blobs,
-        &mut backup.chunk_tx,
-        &mut backup.tree_tx,
+        &mut backup,
     )?;
     drop(parent_forest);
     drop(packed_blobs);
@@ -128,36 +134,41 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Important: make sure all blobs and indexes are written BEFORE
     // we upload the snapshot.
     // It's meaningless unless everything else is there first!
-    let stats = backup.join()?;
+    let stats = backup.map(|b| b.join()).transpose()?;
 
     debug!("Root tree packed as {}", root);
 
     info!("{} reused", nice_size(bytes_reused));
-    let total_bytes = nice_size(stats.chunk_bytes + stats.tree_bytes);
-    let chunk_bytes = nice_size(stats.chunk_bytes);
-    let tree_bytes = nice_size(stats.tree_bytes);
-    info!("{total_bytes} new data ({chunk_bytes} files, {tree_bytes} metadata)");
+    if let Some(s) = stats {
+        let total_bytes = nice_size(s.chunk_bytes + s.tree_bytes);
+        let chunk_bytes = nice_size(s.chunk_bytes);
+        let tree_bytes = nice_size(s.tree_bytes);
+        info!("{total_bytes} new data ({chunk_bytes} files, {tree_bytes} metadata)");
+    }
 
-    let author = match args.author {
-        Some(a) => a,
-        None => hostname::get()
-            .context("Couldn't get hostname")?
-            .to_string_lossy()
-            .to_string(),
-    };
+    if !args.dry_run {
+        let author = match args.author {
+            Some(a) => a,
+            None => hostname::get()
+                .context("Couldn't get hostname")?
+                .to_string_lossy()
+                .to_string(),
+        };
 
-    // DateTime<Local> -> DateTime<FixedOffset>
-    let time: DateTime<FixedOffset> = Local::now().into();
+        // DateTime<Local> -> DateTime<FixedOffset>
+        let time: DateTime<FixedOffset> = Local::now().into();
 
-    let snapshot = Snapshot {
-        time,
-        author,
-        tags: args.tags.into_iter().collect(),
-        paths,
-        tree: root,
-    };
+        let snapshot = Snapshot {
+            time,
+            author,
+            tags: args.tags.into_iter().collect(),
+            paths,
+            tree: root,
+        };
 
-    snapshot::upload(&snapshot, &cached_backend)
+        snapshot::upload(&snapshot, &cached_backend)?;
+    }
+    Ok(())
 }
 
 fn reject_matching_directories(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
@@ -215,8 +226,7 @@ fn backup_tree(
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
     packed_blobs: &mut FxHashSet<ObjectId>,
-    chunk_tx: &mut SyncSender<Blob>,
-    tree_tx: &mut SyncSender<Blob>,
+    backup: &mut Option<Backup>,
 ) -> Result<(ObjectId, u64)> {
     use fs_tree::DirectoryEntry;
 
@@ -295,9 +305,11 @@ fn backup_tree(
                         } else {
                             info!("{:>9} {} (chunk {}/{})", "backup", path, i, num_chunks);
                         }
-                        chunk_tx
-                            .send(chunk)
-                            .context("backup -> chunk packer channel exited early")?;
+                        if let Some(b) = &backup {
+                            b.chunk_tx
+                                .send(chunk)
+                                .context("backup -> chunk packer channel exited early")?;
+                        }
                     } else {
                         reused_bytes += chunk.bytes().len() as u64;
                         if num_chunks <= 1 {
@@ -329,13 +341,15 @@ fn backup_tree(
         let (bytes, id) = tree::serialize_and_hash(&tree)?;
 
         if packed_blobs.borrow_mut().insert(id) {
-            tree_tx
-                .send(Blob {
-                    contents: blob::Contents::Buffer(bytes),
-                    id,
-                    kind: blob::Type::Tree,
-                })
-                .context("backup -> tree packer channel exited early")?;
+            if let Some(b) = &backup {
+                b.tree_tx
+                    .send(Blob {
+                        contents: blob::Contents::Buffer(bytes),
+                        id,
+                        kind: blob::Type::Tree,
+                    })
+                    .context("backup -> tree packer channel exited early")?;
+            }
         } else {
             trace!("tree {} already packed", id);
             bytes_reused += bytes.len() as u64;
