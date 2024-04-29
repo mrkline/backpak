@@ -21,7 +21,7 @@ struct Args {
     timestamps: bool,
 
     /// Change to the given directory before doing anything else
-    #[clap(short = 'C', long, name = "path")]
+    #[clap(short = 'C', long, name = "PATH")]
     working_directory: Option<Utf8PathBuf>,
 
     #[clap(short, long)]
@@ -45,6 +45,7 @@ enum Command {
     Backup(backup::Args),
     Cat(cat::Args),
     Check(check::Args),
+    Copy(copy::Args),
     Diff(diff::Args),
     Dump(dump::Args),
     Forget(forget::Args),
@@ -78,6 +79,7 @@ fn run() -> Result<()> {
         Command::Backup(b) => backup::run(&args.repository, b),
         Command::Cat(c) => cat::run(&args.repository, c),
         Command::Check(c) => check::run(&args.repository, c),
+        Command::Copy(c) => copy::run(&args.repository, c),
         Command::Diff(d) => diff::run(&args.repository, d),
         Command::Dump(d) => dump::run(&args.repository, d),
         Command::Forget(f) => forget::run(&args.repository, f),

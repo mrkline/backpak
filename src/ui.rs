@@ -1,6 +1,7 @@
 pub mod backup;
 pub mod cat;
 pub mod check;
+pub mod copy;
 pub mod diff;
 pub mod dump;
 pub mod forget;
