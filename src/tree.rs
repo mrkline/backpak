@@ -23,11 +23,25 @@ use crate::prettify;
 /// Files have chunks, and a directory has a subtree representing
 /// everything in that subdirectory.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase", tag = "type")]
+// If we give the field in each variant a unique name then flatten this
+// into the node, we'll get:
+//     "FileName": { "chunks": [...], "metadata": {...}},
+//     "DirName": { "tree": <ID>, "metadata": {...}},
+//     "SymlinkName": { "symlink": <PATH>, "metadata": {...}},
+#[serde(untagged)]
 pub enum NodeContents {
-    File { chunks: Vec<ObjectId> },
-    Directory { subtree: ObjectId },
-    Symlink { target: Utf8PathBuf },
+    File {
+        #[serde(rename = "chunks")]
+        chunks: Vec<ObjectId>,
+    },
+    Directory {
+        #[serde(rename = "tree")]
+        subtree: ObjectId,
+    },
+    Symlink {
+        #[serde(rename = "symlink")]
+        target: Utf8PathBuf,
+    },
 }
 
 impl NodeContents {
