@@ -8,3 +8,12 @@
 
 Should we make the keys in our tree CBOR smaller? Only have sizes for files?
 See how much of a difference this actually makes once we compress them.
+
+## backup accounting
+
+Kinda weird to track new bytes in the backup threads and reused bytes in the main thread.
+There's a reason for it - we don't know how many bytes trees are - but...
+
+## Usage sizes
+
+Have backend list give sizes so we can show the whole size of the repo?
