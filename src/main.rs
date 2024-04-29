@@ -52,8 +52,9 @@ enum Command {
     Prune(prune::Args),
     Restore(restore::Args),
     Snapshots(snapshots::Args),
-    /// Build a new index from all existing packs and delete all old ones
+    /// Build a new index from all existing packs and delete all old ones.
     RebuildIndex,
+    /// Print repository size stats.
     Usage,
 }
 
