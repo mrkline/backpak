@@ -76,7 +76,9 @@ impl NodeContents {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PosixMetadata {
     pub mode: u32,
-    pub size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub size: Option<u64>,
     pub user_id: u32,
     pub group_id: u32,
     #[serde(with = "prettify::date_time")]
@@ -93,7 +95,9 @@ pub struct PosixMetadata {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WindowsMetadata {
     pub attributes: u32,
-    pub size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub size: Option<u64>,
     // Unlike POSIX, all three of these can be set:
     // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime
     // so recording them is helpful.
@@ -121,36 +125,46 @@ pub enum NodeType {
     // TODO: Unknown?
 }
 
+// Make these fail so we bail on weird file types?
+
+fn posix_kind(mode: u32) -> NodeType {
+    // man inode
+    let type_bits = mode & 0o170000;
+
+    if type_bits == 0o0120000 {
+        NodeType::Symlink
+    } else if type_bits == 0o0040000 {
+        NodeType::Directory
+    } else {
+        NodeType::File
+    }
+}
+
+fn windows_kind(attributes: u32) -> NodeType {
+    // https://docs.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
+    if (attributes & 0x400) != 0 {
+        NodeType::Symlink
+    } else if (attributes & 0x10) != 0 {
+        NodeType::Directory
+    } else {
+        NodeType::File
+    }
+}
+
 impl NodeMetadata {
     pub fn kind(&self) -> NodeType {
         match self {
-            NodeMetadata::Posix(p) => {
-                // man inode
-                let type_bits = p.mode & 0o170000;
-
-                if type_bits == 0o0120000 {
-                    NodeType::Symlink
-                } else if type_bits == 0o0040000 {
-                    NodeType::Directory
-                } else {
-                    NodeType::File
-                }
-            }
-            NodeMetadata::Windows(w) => {
-                // https://docs.microsoft.com/en-us/windows/win32/fileio/file-attribute-constants
-                if (w.attributes & 0x400) != 0 {
-                    NodeType::Symlink
-                } else if (w.attributes & 0x10) != 0 {
-                    NodeType::Directory
-                } else {
-                    NodeType::File
-                }
-            }
+            NodeMetadata::Posix(p) => posix_kind(p.mode),
+            NodeMetadata::Windows(w) => windows_kind(w.attributes),
         }
     }
 
-    /// File size (value isn't meaningful for directories)
-    pub fn size(&self) -> u64 {
+    /// File size (None for Directories and Symlinks)
+    ///
+    /// Both OSes *do* provide the size for symlinks,
+    /// but we can just as easily look at the length of the string.
+    /// File size is much more useful - files can be massive, and we don't know how big chunks are.
+    pub fn size(&self) -> Option<u64> {
         match self {
             NodeMetadata::Posix(p) => p.size,
             NodeMetadata::Windows(w) => w.size,
@@ -178,7 +192,7 @@ pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
 
     let meta = fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {path}"))?;
     let mode = meta.mode();
-    let size = meta.size();
+    let size = (posix_kind(mode) == NodeType::File).then(|| meta.size());
     let user_id = meta.uid();
     let group_id = meta.gid();
     let access_time = chrono::Utc
@@ -204,8 +218,7 @@ pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
 
     let meta = fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {path}"))?;
     let attributes = meta.file_attributes();
-    let size = meta.file_size();
-
+    let size = (windows_kind(attributes) == NodeType::File).then(|| meta.file_size());
     let creation_time = windows_timestamp(meta.creation_time());
     let access_time = windows_timestamp(meta.last_access_time());
     let write_time = windows_timestamp(meta.last_write_time());

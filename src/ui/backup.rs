@@ -282,7 +282,7 @@ fn backup_tree(
             DirectoryEntry::UnchangedFile => {
                 info!("{:>9} {}", "unchanged", path);
 
-                let reused_bytes = metadata.size();
+                let reused_bytes = metadata.size().expect("files have sizes");
                 let t = tree::Node {
                     metadata,
                     contents: previous_node.unwrap().contents.clone(),
