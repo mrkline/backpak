@@ -79,11 +79,13 @@ pub struct PosixMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub size: Option<u64>,
+    #[serde(rename = "uid")]
     pub user_id: u32,
+    #[serde(rename = "gid")]
     pub group_id: u32,
-    #[serde(with = "prettify::date_time")]
+    #[serde(rename = "atime", with = "prettify::date_time")]
     pub access_time: DateTime<Utc>,
-    #[serde(with = "prettify::date_time")]
+    #[serde(rename = "mtime", with = "prettify::date_time")]
     pub modify_time: DateTime<Utc>,
     // No change time - it's when the metadata changes, and since we can't set that
     // when restoring a file, nor compare it meaningfully between snapshots,
