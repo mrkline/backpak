@@ -10,14 +10,17 @@ use crate::hashing::ObjectId;
 use crate::index;
 use crate::ls;
 use crate::snapshot;
-use crate::tree::{self, Forest, Node, NodeType};
+use crate::tree::{self, meta_diff_char, Forest, Node, NodeType};
 
 /// Compare two snapshots, or compare a snapshot to its paths on the filesystem
 ///
 /// + added/file/or/dir
 /// - removed
-/// M modified (contents changed)
-/// U metadata changed (times, permissions)
+/// C contents changed
+/// P permissions changed
+/// O ownership changed
+/// T modify time changed
+/// M other metadata changed
 ///
 /// Type changes (e.g. dir -> file, or file -> symlink)
 /// are modeled as removing one and adding the other.
@@ -124,14 +127,23 @@ impl diff::Callbacks for PrintDiffs {
             ls::print_node("- ", node_path, old_node, ls::Recurse::No);
             ls::print_node("+ ", node_path, new_node, ls::Recurse::No);
         } else {
-            ls::print_node("M ", node_path, old_node, ls::Recurse::No);
+            ls::print_node("C ", node_path, old_node, ls::Recurse::No);
         }
         Ok(())
     }
 
-    fn metadata_changed(&mut self, node_path: &Utf8Path, node: &Node) -> Result<()> {
+    fn metadata_changed(
+        &mut self,
+        node_path: &Utf8Path,
+        old_node: &Node,
+        new_node: &Node,
+    ) -> Result<()> {
         if self.metadata {
-            ls::print_node("U ", node_path, node, ls::Recurse::No);
+            let leading_char = format!(
+                "{} ",
+                meta_diff_char(&old_node.metadata, &new_node.metadata).unwrap()
+            );
+            ls::print_node(&leading_char, node_path, new_node, ls::Recurse::No);
         }
         Ok(())
     }

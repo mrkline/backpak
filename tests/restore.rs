@@ -46,8 +46,14 @@ fn backup_src() -> Result<()> {
             .success();
         let restore_err = stderr(&restore_run).trim();
         eprintln!("{}", restore_err);
-        let restore_output = stdout(&restore_run).trim();
-        restore_output.to_string()
+        let restore_output: Vec<_> = stdout(&restore_run)
+            .trim()
+            .lines()
+            // I don't care about atime. They change if you sneeze (and based on mount opts).
+            .filter(|l| !l.starts_with("A "))
+            .map(str::to_owned)
+            .collect();
+        restore_output
     };
 
     let prefix_working_path = |s: &str| -> String {
@@ -56,8 +62,19 @@ fn backup_src() -> Result<()> {
         format!("{}{}", code, prefixed.display())
     };
 
+    let compare = |expected: &[&str]| {
+        let expected = expected
+            .iter()
+            .map(|p| prefix_working_path(p))
+            .collect::<Vec<_>>();
+        let got = restoreit();
+        println!("Expected:\n{:#?}", expected);
+        println!("Got:\n{:#?}", got);
+        assert_eq!(expected, got);
+    };
+
     // Without any changes, restore should be a no-op
-    assert_eq!(restoreit(), "");
+    compare(&[]);
 
     // Obvious stuff - added, removed, moved, modified, perms...
     fs::remove_file(working_path.join("src/diff.rs"))?;
@@ -72,21 +89,6 @@ fn backup_src() -> Result<()> {
         fs::Permissions::from_mode(0o777),
     )?;
 
-    let compare = |expected: &[&str]| {
-        let expected = expected
-            .iter()
-            .map(|p| prefix_working_path(p))
-            .collect::<Vec<_>>();
-        let got = restoreit()
-            .split('\n')
-            .filter(|l| !l.is_empty())
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-        println!("Expected:\n{:#?}", expected);
-        println!("Got:\n{:#?}", got);
-        assert_eq!(expected, got);
-    };
-
     compare(&[
         "- src/aNewFile",
         "+ src/backend/",
@@ -96,15 +98,15 @@ fn backup_src() -> Result<()> {
         "+ src/backend/fs.rs",
         "+ src/backend/memory.rs",
         "+ src/diff.rs",
-        "M src/lib.rs",
-        "U src/main.rs",
+        "C src/lib.rs",
+        "P src/main.rs",
         "- src/wackend/",
         "- src/wackend/backblaze.rs",
         "- src/wackend/cache.rs",
         "- src/wackend/filter.rs",
         "- src/wackend/fs.rs",
         "- src/wackend/memory.rs",
-        "U src/",
+        "T src/",
     ]);
 
     // Restoring again should do nothing
@@ -114,7 +116,7 @@ fn backup_src() -> Result<()> {
     fs::remove_file(working_path.join("src/ls.rs"))?;
     unix::fs::symlink("/dev/null", working_path.join("src/ls.rs"))?;
 
-    compare(&["- src/ls.rs -> /dev/null", "+ src/ls.rs", "U src/"]);
+    compare(&["- src/ls.rs -> /dev/null", "+ src/ls.rs"]);
 
     // Symlink modified (should be -/+, not M)
     fs::remove_file(working_path.join("src/ls.rs"))?;
@@ -131,7 +133,7 @@ fn backup_src() -> Result<()> {
     compare(&[
         "- src/ls.rs -> /dev/urandom",
         "+ src/ls.rs -> /dev/null",
-        "U src/",
+        "T src/",
     ]);
 
     Ok(())

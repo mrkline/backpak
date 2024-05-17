@@ -31,7 +31,12 @@ pub trait Callbacks {
     ) -> Result<()>;
 
     /// A node's metadata was changed.
-    fn metadata_changed(&mut self, node_path: &Utf8Path, node: &Node) -> Result<()>;
+    fn metadata_changed(
+        &mut self,
+        node_path: &Utf8Path,
+        old_node: &Node,
+        new_node: &Node,
+    ) -> Result<()>;
 
     /// A node didn't change.
     fn nothing_changed(&mut self, _node_path: &Utf8Path, _node: &Node) -> Result<()> {
@@ -98,7 +103,7 @@ pub fn compare_nodes(
                 callbacks.contents_changed(path, node1, node2)
             } else if node1.metadata != node2.metadata {
                 // trace!("{:#?} != {:#?}", node1.metadata, node2.metadata);
-                callbacks.metadata_changed(path, node2)
+                callbacks.metadata_changed(path, node1, node2)
             } else {
                 callbacks.nothing_changed(path, node2)
             }
@@ -117,7 +122,7 @@ pub fn compare_nodes(
             }
             if node1.metadata != node2.metadata {
                 // trace!("{:#?} != {:#?}", node1.metadata, node2.metadata);
-                callbacks.metadata_changed(path, node2)?;
+                callbacks.metadata_changed(path, node1, node2)?;
                 changed = true;
             }
             if !changed {

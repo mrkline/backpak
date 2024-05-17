@@ -119,6 +119,35 @@ pub enum NodeMetadata {
     Windows(WindowsMetadata),
 }
 
+/// For printing metadata diffs. See the `backpak diff` helptext
+pub fn meta_diff_char(l: &NodeMetadata, r: &NodeMetadata) -> Option<char> {
+    if l == r {
+        return None;
+    }
+    use NodeMetadata::*;
+    let c = match (l, r) {
+        (Posix(lp), Posix(rp)) => {
+            if lp.mode != rp.mode {
+                'P'
+            } else if lp.user_id != rp.user_id || lp.group_id != rp.group_id {
+                'O'
+            } else if lp.access_time != rp.access_time {
+                'A'
+            } else if lp.modify_time != rp.modify_time {
+                'T'
+            } else {
+                'M'
+            }
+        }
+        // TODO: Compare Windows
+        (Windows(_), Windows(_)) => 'M',
+        // TODO: Compare across  kinds
+        (Posix(_), Windows(_)) => 'M',
+        (Windows(_), Posix(_)) => 'M',
+    };
+    Some(c)
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum NodeType {
     File,
@@ -555,16 +584,13 @@ mod test {
                 },
                 metadata: NodeMetadata::Posix(PosixMetadata {
                     mode: 0o644,
-                    size: 42,
+                    size: Some(42),
                     user_id: 1234,
                     group_id: 5678,
                     access_time: DateTime::parse_from_rfc3339("2020-10-30T06:30:25.157873535Z")
                         .unwrap()
                         .into(),
                     modify_time: DateTime::parse_from_rfc3339("2020-10-30T06:30:25.034542588Z")
-                        .unwrap()
-                        .into(),
-                    change_time: DateTime::parse_from_rfc3339("2020-10-30T06:30:25.034542588Z")
                         .unwrap()
                         .into(),
                 }),
@@ -578,7 +604,7 @@ mod test {
                 },
                 metadata: NodeMetadata::Windows(WindowsMetadata {
                     attributes: 0xdeadbeef,
-                    size: 42,
+                    size: None,
                     creation_time: None,
                     access_time: Some(
                         DateTime::parse_from_rfc3339("2020-10-29T09:11:05.701157660Z")
@@ -605,7 +631,7 @@ mod test {
         // ID remains stable
         assert_eq!(
             format!("{}", id),
-            "3rt1hk2crrhsadv2u1jhatigf7jvi21qmnnnqhl8vh34a"
+            "8orh4h6b5dbmv2d7g0hu46rgsfhre7477kn9lgp97cqbe"
         );
         // Contents remain stable
         // (We could just use the ID and length,
