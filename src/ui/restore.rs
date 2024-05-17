@@ -23,10 +23,13 @@ use crate::{
 /// Restore the given snapshot to the filesystem
 ///
 /// Prints changes made using the same codes as the `diff` command:
-///   + added/file/or/dir
-///   - removed
-///   M modified (contents changed)
-///   U metadata changed (times, permissions)
+/// + added/file/or/dir
+/// - removed
+/// C contents changed
+/// P permissions changed
+/// O ownership changed
+/// T modify time changed
+/// M other metadata changed
 ///
 /// Type changes (e.g. dir -> file, or file -> symlink)
 /// are modeled as removing one and adding the other.
@@ -379,15 +382,21 @@ impl diff::Callbacks for Restorer<'_> {
         }
     }
 
-    fn metadata_changed(&mut self, node_path: &Utf8Path, node: &Node) -> Result<()> {
+    fn metadata_changed(
+        &mut self,
+        node_path: &Utf8Path,
+        old_node: &Node,
+        new_node: &Node,
+    ) -> Result<()> {
         let node_path = self.translate_path(node_path);
 
-        self.printer.metadata_changed(&node_path, node)?;
+        self.printer
+            .metadata_changed(&node_path, old_node, new_node)?;
 
         if self.args.dry_run {
             return Ok(());
         }
-        self.set_metadata(&node_path, node)
+        self.set_metadata(&node_path, new_node)
     }
 
     fn type_changed(

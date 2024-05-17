@@ -19,17 +19,17 @@ fn backup_src() -> Result<()> {
     let working_dir = tempdir()?;
     let working_path = working_dir.path();
 
+    // Let's make a copy of src so we don't fudge the actual code
+    assert!(Command::new("cp")
+        .args(&["-a", "src"])
+        .arg(working_path)
+        .status()?
+        .success());
+
     cli_run(working_path, backup_path)?
         .args(["init", "filesystem"])
         .assert()
         .success();
-
-    // Let's make a copy of src so we don't fudge the actual code
-    assert!(Command::new("cp")
-        .args(&["-r", "src"])
-        .arg(working_path)
-        .status()?
-        .success());
 
     // And back it up
     cli_run(working_path, backup_path)?
@@ -44,11 +44,21 @@ fn backup_src() -> Result<()> {
             .args(&["diff", "--metadata", "LAST"])
             .assert()
             .success();
-        let diff_output = stdout(&diff_run).trim();
-        diff_output.to_string()
+        let diff_output: Vec<_> = stdout(&diff_run)
+            .trim()
+            .lines()
+            // I don't care about atime. They change if you sneeze (and based on mount opts).
+            .filter(|l| !l.starts_with("A "))
+            .map(str::to_owned)
+            .collect();
+        diff_output
     };
 
-    assert_eq!(diffit(), "");
+    let compare = |expected: &[&str]| {
+        assert_eq!(expected, diffit());
+    };
+
+    compare(&[]);
 
     // Obvious stuff - added, removed, moved, modified, perms...
     fs::remove_file(working_path.join("src/diff.rs"))?;
@@ -63,10 +73,6 @@ fn backup_src() -> Result<()> {
         fs::Permissions::from_mode(0o777),
     )?;
 
-    let compare = |expected: &[&str]| {
-        assert_eq!(expected, diffit().split('\n').collect::<Vec<_>>());
-    };
-
     compare(&[
         "+ src/aNewFile",
         "- src/backend/",
@@ -76,15 +82,15 @@ fn backup_src() -> Result<()> {
         "- src/backend/fs.rs",
         "- src/backend/memory.rs",
         "- src/diff.rs",
-        "M src/lib.rs",
-        "U src/main.rs",
+        "C src/lib.rs",
+        "P src/main.rs",
         "+ src/wackend/",
         "+ src/wackend/backblaze.rs",
         "+ src/wackend/cache.rs",
         "+ src/wackend/filter.rs",
         "+ src/wackend/fs.rs",
         "+ src/wackend/memory.rs",
-        "U src/",
+        "T src/",
     ]);
 
     // Wipe the slate.
@@ -94,13 +100,13 @@ fn backup_src() -> Result<()> {
         .assert()
         .success();
 
-    assert_eq!(diffit(), "");
+    compare(&[]);
 
     // Changed type!
     fs::remove_file(working_path.join("src/ls.rs"))?;
     unix::fs::symlink("/dev/null", working_path.join("src/ls.rs"))?;
 
-    compare(&["- src/ls.rs", "+ src/ls.rs -> /dev/null", "U src/"]);
+    compare(&["- src/ls.rs", "+ src/ls.rs -> /dev/null", "T src/"]);
 
     // Wipe the slate.
     cli_run(working_path, backup_path)?
@@ -116,7 +122,7 @@ fn backup_src() -> Result<()> {
     compare(&[
         "- src/ls.rs -> /dev/null",
         "+ src/ls.rs -> /dev/urandom",
-        "U src/",
+        "T src/",
     ]);
 
     Ok(())
