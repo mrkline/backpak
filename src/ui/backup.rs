@@ -131,7 +131,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     drop(parent_forest);
     drop(packed_blobs);
 
-    // Important: make sure all blobs and indexes are written BEFORE
+    // Important: make sure all blobs and the index is written BEFORE
     // we upload the snapshot.
     // It's meaningless unless everything else is there first!
     let stats = backup.map(|b| b.join()).transpose()?;

@@ -85,13 +85,13 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         &mut backup,
     )?;
 
-    // Important: make sure all blobs and indexes are written BEFORE
-    // we upload the snapshot.
+    // Important: make sure all blobs and the index are written BEFORE
+    // we upload the snapshots.
     // It's meaningless unless everything else is there first!
     let _stats = backup.map(|b| b.join()).transpose()?;
 
     if !args.dry_run {
-        // Upload the indexes
+        // Upload the snapshots
     }
 
     Ok(())
