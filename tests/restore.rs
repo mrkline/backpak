@@ -116,7 +116,7 @@ fn backup_src() -> Result<()> {
     fs::remove_file(working_path.join("src/ls.rs"))?;
     unix::fs::symlink("/dev/null", working_path.join("src/ls.rs"))?;
 
-    compare(&["- src/ls.rs -> /dev/null", "+ src/ls.rs"]);
+    compare(&["- src/ls.rs -> /dev/null", "+ src/ls.rs", "T src/"]);
 
     // Symlink modified (should be -/+, not M)
     fs::remove_file(working_path.join("src/ls.rs"))?;
