@@ -17,9 +17,10 @@ use crate::tree::{self, meta_diff_char, Forest, Node, NodeType};
 /// + added/file/or/dir
 /// - removed
 /// C contents changed
-/// P permissions changed
 /// O ownership changed
+/// P permissions changed
 /// T modify time changed
+/// A access time changed
 /// M other metadata changed
 ///
 /// Type changes (e.g. dir -> file, or file -> symlink)

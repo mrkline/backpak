@@ -127,14 +127,14 @@ pub fn meta_diff_char(l: &NodeMetadata, r: &NodeMetadata) -> Option<char> {
     use NodeMetadata::*;
     let c = match (l, r) {
         (Posix(lp), Posix(rp)) => {
-            if lp.mode != rp.mode {
-                'P'
-            } else if lp.user_id != rp.user_id || lp.group_id != rp.group_id {
+            if lp.user_id != rp.user_id || lp.group_id != rp.group_id {
                 'O'
-            } else if lp.access_time != rp.access_time {
-                'A'
+            } else if lp.mode != rp.mode {
+                'P'
             } else if lp.modify_time != rp.modify_time {
                 'T'
+            } else if lp.access_time != rp.access_time {
+                'A'
             } else {
                 'M'
             }
