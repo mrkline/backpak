@@ -41,20 +41,20 @@ log = "0.4"
 # Memmap1 is unmaintained
 memmap2 = "0.9"
 # Numeric traits are nice
-num = { version = "0.4", default_features = false }
+num = { version = "0.4", default-features = false }
 # How many cores? Tell Zstd
 num_cpus = "1.0"
 # par_iter
 rayon = "1.4"
 # Snapshots LAST~N parsing
 # Don't need Unicode for now.
-regex = { version = "1.0", default_features = false, features = [ "std", "perf" ] }
+regex = { version = "1.0", default-features = false, features = [ "std", "perf" ] }
 # Local cache
 rusqlite = "0.30.0"
 # We don't need DDOS-resistant hashes
 rustc-hash = "1.1"
 # Syscalls for setting file times
-rustix = { version = "0.38", default_features = false, features = [ "fs" ] }
+rustix = { version = "0.38", default-features = false, features = [ "fs" ] }
 # Praise be unto thee
 serde = "1.0"
 serde_bytes = "0.11"
