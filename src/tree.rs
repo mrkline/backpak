@@ -528,7 +528,7 @@ fn tree_chunks_size(
 
 /// Get the size of the node if it's a file.
 ///
-/// We've already accounted for tree sizes by summing the forest in [`forest_size`].
+/// We've already accounted for tree sizes by summing the forest in [`forest_sizes`].
 fn file_size(
     node: &Node,
     size_map: &FxHashMap<ObjectId, u32>,
