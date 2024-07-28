@@ -17,6 +17,7 @@ pub mod ls;
 pub mod pack;
 pub mod prettify;
 pub mod read;
+pub mod repack;
 pub mod snapshot;
 pub mod tree;
 pub mod upload;
