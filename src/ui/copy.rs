@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 
@@ -9,6 +9,7 @@ use crate::backup;
 use crate::index;
 use crate::read;
 use crate::repack;
+use crate::snapshot;
 use crate::tree;
 
 /// Copy snapshots from one repository to another.
@@ -83,7 +84,12 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let _stats = backup.map(|b| b.join()).transpose()?;
 
     if !args.dry_run {
-        // Upload the snapshots
+        for sf in &src_snapshots_and_forests {
+            let new_id = snapshot::upload(&sf.snapshot, &dst_cached_backend)?;
+            ensure!(new_id == sf.id,
+                "Snapshot {} has a different ID ({new_id}) when reserialized", sf.id
+            );
+        }
     }
 
     Ok(())

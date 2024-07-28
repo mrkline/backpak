@@ -67,7 +67,7 @@ fn to_file(fh: &mut fs::File, snapshot: &Snapshot) -> Result<ObjectId> {
 }
 
 /// Upload a snapshot, finishing a backup.
-pub fn upload(snapshot: &Snapshot, backend: &backend::CachedBackend) -> Result<()> {
+pub fn upload(snapshot: &Snapshot, backend: &backend::CachedBackend) -> Result<ObjectId> {
     let mut fh = tempfile::Builder::new()
         .prefix("temp-backpak-")
         .suffix(".snapshot")
@@ -82,7 +82,8 @@ pub fn upload(snapshot: &Snapshot, backend: &backend::CachedBackend) -> Result<(
         .persist(&snapshot_name)
         .with_context(|| format!("Couldn't persist finished snapshot {}", snapshot_name))?;
 
-    backend.write(&snapshot_name, persisted)
+    backend.write(&snapshot_name, persisted)?;
+    Ok(id)
 }
 
 /// Loads the snapshot from the given reader,
