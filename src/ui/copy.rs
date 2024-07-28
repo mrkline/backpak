@@ -1,19 +1,14 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
-use log::*;
-use rustc_hash::FxHashSet;
 
 use crate::backend;
 use crate::backup;
-use crate::blob;
-// use crate::file_util::nice_size;
-use crate::hashing::ObjectId;
 use crate::index;
 use crate::read;
-use crate::snapshot;
+use crate::repack;
 use crate::tree;
 
 /// Copy snapshots from one repository to another.
@@ -35,15 +30,11 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let src_index = index::build_master_index(&src_cached_backend)?;
     let src_blob_map = index::blob_to_pack_map(&src_index)?;
 
-    let src_snapshots_and_forests = load_snapshots_and_forests(
+    let src_snapshots_and_forests = repack::load_snapshots_and_forests(
         &src_cached_backend,
         // We can drop the tree cache immediately once we have all our forests.
         &mut tree::Cache::new(&src_index, &src_blob_map, &src_cached_backend),
     )?;
-    // Walk from newest to oldest snapshots so that we prioritize the locality of chunks
-    // in newer snapshots. This is probably a horse a piece - you could argue that
-    // older snapshots are more important - but all the blobs will get packed up regardless.
-    let src_snapshots_and_forests: Vec<_> = src_snapshots_and_forests.into_iter().rev().collect();
 
     // Get a reader to load the chunks we're copying.
     let mut reader = read::BlobReader::new(&src_cached_backend, &src_index, &src_blob_map);
@@ -78,7 +69,8 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     }
     drop(cwd_packfiles);
 
-    walk_snapshots(
+    repack::walk_snapshots(
+        repack::Op::Copy,
         &src_snapshots_and_forests,
         &mut reader,
         &mut packed_blobs,
@@ -92,149 +84,6 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     if !args.dry_run {
         // Upload the snapshots
-    }
-
-    Ok(())
-}
-
-struct SnapshotAndForest {
-    id: ObjectId,
-    snapshot: snapshot::Snapshot,
-    forest: tree::Forest,
-}
-
-fn load_snapshots_and_forests(
-    cached_backend: &backend::CachedBackend,
-    tree_cache: &mut tree::Cache,
-) -> Result<Vec<SnapshotAndForest>> {
-    snapshot::load_chronologically(cached_backend)?
-        .into_iter()
-        .map(|(snapshot, id)| {
-            let forest = tree::forest_from_root(&snapshot.tree, tree_cache)?;
-            Ok(SnapshotAndForest {
-                id,
-                snapshot,
-                forest,
-            })
-        })
-        .collect()
-}
-
-fn walk_snapshots(
-    snapshots_and_forests: &[SnapshotAndForest],
-    reader: &mut read::BlobReader,
-    packed_blobs: &mut FxHashSet<ObjectId>,
-    backup: &mut Option<backup::Backup>,
-) -> Result<()> {
-    // Walk from newest to oldest snapshots so that we prioritize the locality of chunks
-    // in newer snapshots. This is probably a horse a piece - you could argue that
-    // older snapshots are more important - but all the blobs will get packed up regardless.
-    for snapshot in snapshots_and_forests.iter().rev() {
-        walk_snapshot(snapshot, reader, packed_blobs, backup)?
-    }
-    Ok(())
-}
-
-fn walk_snapshot(
-    snapshot_and_forest: &SnapshotAndForest,
-    reader: &mut read::BlobReader,
-    packed_blobs: &mut FxHashSet<ObjectId>,
-    backup: &mut Option<backup::Backup>,
-) -> Result<()> {
-    debug!("Copying snapshot {}", snapshot_and_forest.id);
-    walk_tree(
-        &snapshot_and_forest.snapshot.tree,
-        &snapshot_and_forest.forest,
-        reader,
-        packed_blobs,
-        backup,
-    )
-    .with_context(|| format!("In snapshot {}", snapshot_and_forest.id))
-}
-
-fn walk_tree(
-    tree_id: &ObjectId,
-    forest: &tree::Forest,
-    reader: &mut read::BlobReader,
-    packed_blobs: &mut FxHashSet<ObjectId>,
-    backup: &mut Option<backup::Backup>,
-) -> Result<()> {
-    let tree: &tree::Tree = forest
-        .get(tree_id)
-        .ok_or_else(|| anyhow!("Missing tree {}", tree_id))
-        .unwrap();
-
-    for (path, node) in tree {
-        match &node.contents {
-            tree::NodeContents::File { chunks } => {
-                for chunk in chunks {
-                    if packed_blobs.insert(*chunk) {
-                        repack_chunk(chunk, path, reader, backup)?;
-                    } else {
-                        trace!("Skipping chunk {}; already there", chunk);
-                    }
-                }
-            }
-            tree::NodeContents::Symlink { .. } => {
-                // Nothing to repack for symlinks.
-            }
-            tree::NodeContents::Directory { subtree } => {
-                walk_tree(subtree, forest, reader, packed_blobs, backup)?
-            }
-        }
-    }
-
-    if packed_blobs.insert(*tree_id) {
-        repack_tree(tree_id, tree, backup)?;
-    } else {
-        trace!("Skipping tree {}; already there", tree_id);
-    }
-    Ok(())
-}
-
-fn repack_chunk(
-    id: &ObjectId,
-    path: &Utf8Path,
-    reader: &mut read::BlobReader,
-    backup: &mut Option<backup::Backup>,
-) -> Result<()> {
-    trace!("Copying chunk {id} from {path}");
-    if let Some(b) = backup {
-        let contents = blob::Contents::Buffer(reader.read_blob(id)?);
-        b.chunk_tx.send(blob::Blob {
-            contents,
-            id: *id,
-            kind: blob::Type::Chunk,
-        })?;
-    }
-    Ok(())
-}
-
-fn repack_tree(
-    id: &ObjectId,
-    tree: &tree::Tree,
-    backup: &mut Option<backup::Backup>,
-) -> Result<()> {
-    trace!("Copying tree {}", id);
-
-    let (reserialized, check_id) = tree::serialize_and_hash(tree)?;
-    // Sanity check:
-    /*
-    ensure!(
-        check_id == *id,
-        "Tree {} has a different ID ({}) when reserialized",
-        id,
-        check_id
-    );
-    */
-
-    if let Some(b) = backup {
-        let contents = blob::Contents::Buffer(reserialized);
-        b.tree_tx.send(blob::Blob {
-            contents,
-            id: check_id,
-            kind: blob::Type::Tree,
-        })?;
     }
 
     Ok(())
