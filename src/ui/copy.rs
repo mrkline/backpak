@@ -86,8 +86,10 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     if !args.dry_run {
         for sf in &src_snapshots_and_forests {
             let new_id = snapshot::upload(&sf.snapshot, &dst_cached_backend)?;
-            ensure!(new_id == sf.id,
-                "Snapshot {} has a different ID ({new_id}) when reserialized", sf.id
+            ensure!(
+                new_id == sf.id,
+                "Snapshot {} has a different ID ({new_id}) when reserialized",
+                sf.id
             );
         }
     }
