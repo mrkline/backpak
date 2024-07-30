@@ -36,7 +36,7 @@ use crate::file_util::{check_magic, nice_size};
 use crate::hashing::{HashingReader, HashingWriter, ObjectId};
 use crate::pack::{PackManifest, PackMetadata};
 
-const MAGIC_BYTES: &[u8] = b"MKBAKIDX";
+const MAGIC_BYTES: &[u8] = b"MKBAKIDX1";
 
 // Persist WIP (but valid) indexes to a known name so that an interrupted
 // backup can read it in and know what we've already backed up.

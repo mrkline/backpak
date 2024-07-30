@@ -167,7 +167,7 @@ impl<'a> BlobReader<'a> {
 
         let mut file = current_pack.blob_stream.finish();
         // Seek back to the start of the zstd stream, past the magic bytes.
-        file.seek(SeekFrom::Start(8))?;
+        file.seek(SeekFrom::Start(pack::MAGIC_BYTES.len() as u64))?;
         let blob_stream =
             ZstdDecoder::with_buffer(file).context("Decompression of blob stream failed")?;
 

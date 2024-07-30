@@ -33,7 +33,7 @@ use crate::file_util::{self, nice_size};
 use crate::hashing::{HashingReader, ObjectId};
 use crate::tree;
 
-const MAGIC_BYTES: &[u8] = b"MKBAKPAK";
+pub const MAGIC_BYTES: &[u8] = b"MKBAKPAK1";
 
 /// The desired size of [crate::pack] files
 pub const DEFAULT_PACK_SIZE: Byte = Byte::from_u64(1024 * 1024 * 100); // 100 MiB
