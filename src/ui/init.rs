@@ -8,11 +8,12 @@ use byte_unit::Byte;
 use clap::{Parser, Subcommand};
 
 use crate::backend;
+use crate::pack;
 
 #[derive(Debug, Parser)]
 pub struct Args {
-    #[clap(short, long, default_value_t = crate::pack::DEFAULT_PACK_SIZE)]
-    pack_size: Byte,
+    #[clap(short, long)]
+    pack_size: Option<String>,
 
     #[clap(long)]
     gpg: Option<String>,
@@ -35,6 +36,12 @@ enum Command {
 }
 
 pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
+    let pack_size = args
+        .pack_size
+        .map(|s| Byte::parse_str(s, true)) // Don't interpret b as bits.
+        .transpose()
+        .context("Couldn't parse --pack-size")?;
+    let pack_size = pack_size.unwrap_or(pack::DEFAULT_PACK_SIZE);
     let (filter, unfilter) = match args.gpg {
         Some(g) => (
             Some("gpg --encrypt --quiet --recipient ".to_owned() + &g),
@@ -48,16 +55,14 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         round_trip_filter_test(filter.as_ref().unwrap(), unfilter.as_ref().unwrap())?;
     }
     match args.subcommand {
-        Command::Filesystem => {
-            backend::fs::initialize(repository, args.pack_size, filter, unfilter)
-        }
+        Command::Filesystem => backend::fs::initialize(repository, pack_size, filter, unfilter),
         Command::Backblaze {
             key_id,
             application_key,
             bucket,
         } => backend::backblaze::initialize(
             repository,
-            args.pack_size,
+            pack_size,
             key_id,
             application_key,
             bucket,
