@@ -1,13 +1,4 @@
-## `copy` command
-
-- Reuse `walk_snapshots()` from `prune`
-
-- We want it to be resumable like backups. Resue `find_resumable_backup()`?
-
-## More compact trees?
-
-Should we make the keys in our tree CBOR smaller? Only have sizes for files?
-See how much of a difference this actually makes once we compress them.
+-L to dereference symlinks?
 
 ## backup accounting
 
