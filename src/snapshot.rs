@@ -21,11 +21,11 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;
+use std::sync::LazyLock;
 
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
-use lazy_static::lazy_static;
 use rayon::prelude::*;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
@@ -145,13 +145,11 @@ pub fn find(prefix: &str, cached_backend: &backend::CachedBackend) -> Result<Obj
         return Ok(id);
     }
 
-    lazy_static! {
-        // Git-like syntax:
-        // Match LAST (or HEAD; git habits die hard), and either a single tilde
-        // (meaning one before the last) or ~<num> (meaning <num> before last).
-        static ref LAST_REGEX: Regex =
-            Regex::new(r"^(?:LAST|HEAD)(?:(~)|(?:~([0-9]+)))?$").unwrap();
-    }
+    // Git-like syntax:
+    // Match LAST (or HEAD; git habits die hard), and either a single tilde
+    // (meaning one before the last) or ~<num> (meaning <num> before last).
+    static LAST_REGEX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^(?:LAST|HEAD)(?:(~)|(?:~([0-9]+)))?$").unwrap());
 
     if let Some(cap) = LAST_REGEX.captures(prefix) {
         let groups = cap.iter().collect::<Vec<_>>();
