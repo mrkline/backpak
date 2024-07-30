@@ -7,9 +7,9 @@ use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
 use clap::Parser;
-use log::*;
 use rustc_hash::FxHashMap;
 use rustix::fs::Timespec;
+use tracing::*;
 
 use crate::{
     backend, diff, fs_tree,

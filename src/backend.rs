@@ -7,8 +7,8 @@ use std::io::{self, prelude::*};
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use byte_unit::Byte;
 use camino::Utf8Path;
-use log::*;
 use serde::{Deserialize, Serialize};
+use tracing::*;
 
 use crate::{
     config,

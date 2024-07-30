@@ -23,9 +23,9 @@ use std::sync::mpsc::{Receiver, SyncSender};
 
 use anyhow::{ensure, Context, Result};
 use byte_unit::Byte;
-use log::*;
 use serde_derive::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
+use tracing::*;
 
 use crate::backend;
 use crate::blob::{self, Blob};
@@ -472,15 +472,9 @@ mod test {
 
     use crate::chunk;
 
-    fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
-
     #[test]
     /// Pack manifest and ID remains stable from build to build.
     fn stability() -> Result<()> {
-        init();
-
         let manifest = vec![
             PackManifestEntry {
                 blob_type: blob::Type::Chunk,
@@ -516,8 +510,6 @@ mod test {
 
     #[test]
     fn smoke() -> Result<()> {
-        init();
-
         let chunks = chunk::chunk_file("tests/references/sr71.txt")
             .context("Couldn't chunk reference file")?;
         let (chunk_tx, chunk_rx) = sync_channel(0);

@@ -193,10 +193,6 @@ mod test {
 
     use tempfile::tempfile;
 
-    fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
-
     fn build_test_snapshot() -> Snapshot {
         Snapshot {
             time: DateTime::parse_from_rfc3339("1969-07-20T20:17:40Z").unwrap(),
@@ -216,8 +212,6 @@ mod test {
     #[test]
     /// Pack manifest and ID remains stable from build to build.
     fn stability() -> Result<()> {
-        init();
-
         let snapshot = build_test_snapshot();
 
         /*
@@ -246,8 +240,6 @@ mod test {
 
     #[test]
     fn round_trip() -> Result<()> {
-        init();
-
         let snapshot = build_test_snapshot();
         let mut fh = tempfile()?;
         let written_id = to_file(&mut fh, &snapshot)?;

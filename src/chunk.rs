@@ -5,8 +5,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use camino::Utf8Path;
 use fastcdc::v2020::FastCDC;
-use log::*;
 use rayon::prelude::*;
+use tracing::*;
 
 use crate::blob::{self, Blob};
 use crate::file_util;
@@ -103,14 +103,8 @@ pub fn chunk_file<P: AsRef<Utf8Path>>(path: P) -> Result<ChunkedFile> {
 mod test {
     use super::*;
 
-    fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
-
     #[test]
     fn smoke() -> Result<()> {
-        init();
-
         let chunked = chunk_file("tests/references/sr71.txt")?;
         assert_eq!(chunked.len(), 1);
 

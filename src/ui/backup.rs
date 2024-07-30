@@ -6,9 +6,9 @@ use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
 use clap::Parser;
-use log::*;
 use regex::RegexSet;
 use rustc_hash::FxHashSet;
+use tracing::*;
 
 use crate::backend;
 use crate::backup::*;

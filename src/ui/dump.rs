@@ -4,7 +4,7 @@ use std::io::prelude::*;
 use anyhow::{bail, Context, Result};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use clap::Parser;
-use log::*;
+use tracing::*;
 
 use crate::backend;
 use crate::index;
@@ -152,8 +152,6 @@ fn dump_file(
 }
 
 fn open_writer(output_path: &Option<Utf8PathBuf>) -> Result<io::BufWriter<Box<dyn Write>>> {
-    // static STDOUT: LazyLock<io::Stdout> = LazyLock::new(|| io::stdout());
-
     let writer: Box<dyn Write> = match output_path {
         Some(p) => {
             if p == "-" {

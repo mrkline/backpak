@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use camino::Utf8PathBuf;
 use clap::{ArgAction, Parser, Subcommand};
-use simplelog::*;
+use tracing::*;
 
 use backpak::counters;
 use backpak::ui::*;
@@ -61,7 +61,7 @@ enum Command {
 
 fn main() {
     run().unwrap_or_else(|e| {
-        log::error!("{:?}", e);
+        error!("{:?}", e);
         std::process::exit(1);
     });
 }
@@ -97,51 +97,37 @@ fn run() -> Result<()> {
 
 /// Set up simplelog to spit messages to stderr.
 fn init_logger(args: &Args) {
-    let mut builder = ConfigBuilder::new();
-    builder.add_filter_allow_str("backpak");
-    // Comment out to look at crate::module locations for setting allow string above
-    builder.set_target_level(LevelFilter::Off);
-    builder.set_thread_level(LevelFilter::Off);
-    if args.timestamps {
-        builder.set_time_format_rfc3339();
-        builder.set_time_level(LevelFilter::Error);
-    } else {
-        builder.set_time_level(LevelFilter::Off);
-    }
-
     let level = match args.verbose {
-        0 => LevelFilter::Warn,
-        1 => LevelFilter::Info,
-        2 => LevelFilter::Debug,
-        _ => LevelFilter::Trace,
+        0 => Level::WARN,
+        1 => Level::INFO,
+        2 => Level::DEBUG,
+        _ => Level::TRACE,
+    };
+    let ansis = match args.color {
+        Color::Always => true,
+        Color::Auto => {
+            use std::io::IsTerminal;
+            std::io::stderr().is_terminal()
+        }
+        Color::Never => false,
     };
 
-    if level == LevelFilter::Trace {
-        builder.set_location_level(LevelFilter::Error);
-    }
-    builder.set_level_padding(LevelPadding::Left);
+    let builder = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_max_level(level)
+        .with_ansi(ansis);
 
-    let config = builder.build();
-
-    if cfg!(test) {
-        TestLogger::init(level, config).context("Couldn't init test logger")
+    let builder = if level == Level::TRACE {
+        builder.with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
     } else {
-        let color = match args.color {
-            Color::Always => ColorChoice::AlwaysAnsi,
-            Color::Auto => {
-                use std::io::IsTerminal;
-                if std::io::stderr().is_terminal() {
-                    ColorChoice::Auto
-                } else {
-                    ColorChoice::Never
-                }
-            }
-            Color::Never => ColorChoice::Never,
-        };
+        builder.with_target(false)
+    };
 
-        TermLogger::init(level, config.clone(), TerminalMode::Stderr, color)
-            .or_else(|_| SimpleLogger::init(level, config))
-            .context("Couldn't init logger")
+    if args.timestamps {
+        builder
+            .with_timer(tracing_subscriber::fmt::time::SystemTime)
+            .init();
+    } else {
+        builder.without_time().init();
     }
-    .unwrap()
 }
