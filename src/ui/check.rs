@@ -2,9 +2,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{bail, Result};
 use clap::Parser;
-use log::*;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
+use tracing::*;
 
 use crate::backend;
 use crate::hashing::ObjectId;

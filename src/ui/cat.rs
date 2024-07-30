@@ -3,7 +3,7 @@ use std::io::prelude::*;
 
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
-use log::*;
+use tracing::*;
 
 use crate::backend;
 use crate::blob;

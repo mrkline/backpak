@@ -5,7 +5,7 @@ use std::io::prelude::*;
 use std::io::{self, BufReader, SeekFrom};
 
 use anyhow::{anyhow, ensure, Context, Result};
-use log::*;
+use tracing::*;
 
 use crate::backend;
 use crate::counters;
@@ -210,14 +210,8 @@ mod test {
     use crate::blob;
     use crate::chunk;
 
-    fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
-
     #[test]
     fn smoke() -> Result<()> {
-        init();
-
         // Create a backend with a single pack from our reference files
         let backend = backend::in_memory();
 

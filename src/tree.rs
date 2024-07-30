@@ -7,9 +7,9 @@ use std::sync::Arc;
 use anyhow::{anyhow, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::prelude::*;
-use log::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::{Deserialize, Serialize};
+use tracing::*;
 
 use crate::backend;
 use crate::counters;
@@ -562,15 +562,9 @@ fn file_size(
 mod test {
     use super::*;
 
-    fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
-
     #[test]
     /// Pack manifest and ID remains stable from build to build.
     fn stability() -> Result<()> {
-        init();
-
         let mut tree = BTreeMap::new();
         tree.insert(
             Utf8PathBuf::from("UnixFileNode"),

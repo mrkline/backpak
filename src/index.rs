@@ -25,10 +25,10 @@ use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::Mutex;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use log::*;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::{Deserialize, Serialize};
+use tracing::*;
 
 use crate::backend;
 use crate::counters;
@@ -349,10 +349,6 @@ mod test {
     use crate::blob;
     use crate::pack::PackManifestEntry;
 
-    fn init() {
-        let _ = env_logger::builder().is_test(true).try_init();
-    }
-
     fn build_test_index() -> Index {
         let mut supersedes = BTreeSet::new();
         supersedes.insert(ObjectId::hash(b"Some previous index"));
@@ -400,8 +396,6 @@ mod test {
     #[test]
     /// Pack manifest and ID remains stable from build to build.
     fn stability() -> Result<()> {
-        init();
-
         let index = build_test_index();
 
         /*
@@ -430,8 +424,6 @@ mod test {
 
     #[test]
     fn round_trip() -> Result<()> {
-        init();
-
         let index = build_test_index();
         let mut fh = tempfile()?;
         let written_id = to_file(&mut fh, &index)?;

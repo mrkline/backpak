@@ -34,8 +34,6 @@ fastcdc = "3.0"
 home = "0.5"
 # Default author - the hostname
 hostname = "0.4"
-# Logging
-log = "0.4"
 # Memmap1 is unmaintained
 memmap2 = "0.9"
 # Numeric traits are nice
@@ -60,18 +58,18 @@ serde_derive = "1.0"
 serde_json = "1.0"
 # The good hash
 sha2 = "0.10"
-# KISS
-simplelog = { version = "0.12", features = ["test", "termcolor"] }
 # Persisting to temporary locations
 tempfile = "3.0"
 # INI config is nice
 toml = "0.8"
+# It's the good logger now.
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", default-features = false, features = ["std", "ansi", "fmt"] }
 # Thank you Yann.
 zstd = { version = "0.13", features = ["zstdmt"] }
 
 [dev-dependencies]
 assert_cmd = "2.0"
-env_logger = "0.10"
 hex-literal = "0.4"
 predicates = "3.0"
 walkdir = "2.0"

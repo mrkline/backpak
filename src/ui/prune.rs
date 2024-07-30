@@ -4,9 +4,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use camino::Utf8Path;
 use clap::Parser;
-use log::*;
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
+use tracing::*;
 
 use crate::backend;
 use crate::backup;

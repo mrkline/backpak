@@ -4,7 +4,6 @@ use std::collections::BTreeSet;
 
 use anyhow::{anyhow, Result};
 use camino::Utf8Path;
-// use log::*;
 
 use crate::hashing::ObjectId;
 use crate::tree::{Forest, Node, NodeType, Tree};

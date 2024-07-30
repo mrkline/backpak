@@ -2,8 +2,8 @@
 //! either loose ones in `backpak prune` or to another repo in `backpak copy`
 use anyhow::{anyhow, ensure, Context, Result};
 use camino::Utf8Path;
-use log::*;
 use rustc_hash::FxHashSet;
+use tracing::*;
 
 use crate::{backend, backup, blob, hashing::ObjectId, read, snapshot, tree};
 

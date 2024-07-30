@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use anyhow::{ensure, Context, Result};
 use camino::Utf8Path;
-use log::*;
+use tracing::*;
 
 use crate::counters;
 

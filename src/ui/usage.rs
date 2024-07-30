@@ -1,7 +1,7 @@
 use anyhow::Result;
 
-use log::warn;
 use rustc_hash::FxHashSet;
+use tracing::warn;
 
 use crate::{backend, file_util::nice_size, index, snapshot, tree};
 

@@ -54,8 +54,8 @@ use std::thread;
 
 use anyhow::{bail, Context, Result};
 use camino::Utf8Path;
-use log::*;
 use rustc_hash::FxHashSet;
+use tracing::*;
 
 use crate::backend;
 use crate::blob::Blob;

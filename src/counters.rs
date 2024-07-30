@@ -6,7 +6,7 @@ use std::sync::{
 };
 
 use enum_map::{Enum, EnumMap};
-use log::*;
+use tracing::*;
 
 #[derive(Debug, Copy, Clone, Enum)]
 pub enum Op {

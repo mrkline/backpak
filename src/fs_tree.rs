@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use anyhow::{ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
-use log::*;
+use tracing::*;
 
 use crate::chunk;
 use crate::hashing::ObjectId;

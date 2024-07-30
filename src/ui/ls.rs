@@ -1,7 +1,7 @@
 use anyhow::Result;
 use camino::Utf8Path;
 use clap::Parser;
-use log::*;
+use tracing::*;
 
 use crate::backend;
 use crate::index;
