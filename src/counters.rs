@@ -1,9 +1,11 @@
 //! Performance counters: Count how many times we do various important operations.
 
-use std::sync::atomic::{fence, AtomicUsize, Ordering};
+use std::sync::{
+    atomic::{fence, AtomicUsize, Ordering},
+    LazyLock,
+};
 
 use enum_map::{Enum, EnumMap};
-use lazy_static::lazy_static;
 use log::*;
 
 #[derive(Debug, Copy, Clone, Enum)]
@@ -23,9 +25,7 @@ pub enum Op {
     PackStreamRestart,
 }
 
-lazy_static! {
-    static ref COUNTER_MAP: EnumMap<Op, AtomicUsize> = EnumMap::default();
-}
+static COUNTER_MAP: LazyLock<EnumMap<Op, AtomicUsize>> = LazyLock::new(EnumMap::default);
 
 #[inline]
 pub fn bump(which: Op) {

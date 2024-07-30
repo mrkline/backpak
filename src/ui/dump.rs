@@ -4,7 +4,6 @@ use std::io::prelude::*;
 use anyhow::{bail, Context, Result};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use clap::Parser;
-use lazy_static::lazy_static;
 use log::*;
 
 use crate::backend;
@@ -153,14 +152,12 @@ fn dump_file(
 }
 
 fn open_writer(output_path: &Option<Utf8PathBuf>) -> Result<io::BufWriter<Box<dyn Write>>> {
-    lazy_static! {
-        static ref STDOUT: io::Stdout = io::stdout();
-    }
+    // static STDOUT: LazyLock<io::Stdout> = LazyLock::new(|| io::stdout());
 
     let writer: Box<dyn Write> = match output_path {
         Some(p) => {
             if p == "-" {
-                Box::new(STDOUT.lock())
+                Box::new(io::stdout().lock())
             } else {
                 Box::new(
                     std::fs::File::create(p)
@@ -168,7 +165,7 @@ fn open_writer(output_path: &Option<Utf8PathBuf>) -> Result<io::BufWriter<Box<dy
                 )
             }
         }
-        None => Box::new(STDOUT.lock()),
+        None => Box::new(io::stdout().lock()),
     };
     Ok(io::BufWriter::new(writer))
 }

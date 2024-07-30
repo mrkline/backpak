@@ -34,8 +34,6 @@ fastcdc = "3.0"
 home = "0.5"
 # Default author - the hostname
 hostname = "0.4"
-# Be lazy.
-lazy_static = "1.0"
 # Logging
 log = "0.4"
 # Memmap1 is unmaintained
