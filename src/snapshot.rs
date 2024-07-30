@@ -51,7 +51,7 @@ pub struct Snapshot {
     pub tree: ObjectId,
 }
 
-const MAGIC_BYTES: &[u8] = b"MKBAKSNP";
+const MAGIC_BYTES: &[u8] = b"MKBAKSNP1";
 
 fn to_file(fh: &mut fs::File, snapshot: &Snapshot) -> Result<ObjectId> {
     fh.write_all(MAGIC_BYTES)?;
