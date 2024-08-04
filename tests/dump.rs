@@ -6,7 +6,7 @@ mod common;
 use common::*;
 
 #[test]
-fn backup_src() -> Result<()> {
+fn dump_src() -> Result<()> {
     let project_dir = std::env::current_dir()?;
 
     let backup_dir = tempdir()?;
