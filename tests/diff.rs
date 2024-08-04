@@ -12,7 +12,7 @@ mod common;
 use common::*;
 
 #[test]
-fn backup_src() -> Result<()> {
+fn diff_src() -> Result<()> {
     let backup_dir = tempdir()?;
     let backup_path = backup_dir.path();
 

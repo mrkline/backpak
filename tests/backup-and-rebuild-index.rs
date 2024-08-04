@@ -9,7 +9,7 @@ use common::*;
 use predicates::prelude::*;
 
 #[test]
-fn backup_src() -> Result<()> {
+fn rebuild_index() -> Result<()> {
     let project_dir = std::env::current_dir()?;
 
     let backup_dir = tempdir()?;
