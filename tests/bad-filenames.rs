@@ -31,7 +31,6 @@ fn bad_filename() -> Result<()> {
             .join(OsStr::from_bytes(&[0x66, 0x6f, 0x80, 0x6f])),
     )?;
 
-    // Let's backup our own code, and the test references.
     let fails_on_utf8 = cli_run(working_path, backup_path)?
         .arg("backup")
         .arg(working_path.join("foo"))
