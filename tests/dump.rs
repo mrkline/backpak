@@ -20,7 +20,7 @@ fn dump_src() -> Result<()> {
         .assert()
         .success();
 
-    // Let's backup our own code, and the test references.
+    // Let's backup our own code
     cli_run(working_path, backup_path)?
         .arg("backup")
         .arg(project_dir.join("src"))
