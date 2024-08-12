@@ -24,6 +24,10 @@ use crate::tree;
 /// Create a snapshot of the given files and directories.
 #[derive(Debug, Parser)]
 pub struct Args {
+    /// Dereference symbolic links instead of just saving their target.
+    #[clap(short = 'L', long)]
+    pub dereference: bool,
+
     /// The author of the snapshot (otherwise the hostname is used)
     #[clap(short, long, name = "name")]
     pub author: Option<String>,
@@ -62,10 +66,16 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     reject_matching_directories(&paths)?;
 
+    let symlink_behavior = if args.dereference {
+        tree::Symlink::Dereference
+    } else {
+        tree::Symlink::Read
+    };
+
     // Do a quick scan of the paths to make sure we can read them and get
     // metadata before we get backends and indexes
     // and threads and all manner of craziness going.
-    check_paths(&paths).context("Failed FS check prior to backup")?;
+    check_paths(symlink_behavior, &paths).context("Failed FS check prior to backup")?;
 
     let (backend_config, cached_backend) =
         backend::open(repository, backend::CacheBehavior::Normal)?;
@@ -121,6 +131,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     );
 
     let (root, bytes_reused) = backup_tree(
+        symlink_behavior,
         &paths,
         &args.skips,
         parent.map(|p| &p.tree),
@@ -200,7 +211,7 @@ fn parent_snapshot(
     parent.map(|(snap, _)| snap)
 }
 
-fn check_paths(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
+fn check_paths(symlink_behavior: tree::Symlink, paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
     debug!("Walking {paths:?} to check paths and if we can stat");
     let mut no_op_filter = |_: &Utf8Path| Ok(true);
     let mut no_op_visit =
@@ -211,6 +222,7 @@ fn check_paths(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
          _entry: fs_tree::DirectoryEntry<()>| { Ok(()) };
     let mut no_op_finalize = |()| Ok(());
     fs_tree::walk_fs(
+        symlink_behavior,
         paths,
         None,
         &tree::Forest::default(),
@@ -221,6 +233,7 @@ fn check_paths(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
 }
 
 fn backup_tree(
+    symlink_behavior: tree::Symlink,
     paths: &BTreeSet<Utf8PathBuf>,
     skips: &[String],
     previous_tree: Option<&ObjectId>,
@@ -271,6 +284,7 @@ fn backup_tree(
                 (t, subtree_bytes_reused)
             }
             DirectoryEntry::Symlink { target } => {
+                assert_eq!(symlink_behavior, tree::Symlink::Read);
                 info!("{:>9} {}", "symlink", path);
 
                 let t = tree::Node {
@@ -358,6 +372,7 @@ fn backup_tree(
     };
 
     fs_tree::walk_fs(
+        symlink_behavior,
         paths,
         previous_tree,
         previous_forest,

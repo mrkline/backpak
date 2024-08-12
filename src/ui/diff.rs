@@ -91,7 +91,16 @@ fn load_snapshot2_or_paths(
             "Comparing snapshot {} to its paths, {:?}",
             id1, snapshot1.paths
         );
-        fs_tree::forest_from_fs(&snapshot1.paths, Some(&snapshot1.tree), snapshot1_forest)
+        fs_tree::forest_from_fs(
+            // NB: We want the behavior of `diff` to match `restore`,
+            // and we do not dereference symlinks in a filesystem directory we're restoring to.
+            // See the related comments in ui/restore.rs.
+            // Maybe we should expose this rationale in help text or some other user docs...
+            tree::Symlink::Read,
+            &snapshot1.paths,
+            Some(&snapshot1.tree),
+            snapshot1_forest,
+        )
     }
 }
 
