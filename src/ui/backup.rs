@@ -26,22 +26,22 @@ use crate::tree;
 pub struct Args {
     /// Dereference symbolic links instead of just saving their target.
     #[clap(short = 'L', long)]
-    pub dereference: bool,
+    dereference: bool,
 
     /// The author of the snapshot (otherwise the hostname is used)
     #[clap(short, long, name = "name")]
-    pub author: Option<String>,
+    author: Option<String>,
 
     /// Add a metadata tag to the snapshot (can be specified multiple times)
     #[clap(short = 't', long = "tag", name = "tag")]
-    pub tags: Vec<String>,
+    tags: Vec<String>,
 
     /// Skip anything whose absolute path matches the given regular expression
     #[clap(short = 's', long = "skip", name = "regex")]
-    pub skips: Vec<String>,
+    skips: Vec<String>,
 
     #[clap(short = 'n', long)]
-    pub dry_run: bool,
+    dry_run: bool,
 
     /// The paths to back up
     ///
@@ -49,7 +49,7 @@ pub struct Args {
     /// Snapshots can be restored to either the same absolute paths,
     /// or to a given directory with `restore -o some/dir`
     #[clap(required = true, verbatim_doc_comment)]
-    pub paths: Vec<Utf8PathBuf>,
+    paths: Vec<Utf8PathBuf>,
 }
 
 pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {

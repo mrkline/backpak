@@ -33,7 +33,7 @@ use crate::tree;
 #[command(verbatim_doc_comment)]
 pub struct Args {
     #[clap(short = 'n', long)]
-    pub dry_run: bool,
+    dry_run: bool,
 }
 
 pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {

@@ -14,7 +14,7 @@ use crate::snapshot;
 #[clap(verbatim_doc_comment)]
 pub struct Args {
     #[clap(short = 'n', long)]
-    pub dry_run: bool,
+    dry_run: bool,
 
     /// The ID of a snapshot to forget or
     /// "duplicates" to forget duplicate snapshots
