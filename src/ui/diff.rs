@@ -1,3 +1,4 @@
+
 use anyhow::*;
 use camino::Utf8Path;
 use clap::Parser;
@@ -30,6 +31,7 @@ use crate::tree::{self, meta_diff_char, Forest, Node, NodeType};
 ///   + some/symlink -> new/target
 #[derive(Debug, Parser)]
 #[command(verbatim_doc_comment)]
+#[allow(clippy::doc_lazy_continuation)] // It's a verbatim doc comment, shut up Clippy.
 pub struct Args {
     /// Print metadata changes (times, permissoins)
     #[clap(short, long)]

@@ -39,6 +39,7 @@ use crate::{
 ///   + some/symlink -> new/target
 #[derive(Debug, Parser)]
 #[command(verbatim_doc_comment)]
+#[allow(clippy::doc_lazy_continuation)] // It's a verbatim doc comment, shut up Clippy.
 pub struct Args {
     /// Restore the snapshot to the given directory
     /// instead of the absolute paths in the snapshot
