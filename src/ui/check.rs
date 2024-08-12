@@ -24,7 +24,7 @@ use crate::tree;
 pub struct Args {
     /// Check the contents of packs, not just that they exist
     #[clap(short, long)]
-    pub read_packs: bool,
+    read_packs: bool,
 }
 
 pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
