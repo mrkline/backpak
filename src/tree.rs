@@ -18,6 +18,15 @@ use crate::index;
 use crate::pack;
 use crate::prettify;
 
+/// How should we handle symbolic links?
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Symlink {
+    /// Read them as symbolic links.
+    Read,
+    /// Follow symbolic links to their destination.
+    Dereference,
+}
+
 /// The contents of a directory entry (file, directory, symlink)
 ///
 /// Files have chunks, and a directory has a subtree representing
@@ -218,10 +227,14 @@ impl NodeMetadata {
 }
 
 #[cfg(unix)]
-pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
+pub fn get_metadata(symlink_behavior: Symlink, path: &Utf8Path) -> Result<NodeMetadata> {
     use std::os::unix::fs::MetadataExt;
 
-    let meta = fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {path}"))?;
+    let meta = match symlink_behavior {
+        Symlink::Read => fs::symlink_metadata(path),
+        Symlink::Dereference => fs::metadata(path),
+    }
+    .with_context(|| format!("Couldn't stat {path}"))?;
     let mode = meta.mode();
     let size = (posix_kind(mode) == NodeType::File).then(|| meta.size());
     let user_id = meta.uid();
@@ -244,10 +257,14 @@ pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
 }
 
 #[cfg(windows)]
-pub fn get_metadata(path: &Utf8Path) -> Result<NodeMetadata> {
+pub fn get_metadata(symlink_behavior: Symlink, path: &Utf8Path) -> Result<NodeMetadata> {
     use std::os::windows::fs::MetadataExt;
 
-    let meta = fs::symlink_metadata(path).with_context(|| format!("Couldn't stat {path}"))?;
+    let meta = match symlink_behavior {
+        Symlink::Read => fs::symlink_metadata(path),
+        Symlink::Dereference => fs::metadata(path),
+    }
+    .with_context(|| format!("Couldn't stat {path}"))?;
     let attributes = meta.file_attributes();
     let size = (windows_kind(attributes) == NodeType::File).then(|| meta.file_size());
     let creation_time = windows_timestamp(meta.creation_time());

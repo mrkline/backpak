@@ -135,8 +135,36 @@ fn load_fs_tree_and_mapping<'a>(
             .filter(|p| p.exists())
             .collect();
 
-        let (fs_id, fs_forest) =
-            fs_tree::forest_from_fs(&paths, Some(&snapshot.tree), snapshot_forest)?;
+        let (fs_id, fs_forest) = fs_tree::forest_from_fs(
+            // NB: We do *NOT* want to dereference symbolic links when we're
+            // building our current understanding of the filesystem - if it's a symlink now
+            // and it's something else in the backup
+            // (either because we backed up with -L or contents actually changed),
+            // we want to axe that symlink and replace it with our backup's content.
+            // This matches the behavior of `cp -L` (which only derefs symlinks in the source)
+            // and `rsync -L` without `-K`.
+            //
+            // Read the rsync man page, weep at the complexity of -K,
+            // and behold all its warnings about using that flag.
+            // tl;dr:
+            //
+            // 1. The directory I'm restoring to has a symlink `foo -> /etc/`
+            //
+            // 2. My snapshot has a directory named `foo` with arbitrary contents.
+            //
+            // 3. Restoring my snapshot while following destination symlinks
+            //    nukes /etc/ and paves it over with foo's contents.
+            //
+            // 4. ????
+            //
+            // 5. Great Sorrow
+            //
+            // Let's not mess with that.
+            tree::Symlink::Read,
+            &paths,
+            Some(&snapshot.tree),
+            snapshot_forest,
+        )?;
 
         for path in &snapshot.paths {
             let last_dir = path.file_name().unwrap();
@@ -154,8 +182,12 @@ fn load_fs_tree_and_mapping<'a>(
             "Restoring snapshot {} to its paths, {:?}",
             id, snapshot.paths
         );
-        let (fs_id, fs_forest) =
-            fs_tree::forest_from_fs(&snapshot.paths, Some(&snapshot.tree), snapshot_forest)?;
+        let (fs_id, fs_forest) = fs_tree::forest_from_fs(
+            tree::Symlink::Read, // See above
+            &snapshot.paths,
+            Some(&snapshot.tree),
+            snapshot_forest,
+        )?;
         for path in &snapshot.paths {
             assert!(path_map
                 .insert(path.file_name().unwrap(), path.clone())
@@ -243,6 +275,10 @@ impl Restorer<'_> {
             fs::remove_dir_all(node_path)?;
         } else {
             trace!("Removing {node_path}");
+            // NB: Because we model node type changing as "remove old, add new"
+            // (see the defaulted type_changed() callback in diff.rs),
+            // destination symlinks are *NOT* followed.
+            // See the comments on forest_from_fs() above.
             fs::remove_file(node_path)?;
         }
         Ok(())

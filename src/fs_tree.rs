@@ -77,6 +77,7 @@ pub enum DirectoryEntry<T> {
 /// reduces everything visited in that directory.
 /// See [`forest_from_fs`] or [`crate::ui::backup`]'s `backup_tree` for examples.
 pub fn walk_fs<T, Intermediate, Filter, Visit, Finalize>(
+    symlink_behavior: tree::Symlink,
     paths: &BTreeSet<Utf8PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
@@ -114,7 +115,7 @@ where
             .as_ref()
             .and_then(|tree| tree.get(Utf8Path::new(entry_name)));
 
-        let metadata = tree::get_metadata(path)?;
+        let metadata = tree::get_metadata(symlink_behavior, path)?;
 
         let subnode = match metadata.kind() {
             tree::NodeType::Directory => {
@@ -138,6 +139,7 @@ where
                 });
 
                 let sub_result: T = walk_fs(
+                    symlink_behavior,
                     &subpaths,
                     previous_subtree,
                     previous_forest,
@@ -171,6 +173,7 @@ where
 /// Hashes the forest for the given paths,
 /// reusing chunks from the previous tree when able.
 pub fn forest_from_fs(
+    symlink_behavior: tree::Symlink,
     paths: &BTreeSet<Utf8PathBuf>,
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
@@ -231,6 +234,7 @@ pub fn forest_from_fs(
     }
 
     walk_fs(
+        symlink_behavior,
         paths,
         previous_tree,
         previous_forest,
