@@ -1,12 +1,7 @@
-## WE DON'T KNOW FILTER OUTPUT LENGTH
+## Can we pipeline filter/unfilter?
 
-`Backend::write(..., len, ...)` is misguided - in many cases (e.g., GPG!)
-the length of the file to-be-filtered (a pack, snapshot, etc.) will be different
-than the filtered output.
-Pipe it into a temporary file?
-
-Can/should we pipeline that? Trouble is that breaks the nice abstraction that a filtered backend
-is just another backend. It also has to be *behind* the cache, which is always unfiltered...
+Trouble is that breaks the nice abstraction that a filtered backend is just another backend.
+It also has to be *behind* the cache, which is always unfiltered...
 
 ## Axe multiple versions of B2 if their SHAs match?
 
