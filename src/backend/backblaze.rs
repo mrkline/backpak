@@ -69,7 +69,7 @@ impl Backend for BackblazeBackend {
         Ok(())
     }
 
-    fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    fn list(&self, prefix: &str) -> Result<Vec<(String, u64)>> {
         let l = self.session.list(Some(prefix))?;
         Ok(l)
     }

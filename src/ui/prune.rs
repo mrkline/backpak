@@ -77,6 +77,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let superseded = cached_backend
         .list_indexes()?
         .iter()
+        .map(|(idx, _idx_len)| idx)
         .map(backend::id_from_path)
         .collect::<Result<BTreeSet<ObjectId>>>()?;
 

@@ -72,8 +72,8 @@ pub trait Backend {
 
     fn remove(&self, which: &str) -> Result<()>;
 
-    /// Lists all keys with the given prefix
-    fn list(&self, prefix: &str) -> Result<Vec<String>>;
+    /// Lists all keys and their sizes with the given prefix
+    fn list(&self, prefix: &str) -> Result<Vec<(String, u64)>>;
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -216,7 +216,7 @@ impl CachedBackend {
     // Let's put all the layout-specific stuff here so that we don't have paths
     // spread throughout the codebase.
 
-    fn list(&self, which: &str) -> Result<Vec<String>> {
+    fn list(&self, which: &str) -> Result<Vec<(String, u64)>> {
         debug!("Querying backend for {which}*"); // Should this be info?
         match &self {
             CachedBackend::File { backend } => backend.list(which),
@@ -225,15 +225,15 @@ impl CachedBackend {
         }
     }
 
-    pub fn list_indexes(&self) -> Result<Vec<String>> {
+    pub fn list_indexes(&self) -> Result<Vec<(String, u64)>> {
         self.list("indexes/")
     }
 
-    pub fn list_snapshots(&self) -> Result<Vec<String>> {
+    pub fn list_snapshots(&self) -> Result<Vec<(String, u64)>> {
         self.list("snapshots/")
     }
 
-    pub fn list_packs(&self) -> Result<Vec<String>> {
+    pub fn list_packs(&self) -> Result<Vec<(String, u64)>> {
         self.list("packs/")
     }
 

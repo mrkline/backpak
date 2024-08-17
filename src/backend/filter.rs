@@ -142,7 +142,6 @@ impl Backend for BackendFilter {
         filtered.seek(io::SeekFrom::Start(0))?;
         self.raw.write(len, &mut filtered, to)?;
 
-
         Ok(())
     }
 
@@ -150,7 +149,7 @@ impl Backend for BackendFilter {
         self.raw.remove(which)
     }
 
-    fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    fn list(&self, prefix: &str) -> Result<Vec<(String, u64)>> {
         self.raw.list(prefix)
     }
 }
