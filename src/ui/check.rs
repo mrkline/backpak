@@ -54,6 +54,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let pack_ids = cached_backend
         .list_packs()?
         .iter()
+        .map(|(pack, _pack_len)| pack)
         .map(backend::id_from_path)
         .collect::<Result<Vec<_>>>()?;
     let mut unlisted_packs: usize = 0;
@@ -133,7 +134,7 @@ fn map_chunks_to_snapshots(
 ) -> Result<FxHashMap<ObjectId, FxHashSet<ObjectId>>> {
     let mut chunks_to_snapshots = FxHashMap::default();
 
-    for snapshot_path in cached_backend.list_snapshots()? {
+    for (snapshot_path, _snapshot_len) in cached_backend.list_snapshots()? {
         let snapshot_id = backend::id_from_path(&snapshot_path)?;
         let snapshot = snapshot::load(&snapshot_id, cached_backend)?;
 

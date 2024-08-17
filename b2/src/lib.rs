@@ -156,7 +156,7 @@ impl Session {
         })
     }
 
-    pub fn list(&self, prefix: Option<&str>) -> Result<Vec<String>> {
+    pub fn list(&self, prefix: Option<&str>) -> Result<Vec<(String, u64)>> {
         let mut fs = vec![];
         let mut start_name: Option<String> = None;
         loop {
@@ -182,9 +182,14 @@ impl Session {
             for fj in files
                 .iter()
                 .filter(|f| f["action"].as_str() == Some("upload"))
-                .filter_map(|f| f["fileName"].as_str())
+                .filter_map(
+                    |f| match (f["fileName"].as_str(), f["contentLength"].as_u64()) {
+                        (Some(n), Some(l)) => Some((n.to_owned(), l)),
+                        _ => None,
+                    },
+                )
             {
-                fs.push(fj.to_owned());
+                fs.push(fj);
             }
 
             start_name = lfn["nextFileName"].as_str().map(|s| s.to_owned());

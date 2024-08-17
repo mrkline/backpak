@@ -127,7 +127,7 @@ pub fn load_chronologically(
     let mut snapshots = cached_backend
         .list_snapshots()?
         .par_iter()
-        .map(|file| {
+        .map(|(file, _len)| {
             let snapshot_id = backend::id_from_path(file)?;
             let snap = load(&snapshot_id, cached_backend)?;
             Ok((snap, snapshot_id))
@@ -177,12 +177,12 @@ pub fn find(prefix: &str, cached_backend: &backend::CachedBackend) -> Result<Obj
     let mut matches = cached_backend
         .list_snapshots()?
         .into_iter()
-        .filter(|snap| Utf8Path::new(snap).file_stem().unwrap().starts_with(prefix))
+        .filter(|(snap, _snap_len)| Utf8Path::new(snap).file_stem().unwrap().starts_with(prefix))
         .collect::<Vec<_>>();
 
     match matches.len() {
         0 => bail!("No snapshots start with {}", prefix),
-        1 => backend::id_from_path(matches.pop().unwrap()),
+        1 => backend::id_from_path(matches.pop().unwrap().0),
         multiple => bail!("{} different snapshots start with {}", multiple, prefix,),
     }
 }

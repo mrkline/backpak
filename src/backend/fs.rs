@@ -92,27 +92,31 @@ impl Backend for FilesystemBackend {
         Ok(())
     }
 
-    fn list(&self, prefix: &str) -> Result<Vec<String>> {
+    fn list(&self, prefix: &str) -> Result<Vec<(String, u64)>> {
         let prefix = self.base_directory.join(prefix);
 
         if prefix.is_file() {
-            return Ok(vec![prefix.to_string()]);
+            return Ok(vec![(prefix.to_string(), prefix.metadata()?.len())]);
         }
 
-        let paths: Vec<String> = walk_dir(&prefix)?
+        let str_and_len = |(p, len): &(Utf8PathBuf, u64)| -> Result<(String, u64)> {
+            let s = p.strip_prefix(&self.base_directory).unwrap().to_string();
+            Ok((s, *len))
+        };
+
+        let paths: Vec<(String, u64)> = walk_dir(&prefix)?
             .iter()
             // see file_utils::safe_copy_to_file()
             // Use the fancy new atomic file crate instead?
-            .filter(|p| p.extension() != Some("part"))
-            .map(|p| p.strip_prefix(&self.base_directory).unwrap())
-            .map(|p| p.to_string())
-            .collect();
+            .filter(|(p, _len)| p.extension() != Some("part"))
+            .map(str_and_len)
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(paths)
     }
 }
 
-fn walk_dir(dir: &Utf8Path) -> io::Result<Vec<Utf8PathBuf>> {
+fn walk_dir(dir: &Utf8Path) -> io::Result<Vec<(Utf8PathBuf, u64)>> {
     let mut paths = Vec::new();
     for entry in Utf8Path::read_dir_utf8(dir)? {
         let entry = entry?;
@@ -120,7 +124,8 @@ fn walk_dir(dir: &Utf8Path) -> io::Result<Vec<Utf8PathBuf>> {
         if path.is_dir() {
             paths.append(&mut walk_dir(path)?);
         } else {
-            paths.push(path.to_owned());
+            let len = entry.metadata()?.len();
+            paths.push((path.to_owned(), len));
         }
     }
     Ok(paths)

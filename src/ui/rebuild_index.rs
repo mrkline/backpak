@@ -18,6 +18,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     let superseded = cached_backend
         .list_indexes()?
         .iter()
+        .map(|(idx, _idx_len)| idx)
         .map(backend::id_from_path)
         .collect::<Result<BTreeSet<ObjectId>>>()?;
 
@@ -28,7 +29,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     cached_backend
         .list_packs()?
         .par_iter()
-        .try_for_each_with::<_, _, Result<()>>(pack_tx, |pack_tx, pack_file| {
+        .try_for_each_with::<_, _, Result<()>>(pack_tx, |pack_tx, (pack_file, _pack_len)| {
             let id = backend::id_from_path(pack_file)?;
             let manifest = pack::load_manifest(&id, &cached_backend)?;
             let metadata = pack::PackMetadata { id, manifest };

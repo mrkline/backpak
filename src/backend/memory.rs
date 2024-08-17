@@ -56,14 +56,14 @@ impl Backend for MemoryBackend {
         Ok(())
     }
 
-    fn list(&self, prefix: &str) -> Result<Vec<String>> {
-        let paths: Vec<String> = self
+    fn list(&self, prefix: &str) -> Result<Vec<(String, u64)>> {
+        let paths: Vec<_> = self
             .files
             .lock()
             .unwrap()
-            .keys()
-            .filter(|f| f.starts_with(prefix))
-            .cloned()
+            .iter()
+            .filter(|(f, _v)| f.starts_with(prefix))
+            .map(|(f, v)| (f.clone(), v.len() as u64))
             .collect();
         Ok(paths)
     }
