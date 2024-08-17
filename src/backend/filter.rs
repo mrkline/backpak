@@ -87,7 +87,7 @@ impl Backend for BackendFilter {
         }))
     }
 
-    fn write(&self, len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+    fn write(&self, _len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
         debug!("{} > {to}", self.filter);
 
         let mut f = Command::new("sh")
@@ -101,6 +101,13 @@ impl Backend for BackendFilter {
         let mut to_filter = f.stdin.take().unwrap();
         let mut from_filter = f.stdout.take().unwrap();
 
+        // NB: Some backends (particularly cloud storage like B2)
+        // need to know the exact size of the file!
+        // With an arbitrary filter, we don't know how big that will be until it exits.
+        // This sadly means we can't filter and upload in parallel.
+        // Until we can think of something smarter, write to a tempfile.
+        let mut filtered = tempfile::tempfile_in(".")?;
+
         thread::scope(|s| -> anyhow::Result<()> {
             // Create a thread to copy to the filter process.
             let copy_to = thread::Builder::new()
@@ -113,8 +120,8 @@ impl Backend for BackendFilter {
                 })
                 .unwrap(); // Panic if we can't spawn a thread.
 
-            // Meanwhile, in this thread, copy to the underlying backend.
-            self.raw.write(len, &mut from_filter, to)?;
+            // Meanwhile, in this thread, copy output to our tempfile.
+            io::copy(&mut from_filter, &mut filtered)?;
 
             // Unwrap the result of the join (i.e., that the child didn't panic)
             // and check that copying to the filter didn't fail.
@@ -129,6 +136,12 @@ impl Backend for BackendFilter {
             format!("{} > {to} failed", self.filter)
         );
         trace!("...{} > {to} exited", self.filter);
+
+        // Meanwhile, in this thread, copy to the underlying backend.
+        let len = filtered.stream_position()?;
+        filtered.seek(io::SeekFrom::Start(0))?;
+        self.raw.write(len, &mut filtered, to)?;
+
 
         Ok(())
     }
