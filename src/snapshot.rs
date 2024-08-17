@@ -21,7 +21,10 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;
-use std::sync::LazyLock;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    LazyLock,
+};
 
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -124,17 +127,29 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Sn
 pub fn load_chronologically(
     cached_backend: &backend::CachedBackend,
 ) -> Result<Vec<(Snapshot, ObjectId)>> {
+    load_chronologically_with_total_size(cached_backend).map(|(v, _ts)| v)
+}
+
+/// [`load_chronologically`] plus the total snapshot size.
+///
+/// Nice for usage reporting, since it saves us another backend query.
+pub fn load_chronologically_with_total_size(
+    cached_backend: &backend::CachedBackend,
+) -> Result<(Vec<(Snapshot, ObjectId)>, u64)> {
+    let total = AtomicU64::new(0);
+
     let mut snapshots = cached_backend
         .list_snapshots()?
         .par_iter()
-        .map(|(file, _len)| {
+        .map_with(&total, |tot, (file, len)| {
             let snapshot_id = backend::id_from_path(file)?;
             let snap = load(&snapshot_id, cached_backend)?;
+            tot.fetch_add(*len, Ordering::Relaxed);
             Ok((snap, snapshot_id))
         })
-        .collect::<Result<Vec<(Snapshot, ObjectId)>>>()?;
+        .collect::<Result<Vec<_>>>()?;
     snapshots.sort_by_key(|(snap, _)| snap.time);
-    Ok(snapshots)
+    Ok((snapshots, total.load(Ordering::SeqCst)))
 }
 
 pub fn find(prefix: &str, cached_backend: &backend::CachedBackend) -> Result<ObjectId> {

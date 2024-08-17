@@ -169,6 +169,15 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
 /// Load all indexes from the provided backend and combines them into a master
 /// index, removing any superseded ones.
 pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
+    build_master_index_with_sizes(cached_backend).map(|(mi, _ts)| mi)
+}
+
+/// [`build_master_index`] plus the size for each loaded index.
+///
+/// Nice for usage reporting, since it saves us another backend query.
+pub fn build_master_index_with_sizes(
+    cached_backend: &backend::CachedBackend,
+) -> Result<(Index, Vec<u64>)> {
     info!("Building a master index");
 
     #[derive(Debug, Default)]
@@ -176,6 +185,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
         bad_indexes: BTreeSet<ObjectId>,
         superseded_indexes: BTreeSet<ObjectId>,
         loaded_indexes: BTreeMap<ObjectId, PackMap>,
+        sizes: Vec<u64>,
     }
 
     let shared = Mutex::new(Results::default());
@@ -183,7 +193,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
     cached_backend
         .list_indexes()?
         .par_iter()
-        .try_for_each_with(&shared, |shared, (index_file, _index_len)| {
+        .try_for_each_with(&shared, |shared, (index_file, index_len)| {
             let index_id = backend::id_from_path(index_file)?;
             let mut loaded_index = match load(&index_id, cached_backend) {
                 Ok(l) => l,
@@ -194,6 +204,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
                 }
             };
             let mut guard = shared.lock().unwrap();
+            guard.sizes.push(*index_len);
             guard
                 .superseded_indexes
                 .append(&mut loaded_index.supersedes);
@@ -229,10 +240,13 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
         master_pack_map.append(index);
     }
 
-    Ok(Index {
-        supersedes: shared.superseded_indexes,
-        packs: master_pack_map,
-    })
+    Ok((
+        Index {
+            supersedes: shared.superseded_indexes,
+            packs: master_pack_map,
+        },
+        shared.sizes,
+    ))
 }
 
 /// A result of [`blob_to_pack_map()`],

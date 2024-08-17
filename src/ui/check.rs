@@ -50,23 +50,8 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         trouble = true;
     }
 
-    info!("Checking for packs not listed in indexes");
-    let pack_ids = cached_backend
-        .list_packs()?
-        .iter()
-        .map(|(pack, _pack_len)| pack)
-        .map(backend::id_from_path)
-        .collect::<Result<Vec<_>>>()?;
-    let mut unlisted_packs: usize = 0;
-    for pack_id in pack_ids {
-        if !index.packs.contains_key(&pack_id) {
-            warn!("Pack {pack_id} not listed in any index");
-            unlisted_packs += 1;
-        }
-    }
-    if unlisted_packs > 0 {
-        warn!("{unlisted_packs} are not listed in any index. Someone is backing up concurrently or you should consider running backpak rebuild-index");
-    }
+    info!("Checking for unreachable packs (not listed in indexes)");
+    warn_on_unreachable_packs(&index, &cached_backend)?;
 
     info!("Checking that all chunks in snapshots are reachable");
     let blob_map = index::blob_to_pack_map(&index)?;
@@ -125,6 +110,35 @@ fn check_pack(
         debug!("Pack {} found", pack_id);
     }
     Ok(())
+}
+
+/// Warns about unreachable packs. Returns the total pack size for usage stats.
+pub fn warn_on_unreachable_packs(
+    index: &index::Index,
+    cached_backend: &backend::CachedBackend,
+) -> Result<u64> {
+    let mut total_pack_size = 0u64;
+    let pack_ids = cached_backend
+        .list_packs()?
+        .iter()
+        .map(|(pack, pack_len)| {
+            total_pack_size += *pack_len;
+            pack
+        })
+        .map(backend::id_from_path)
+        .collect::<Result<Vec<_>>>()?;
+    let mut unlisted_packs: usize = 0;
+    for pack_id in pack_ids {
+        if !index.packs.contains_key(&pack_id) {
+            warn!("Pack {pack_id} not listed in any index");
+            unlisted_packs += 1;
+        }
+    }
+    if unlisted_packs > 0 {
+        warn!("{unlisted_packs} {} unreachable. Consider running `rebuild-index` if you aren't running `backup` right now.",
+            if unlisted_packs == 1 { "pack is" } else { "packs are" });
+    }
+    Ok(total_pack_size)
 }
 
 /// Maps all reachable chunks to the set of snapshots that use them
