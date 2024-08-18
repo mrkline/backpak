@@ -24,7 +24,16 @@ pub struct Args {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    Filesystem,
+    /// Backup to a directory on the local filesystem.
+    Filesystem {
+        /// Normally filesystem backups skip caching in ~/.cache/backpak,
+        /// assuming reads & writes directly to the backend are just as fast.
+        /// If the given path is over a remote mount (e.g., FTP, SMB, SSHFS)
+        /// use this to override that assumption.
+        #[clap(long, verbatim_doc_comment)]
+        force_cache: bool,
+    },
+    /// Backup to Backblaze B2
     Backblaze {
         #[clap(short, long)]
         key_id: String,
@@ -55,7 +64,9 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         round_trip_filter_test(filter.as_ref().unwrap(), unfilter.as_ref().unwrap())?;
     }
     match args.subcommand {
-        Command::Filesystem => backend::fs::initialize(repository, pack_size, filter, unfilter),
+        Command::Filesystem { force_cache } => {
+            backend::fs::initialize(repository, pack_size, filter, unfilter, force_cache)
+        }
         Command::Backblaze {
             key_id,
             application_key,

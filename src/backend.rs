@@ -34,7 +34,9 @@ fn defsize() -> Byte {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Kind {
-    Filesystem,
+    Filesystem {
+        force_cache: bool,
+    },
     Backblaze {
         key_id: String,
         application_key: String,
@@ -315,43 +317,46 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
         "{repository} config should set `filter` and `unfilter` or neither."
     );
     // Don't bother checking unfilter; we ensure both are set if one is above.
-    let cached_backend = if c.kind == Kind::Filesystem && c.filter.is_none() {
-        // Uncached filesystem backends are a special case
-        // (they let us directly manipulate files.)
-        CachedBackend::File {
-            backend: fs::FilesystemBackend::open(repository)?,
+    let cached_backend = match &c.kind {
+        Kind::Filesystem { force_cache: false } if c.filter.is_none() => {
+            // Uncached filesystem backends are a special case
+            // (they let us directly manipulate files.)
+            CachedBackend::File {
+                backend: fs::FilesystemBackend::open(repository)?,
+            }
         }
-    } else {
-        // It's not a filesystem backend, what is it?
-        let mut backend: Box<dyn Backend + Send + Sync> = match &c.kind {
-            Kind::Filesystem => Box::new(fs::FilesystemBackend::open(repository)?),
-            Kind::Backblaze {
-                key_id,
-                application_key,
-                bucket,
-            } => Box::new(backblaze::BackblazeBackend::open(
-                key_id,
-                application_key,
-                bucket,
-            )?),
-        };
-        // If we ever configure more, move this somewhere central (main()?)
-        let conf = config::load()?;
+        some_cached => {
+            // It's not a filesystem backend, what is it?
+            let mut backend: Box<dyn Backend + Send + Sync> = match some_cached {
+                Kind::Filesystem { .. } => Box::new(fs::FilesystemBackend::open(repository)?),
+                Kind::Backblaze {
+                    key_id,
+                    application_key,
+                    bucket,
+                } => Box::new(backblaze::BackblazeBackend::open(
+                    key_id,
+                    application_key,
+                    bucket,
+                )?),
+            };
+            // If we ever configure more, move this somewhere central (main()?)
+            let conf = config::load()?;
 
-        let cache = cache::setup(&conf)?;
+            let cache = cache::setup(&conf)?;
 
-        if c.filter.is_some() {
-            backend = Box::new(filter::BackendFilter {
-                filter: c.filter.clone().unwrap(),
-                unfilter: c.unfilter.clone().unwrap(),
-                raw: backend,
-            });
-        }
+            if c.filter.is_some() {
+                backend = Box::new(filter::BackendFilter {
+                    filter: c.filter.clone().unwrap(),
+                    unfilter: c.unfilter.clone().unwrap(),
+                    raw: backend,
+                });
+            }
 
-        CachedBackend::Cached {
-            backend,
-            behavior,
-            cache,
+            CachedBackend::Cached {
+                backend,
+                behavior,
+                cache,
+            }
         }
     };
     Ok((c, cached_backend))

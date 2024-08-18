@@ -78,7 +78,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     let index_size = index_sizes.iter().sum();
 
     let backend_kind = match config.kind {
-        backend::Kind::Filesystem => "Filesystem",
+        backend::Kind::Filesystem { .. } => "Filesystem",
         backend::Kind::Backblaze { .. } => "Backblaze",
     };
     let filter_str = if let Some(f) = &config.filter {
