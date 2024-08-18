@@ -28,6 +28,7 @@ pub fn initialize(
     pack_size: Byte,
     filter: Option<String>,
     unfilter: Option<String>,
+    force_cache: bool,
 ) -> Result<()> {
     if repository.exists() {
         ensure!(
@@ -47,7 +48,7 @@ pub fn initialize(
 
     let c = super::Config {
         pack_size,
-        kind: super::Kind::Filesystem,
+        kind: super::Kind::Filesystem { force_cache },
         filter,
         unfilter,
     };
