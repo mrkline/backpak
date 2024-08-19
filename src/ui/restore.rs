@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs::{self, File},
     io::prelude::*,
 };
@@ -42,14 +43,24 @@ use crate::{
 #[allow(clippy::doc_lazy_continuation)] // It's a verbatim doc comment, shut up Clippy.
 pub struct Args {
     /// Restore the snapshot to the given directory
-    /// instead of the absolute paths in the snapshot
+    /// instead of the absolute path(s) in the snapshot.
     ///
-    /// With `--output /tmp`, a snapshot containing
-    /// `/home/me/src/backpak` and `/home/me/src/mcap`
-    /// would be restored to `/tmp/backpak` and `/tmp/mcap`
+    /// A snapshot of a single directory, it is mapped directly:
+    /// one of `/foo/bar/baz` restored with `--output ./bob`
+    /// will restore baz's contents into `./bob`
     ///
-    /// This assumes the output dir already exists;
+    /// If the snapshot consists of multiple directories,
+    /// they are dumped into the output:
+    /// one of `/home/me/src/backpak` and `/home/me/src/mcap`
+    /// restored with `--output /tmp` will restore to
+    /// `/tmp/backpak` and `/tmp/mcap`
+    ///
+    /// Both assumes the output dir already exists;
     /// it does not create it.
+    ///
+    /// More sophisticated options, e.g.,
+    /// specifying multiple snapshot dir -> output dir mappings,
+    /// could be added in the future.
     #[clap(short, long, verbatim_doc_comment)]
     output: Option<Utf8PathBuf>,
 
@@ -127,49 +138,72 @@ fn load_fs_tree_and_mapping<'a>(
 
     if let Some(to) = restore_to {
         info!("Comparing snapshot {id} to {to}");
+        let (fs_id, fs_forest);
 
-        let paths = snapshot
-            .paths
-            .iter()
-            .map(|p| to.join(p.file_name().unwrap()))
-            .filter(|p| p.exists())
-            .collect();
+        // See the --help doc above: If the snapshot is a single directory,
+        // map it directoy to `<DIR>` in `--output <DIR>`
+        if snapshot.paths.len() == 1 {
+            (fs_id, fs_forest) = fs_tree::forest_from_fs(
+                // NB: We do *NOT* want to dereference symbolic links when we're
+                // building our current understanding of the filesystem - if it's a symlink now
+                // and it's something else in the backup
+                // (either because we backed up with -L or contents actually changed),
+                // we want to axe that symlink and replace it with our backup's content.
+                // This matches the behavior of `cp -L` (which only derefs symlinks in the source)
+                // and `rsync -L` without `-K`.
+                //
+                // Read the rsync man page, weep at the complexity of -K,
+                // and behold all its warnings about using that flag.
+                // tl;dr:
+                //
+                // 1. The directory I'm restoring to has a symlink `foo -> /etc/`
+                //
+                // 2. My snapshot has a directory named `foo` with arbitrary contents.
+                //
+                // 3. Restoring my snapshot while following destination symlinks
+                //    nukes /etc/ and paves it over with foo's contents.
+                //
+                // 4. ????
+                //
+                // 5. Great Sorrow
+                //
+                // Let's not mess with that.
+                tree::Symlink::Read,
+                &BTreeSet::from([to.clone()]),
+                Some(&snapshot.tree),
+                snapshot_forest,
+            )?;
 
-        let (fs_id, fs_forest) = fs_tree::forest_from_fs(
-            // NB: We do *NOT* want to dereference symbolic links when we're
-            // building our current understanding of the filesystem - if it's a symlink now
-            // and it's something else in the backup
-            // (either because we backed up with -L or contents actually changed),
-            // we want to axe that symlink and replace it with our backup's content.
-            // This matches the behavior of `cp -L` (which only derefs symlinks in the source)
-            // and `rsync -L` without `-K`.
-            //
-            // Read the rsync man page, weep at the complexity of -K,
-            // and behold all its warnings about using that flag.
-            // tl;dr:
-            //
-            // 1. The directory I'm restoring to has a symlink `foo -> /etc/`
-            //
-            // 2. My snapshot has a directory named `foo` with arbitrary contents.
-            //
-            // 3. Restoring my snapshot while following destination symlinks
-            //    nukes /etc/ and paves it over with foo's contents.
-            //
-            // 4. ????
-            //
-            // 5. Great Sorrow
-            //
-            // Let's not mess with that.
-            tree::Symlink::Read,
-            &paths,
-            Some(&snapshot.tree),
-            snapshot_forest,
-        )?;
+            // Map from the last component of the snapshot dir to the output dir.
+            let last_dir = snapshot.paths.iter().next().unwrap().file_name().unwrap();
+            assert!(path_map.insert(last_dir, to.clone()).is_none());
+        }
+        // If the snapshot is multiple directories,
+        // map them as subdirectories of `<DIR>` in `--output <DIR>`.
+        else {
+            // If subdirectories of the output directory match our snapshot dir names,
+            // walk those.
+            let paths = snapshot
+                .paths
+                .iter()
+                .map(|p| to.join(p.file_name().unwrap()))
+                .filter(|p| p.exists())
+                .collect();
 
-        for path in &snapshot.paths {
-            let last_dir = path.file_name().unwrap();
-            let to = to.join(last_dir);
-            assert!(path_map.insert(last_dir, to).is_none());
+            (fs_id, fs_forest) = fs_tree::forest_from_fs(
+                tree::Symlink::Read, // See above
+                &paths,
+                Some(&snapshot.tree),
+                snapshot_forest,
+            )?;
+
+            // Map the last components of the snapshot dirs to
+            // subdirectories of the output dir.
+            for path in &snapshot.paths {
+                let last_dir = path.file_name().unwrap();
+                let to = to.join(last_dir);
+                assert!(path_map.insert(last_dir, to).is_none());
+            }
         }
 
         Ok(FsTreeAndMapping {
