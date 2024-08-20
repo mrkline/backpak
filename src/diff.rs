@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use camino::Utf8Path;
 
 use crate::hashing::ObjectId;
@@ -68,13 +68,11 @@ pub fn compare_trees(
 ) -> Result<()> {
     let tree1: &Tree = forest1
         .get(id1)
-        .ok_or_else(|| anyhow!("Missing tree {}", id1))
-        .unwrap();
+        .unwrap_or_else(|| panic!("Missing tree {}", id1));
 
     let tree2: &Tree = forest2
         .get(id2)
-        .ok_or_else(|| anyhow!("Missing tree {}", id2))
-        .unwrap();
+        .unwrap_or_else(|| panic!("Missing tree {}", id2));
 
     let all_paths = tree1.keys().chain(tree2.keys()).collect::<BTreeSet<_>>();
     for path in all_paths {
