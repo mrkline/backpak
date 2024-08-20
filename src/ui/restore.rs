@@ -2,6 +2,7 @@ use std::{
     collections::BTreeSet,
     fs::{self, File},
     io::prelude::*,
+    sync::Arc,
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -18,7 +19,7 @@ use crate::{
     index,
     read::BlobReader,
     snapshot,
-    tree::{self, Forest, Node, NodeContents, NodeMetadata, NodeType},
+    tree::{self, Forest, Node, NodeContents, NodeMetadata, NodeType, Tree},
 };
 
 /// Restore the given snapshot to the filesystem
@@ -124,6 +125,11 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 struct FsTreeAndMapping<'a> {
     fs_id: ObjectId,
     fs_forest: tree::Forest,
+    /// Trees in backpak have a name with a single component - If I back up /home/me and /etc/,
+    /// my top-level tree is just `{ "me" -> subtree, "etc" -> subtree }`.
+    /// (See [`Snapshot`](crate::snapshot::Snapshot) for a discussion on this.)
+    ///
+    /// This remaps those top-level nodes to their absolute paths.
     path_map: FxHashMap<&'a str, Utf8PathBuf>,
 }
 
@@ -139,11 +145,14 @@ fn load_fs_tree_and_mapping<'a>(
     if let Some(to) = restore_to {
         info!("Comparing snapshot {id} to {to}");
 
-        let (fs_id, fs_forest);
-
         // See the --help doc above: If the snapshot is a single directory,
         // map it directoy to `<DIR>` in `--output <DIR>`
-        if snapshot.paths.len() == 1 {
+        let (fs_id, fs_forest) = if snapshot.paths.len() == 1 {
+            // Map the last component of the snapshot dir
+            // (i.e., the one entry in our top-level tree) to the output dir.
+            let last_dir = snapshot.paths.iter().next().unwrap().file_name().unwrap();
+            assert!(path_map.insert(last_dir, to.clone()).is_none());
+
             // We need to canonicalize the path since the user might have specified "./"
             // or ".." or "./foo/bar/.." or anything else that might trip up calling file_name()
             // to get the last component in forest_from_fs().
@@ -151,7 +160,7 @@ fn load_fs_tree_and_mapping<'a>(
                 .canonicalize_utf8()
                 .with_context(|| format!("Couldn't canonicalize {to}"))?;
 
-            (fs_id, fs_forest) = fs_tree::forest_from_fs(
+            let (fs_id, mut fs_forest) = fs_tree::forest_from_fs(
                 // NB: We do *NOT* want to dereference symbolic links when we're
                 // building our current understanding of the filesystem - if it's a symlink now
                 // and it's something else in the backup
@@ -177,18 +186,41 @@ fn load_fs_tree_and_mapping<'a>(
                 //
                 // Let's not mess with that.
                 tree::Symlink::Read,
-                &BTreeSet::from([canonical_to]),
+                &BTreeSet::from([canonical_to.clone()]),
                 Some(&snapshot.tree),
                 snapshot_forest,
             )?;
 
-            // Map from the last component of the snapshot dir to the output dir.
-            let last_dir = snapshot.paths.iter().next().unwrap().file_name().unwrap();
-            assert!(path_map.insert(last_dir, to.clone()).is_none());
+            // Fix up the forest so its top-level tree name matches the snapshot's.
+            // (This lets them compare cleanly.)
+            // Say we have a snapshot of `/home/me` and we're restoring to `./you`:
+
+            // Remove the previous top-level tree from the `./you` forest.
+            let fs_top = fs_forest.remove(&fs_id).unwrap();
+            // Make a copy, replacing { "you" -> subtree } with { "me" -> subtree }
+            // so it matches the snapshot.
+            let mut fixed_top: Tree = (*fs_top).clone();
+            let node = fixed_top
+                .remove(Utf8Path::new(canonical_to.file_name().unwrap()))
+                .unwrap();
+            fixed_top.insert(last_dir.into(), node);
+            // Put that into the forest and return its ID as the new top-level tree.
+            let (_bytes, fixed_id) = tree::serialize_and_hash(&fixed_top)?;
+            fs_forest.insert(fixed_id, Arc::new(fixed_top));
+
+            (fixed_id, fs_forest)
         }
         // If the snapshot is multiple directories,
         // map them as subdirectories of `<DIR>` in `--output <DIR>`.
         else {
+            // Map the last components of the snapshot dirs (i.e., our top-level subtree names)
+            // to subdirectories of the output dir.
+            for path in &snapshot.paths {
+                let last_dir = path.file_name().unwrap();
+                let to = to.join(last_dir);
+                assert!(path_map.insert(last_dir, to).is_none());
+            }
+
             // If subdirectories of the output directory match our snapshot dir names,
             // walk those.
             // Here we don't need to canonicalize (unlike above) since we're adding a component.
@@ -199,21 +231,13 @@ fn load_fs_tree_and_mapping<'a>(
                 .filter(|p| p.exists())
                 .collect();
 
-            (fs_id, fs_forest) = fs_tree::forest_from_fs(
+            fs_tree::forest_from_fs(
                 tree::Symlink::Read, // See above
                 &paths,
                 Some(&snapshot.tree),
                 snapshot_forest,
-            )?;
-
-            // Map the last components of the snapshot dirs to
-            // subdirectories of the output dir.
-            for path in &snapshot.paths {
-                let last_dir = path.file_name().unwrap();
-                let to = to.join(last_dir);
-                assert!(path_map.insert(last_dir, to).is_none());
-            }
-        }
+            )?
+        };
 
         Ok(FsTreeAndMapping {
             fs_id,
@@ -265,7 +289,7 @@ impl Restorer<'_> {
         let first_component = node_path.iter().next().unwrap();
         self.path_map
             .get(first_component)
-            .unwrap()
+            .unwrap_or_else(|| panic!("No key {first_component} in path map {:?}", self.path_map))
             .join(node_path.strip_prefix(first_component).unwrap())
     }
 

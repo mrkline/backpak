@@ -41,6 +41,7 @@ pub struct Args {
 
     #[clap(name = "SNAPSHOT_2")]
     second_snapshot: Option<String>,
+    // Should we provide options for remapping to an arbitrary directory, like `restore`?
 }
 
 pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {

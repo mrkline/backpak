@@ -182,6 +182,10 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     Ok(())
 }
 
+/// Trees (including the top-level one for each snapshot!) don't store their nodes' absolute paths.
+/// This falls apart if given two "foo"s, so yell about that.
+///
+/// Unfortunate, but see comments in the [`Snapshot`] definition for a discussion of the tradeoffs.
 fn reject_matching_directories(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
     let mut dirnames: FxHashSet<&str> =
         FxHashSet::with_capacity_and_hasher(paths.len(), Default::default());
@@ -343,6 +347,17 @@ fn backup_tree(
             }
         };
         ensure!(
+            // NB: A tree's nodes are named by their relative path from the parent,
+            //     not an absolute path. This is an obvious decision,
+            //     since storing absolute paths at every level would break all useful comparisons
+            //     *AND* waste a lot of data.
+            //
+            //     What's less obvious is that it ALSO APPLIES TO THE TOP-LEVEL TREE!
+            //     Backing up /home/me and /etc will give a top-level tree of
+            //     { "me" -> subtree, "etc" -> subtree }, which is why:
+            //
+            //     1. We store the absolute paths of what we backed up in the snapshot
+            //     2. We get mad about top-level names matching - see reject_matching_directories()
             tree.insert(Utf8PathBuf::from(path.file_name().unwrap()), subnode)
                 .is_none(),
             "Duplicate tree entries"

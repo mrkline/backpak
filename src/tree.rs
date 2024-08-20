@@ -82,7 +82,7 @@ impl NodeContents {
 }
 
 /// Backup-relevant metadata taken from a `stat()` call on a Posix system.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PosixMetadata {
     pub mode: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -103,7 +103,7 @@ pub struct PosixMetadata {
 
 /// Backup-relevant metadata taken from a `GetFileInformationByHandle()` call
 /// on Windows.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WindowsMetadata {
     pub attributes: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,7 +121,7 @@ pub struct WindowsMetadata {
 }
 
 /// A file or directory's metadata - Windows or Posix.
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
 pub enum NodeMetadata {
     Posix(PosixMetadata),
@@ -300,7 +300,7 @@ fn windows_timestamp(ts: u64) -> Option<DateTime<Utc>> {
 }
 
 /// A single file or directory and its metadata
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Node {
     #[serde(flatten)]
     pub contents: NodeContents,
