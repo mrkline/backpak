@@ -47,8 +47,20 @@ pub struct Snapshot {
     pub author: String,
     /// Arbitrary user tags
     pub tags: BTreeSet<String>,
-    /// The _absolute_ paths the user backed up in this snapshot,
-    /// each of which will be a child in the top-level tree
+    /// The _absolute_ paths backed up in this snapshot,
+    /// each of which will be a child in the top-level tree.
+    /// We store them here because the top-level tree does not.
+    /// (If I back up `/home/me` and `/etc/`, those paths go here,
+    /// and my top-level tree is `{ "me" -> subtree, "etc" -> subtree }`.)
+    ///
+    /// Alternatively, we could write a bunch of special-case code into our filesystem walks
+    /// so that the top-level tree uses absolute paths, but subtrees use relative paths.
+    /// (It would be insane to store absolute paths at every level!)
+    /// And we'd have to plumb that to the [`walk_fs()`](crate::fs_tree::walk_fs) visitors.
+    /// And if we stored the absolute paths in the top-level tree instead of here,
+    /// we'd have to actually load trees to find a parent snapshot for a backup.
+    ///
+    /// That sounds like a bad trade. I hope I'm right and don't regret this choice.
     pub paths: BTreeSet<Utf8PathBuf>,
     /// A tree where each path is a child node.
     pub tree: ObjectId,
