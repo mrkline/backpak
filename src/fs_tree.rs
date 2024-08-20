@@ -109,7 +109,9 @@ where
             continue;
         }
 
-        let entry_name = path.file_name().expect("Given path ended in ..");
+        let entry_name = path
+            .file_name()
+            .unwrap_or_else(|| panic!("{path} ends in a relative component"));
 
         let previous_node = previous_tree
             .as_ref()
