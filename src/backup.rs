@@ -24,8 +24,8 @@
 //!   at the end for quick indexing. Pack files are filled until they reach a certain size.
 //!
 //! - When each pack file is finished, its hash
-//!   (i.e., its [`ObjectId`](crate::hashing::ObjectId)!) and manifest are sent
-//!   to the indexer. Each backup creates a single index file that contains
+//!   (i.e., its [`ObjectId`]!) and manifest are sent to the indexer.
+//!   Each backup creates a single index file that contains
 //!   an [`Index`](crate::index::Index) which maps pack IDs to their manifests.
 //!   (We can also pass a starting index containing previously existing packs.
 //!   This isn't necessary for a normal backup, since

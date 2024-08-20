@@ -17,8 +17,8 @@ type ZstdDecoder<R> = zstd::stream::read::Decoder<'static, R>;
 
 /// Info about the currently-loaded packfile.
 ///
-/// [`BlobReader`](BlobReader) works by lazily opening pack files containing
-/// the requested blobs, seeking forward through and (hopefully rarely!)
+/// [`BlobReader`] works by lazily opening pack files containing the requested blobs,
+/// seeking forward through and (hopefully rarely!)
 /// restarting the compressed zstd stream to get it.
 struct CurrentPackfile<'a> {
     id: ObjectId,
