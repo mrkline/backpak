@@ -135,7 +135,7 @@ where
                         None
                     }
                     tree::NodeContents::Symlink { target } => {
-                        trace!("{path} was a file, but is now a symlink to {target}");
+                        trace!("{path} was a symlink to {target}, but is now a directory");
                         None
                     }
                 });
