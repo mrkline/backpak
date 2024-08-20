@@ -83,7 +83,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     };
     let filter_str = if let Some(f) = &config.filter {
         let fname = f.split_whitespace().next().expect("empty filter");
-        " and ".to_owned() + &fname
+        " and ".to_owned() + fname
     } else {
         String::new()
     };
