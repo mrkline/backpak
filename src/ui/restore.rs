@@ -138,11 +138,19 @@ fn load_fs_tree_and_mapping<'a>(
 
     if let Some(to) = restore_to {
         info!("Comparing snapshot {id} to {to}");
+
         let (fs_id, fs_forest);
 
         // See the --help doc above: If the snapshot is a single directory,
         // map it directoy to `<DIR>` in `--output <DIR>`
         if snapshot.paths.len() == 1 {
+            // We need to canonicalize the path since the user might have specified "./"
+            // or ".." or "./foo/bar/.." or anything else that might trip up calling file_name()
+            // to get the last component in forest_from_fs().
+            let canonical_to = to
+                .canonicalize_utf8()
+                .with_context(|| format!("Couldn't canonicalize {to}"))?;
+
             (fs_id, fs_forest) = fs_tree::forest_from_fs(
                 // NB: We do *NOT* want to dereference symbolic links when we're
                 // building our current understanding of the filesystem - if it's a symlink now
@@ -169,7 +177,7 @@ fn load_fs_tree_and_mapping<'a>(
                 //
                 // Let's not mess with that.
                 tree::Symlink::Read,
-                &BTreeSet::from([to.clone()]),
+                &BTreeSet::from([canonical_to]),
                 Some(&snapshot.tree),
                 snapshot_forest,
             )?;
@@ -183,6 +191,7 @@ fn load_fs_tree_and_mapping<'a>(
         else {
             // If subdirectories of the output directory match our snapshot dir names,
             // walk those.
+            // Here we don't need to canonicalize (unlike above) since we're adding a component.
             let paths = snapshot
                 .paths
                 .iter()
