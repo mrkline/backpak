@@ -286,14 +286,26 @@ struct Restorer<'a> {
 
 impl Restorer<'_> {
     fn translate_path(&self, node_path: &Utf8Path) -> Utf8PathBuf {
-        let first_component = node_path.iter().next().unwrap();
-        self.path_map
+        let components: Vec<&str> = node_path.iter().collect();
+        let first_component = &components[0];
+        let map_to = self
+            .path_map
             .get(first_component)
-            .unwrap_or_else(|| panic!("No key {first_component} in path map {:?}", self.path_map))
-            .join(node_path.strip_prefix(first_component).unwrap())
+            .unwrap_or_else(|| panic!("No key {first_component} in path map {:?}", self.path_map));
+
+        // We're translating a top-level file. We're done.
+        // (And doing the dance below would add a trailing slash to the file name,
+        // which breaks other stuff downstream.)
+        if components.len() == 1 {
+            map_to.into()
+        }
+        // We're translating a nested node. Join our mapped path to the rest of the node's path.
+        else {
+            map_to.join(node_path.strip_prefix(first_component).unwrap())
+        }
     }
 
-    // NB: node_path is already translated for all of thse
+    // NB: node_path is already translated for all of these
 
     #[cfg(unix)]
     fn set_metadata(&self, node_path: &Utf8Path, node: &Node) -> Result<()> {
