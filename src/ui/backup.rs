@@ -216,7 +216,7 @@ fn parent_snapshot(
 }
 
 fn check_paths(symlink_behavior: tree::Symlink, paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
-    debug!("Walking {paths:?} to check paths and if we can stat");
+    info!("Walking {paths:?} to see what we've got...");
     let mut no_op_filter = |_: &Utf8Path| Ok(true);
     let mut no_op_visit =
         |_nope: &mut (),
