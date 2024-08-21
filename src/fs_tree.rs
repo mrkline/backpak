@@ -165,6 +165,10 @@ where
                     DirectoryEntry::ChangedFile
                 }
             }
+            tree::NodeType::Unsupported(kind) => {
+                warn!("Skipping special file ({kind:o}) {path}");
+                continue;
+            }
         };
 
         visit(&mut intermediate, path, metadata, previous_node, subnode)?;
