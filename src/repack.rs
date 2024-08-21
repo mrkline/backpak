@@ -44,10 +44,7 @@ pub fn walk_snapshots(
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
-    // Walk from newest to oldest snapshots so that we prioritize the locality of chunks
-    // in newer snapshots. This is probably a horse a piece - you could argue that
-    // older snapshots are more important - but all the blobs will get packed up regardless.
-    for snapshot in snapshots_and_forests.iter().rev() {
+    for snapshot in snapshots_and_forests.iter() {
         walk_snapshot(op, snapshot, reader, packed_blobs, backup)?
     }
     Ok(())
