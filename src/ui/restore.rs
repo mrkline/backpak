@@ -318,7 +318,8 @@ impl Restorer<'_> {
                     .with_context(|| format!("Couldn't set timestamps for {node_path}"))?;
             }
         }
-        if self.args.permissions {
+        // chmod is unsupported on Linux symlinks (without dereferencing). The more you know.
+        if self.args.permissions && node.kind() != tree::NodeType::Symlink {
             use std::os::unix::fs::PermissionsExt;
             let permissions = match &node.metadata {
                 NodeMetadata::Posix(p) => fs::Permissions::from_mode(p.mode),
