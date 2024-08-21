@@ -162,7 +162,7 @@ pub enum NodeType {
     File,
     Directory,
     Symlink,
-    // TODO: Unknown?
+    Unsupported(u32),
 }
 
 // Make these fail so we bail on weird file types?
@@ -171,12 +171,11 @@ fn posix_kind(mode: u32) -> NodeType {
     // man inode
     let type_bits = mode & 0o170000;
 
-    if type_bits == 0o0120000 {
-        NodeType::Symlink
-    } else if type_bits == 0o0040000 {
-        NodeType::Directory
-    } else {
-        NodeType::File
+    match type_bits {
+        0o0120000 => NodeType::Symlink,
+        0o0040000 => NodeType::Directory,
+        0o0100000 => NodeType::File,
+        wut => NodeType::Unsupported(wut),
     }
 }
 
