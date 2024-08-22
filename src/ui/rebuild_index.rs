@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::sync::mpsc::{channel, sync_channel};
+use std::sync::mpsc::sync_channel;
 use std::thread;
 
 use anyhow::{ensure, Context, Result};
@@ -22,8 +22,15 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
         .map(backend::id_from_path)
         .collect::<Result<BTreeSet<ObjectId>>>()?;
 
-    let (pack_tx, pack_rx) = channel();
+    let replacing = index::Index {
+        supersedes: superseded.clone(),
+        ..Default::default()
+    };
+    let (pack_tx, pack_rx) = sync_channel(num_cpus::get_physical());
     let (upload_tx, upload_rx) = sync_channel(0);
+
+    let indexer =
+        thread::spawn(move || index::index(index::Resumable::No, replacing, pack_rx, upload_tx));
 
     info!("Reading all packs to build a new index");
     cached_backend
@@ -38,13 +45,6 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
                 .context("Pack thread closed unexpectedly")?;
             Ok(())
         })?;
-
-    let replacing = index::Index {
-        supersedes: superseded.clone(),
-        ..Default::default()
-    };
-    let indexer =
-        thread::spawn(move || index::index(index::Resumable::No, replacing, pack_rx, upload_tx));
 
     upload::upload(&cached_backend, upload_rx)?;
 
