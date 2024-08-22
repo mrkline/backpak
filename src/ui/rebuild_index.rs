@@ -59,7 +59,6 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
 
     info!("Uploaded a new index; removing previous ones");
     for old_index in superseded {
-        debug!("Removing {}", old_index);
         cached_backend.remove_index(&old_index)?;
     }
 
