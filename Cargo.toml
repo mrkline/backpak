@@ -40,6 +40,8 @@ memmap2 = "0.9"
 num = { version = "0.4", default-features = false }
 # How many cores? Tell Zstd
 num_cpus = "1.0"
+# Self-referencing chunk iterator
+ouroboros = "0.18"
 # par_iter
 rayon = "1.4"
 # Snapshots LAST~N parsing
