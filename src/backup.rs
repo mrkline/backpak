@@ -172,7 +172,14 @@ fn backup_master_thread(
 
     let indexer = thread::Builder::new()
         .name(String::from("indexer"))
-        .spawn(move || index::index(starting_index, index_rx, index_upload_tx))
+        .spawn(move || {
+            index::index(
+                index::Resumable::Yes,
+                starting_index,
+                index_rx,
+                index_upload_tx,
+            )
+        })
         .unwrap();
 
     let uploader = thread::Builder::new()
