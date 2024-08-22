@@ -10,6 +10,12 @@ pub struct Args {
     /// Print newest to oldest
     #[clap(short, long)]
     reverse: bool,
+
+    /// Print usage statistics of each snapshot
+    ///
+    /// (Takes slightly longer, has to read their trees)
+    #[clap(short, long)]
+    sizes: bool,
 }
 
 pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
@@ -27,7 +33,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     struct DecoratedSnapshot {
         snapshot: snapshot::Snapshot,
         id: ObjectId,
-        sizes: tree::ForestSizes,
+        sizes: Option<tree::ForestSizes>,
     }
 
     let mut visited_blobs = FxHashSet::default();
@@ -37,11 +43,16 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let snaps = snapshots
         .into_iter()
         .map(|(snapshot, id)| {
-            let sizes = tree::forest_sizes(
-                &tree::forest_from_root(&snapshot.tree, &mut tree_cache)?,
-                &size_map,
-                &mut visited_blobs,
-            )?;
+            let sizes = args
+                .sizes
+                .then(|| {
+                    tree::forest_sizes(
+                        &tree::forest_from_root(&snapshot.tree, &mut tree_cache)?,
+                        &size_map,
+                        &mut visited_blobs,
+                    )
+                })
+                .transpose()?;
             Ok(DecoratedSnapshot {
                 snapshot,
                 id,
@@ -71,12 +82,14 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
                 snapshot.tags.into_iter().collect::<Vec<String>>().join(" ")
             );
         }
-        let t = nice_size(sizes.tree_bytes + sizes.chunk_bytes);
-        let m = nice_size(sizes.tree_bytes);
-        let c = nice_size(sizes.chunk_bytes);
-        let i = nice_size(sizes.introduced);
-        let r = nice_size(sizes.reused);
-        println!("Sizes: {t} total ({c} files, {m} metadata / {i} new data, {r} reused)");
+        if let Some(s) = sizes {
+            let t = nice_size(s.tree_bytes + s.chunk_bytes);
+            let m = nice_size(s.tree_bytes);
+            let c = nice_size(s.chunk_bytes);
+            let i = nice_size(s.introduced);
+            let r = nice_size(s.reused);
+            println!("Sizes: {t} total ({c} files, {m} metadata / {i} new data, {r} reused)");
+        }
         println!("Author: {}", snapshot.author);
 
         println!("Date:   {}", snapshot.time.format("%a %F %H:%M:%S %z"));
