@@ -23,7 +23,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
         .collect::<Result<BTreeSet<ObjectId>>>()?;
 
     let (pack_tx, pack_rx) = channel();
-    let (upload_tx, upload_rx) = sync_channel(1);
+    let (upload_tx, upload_rx) = sync_channel(0);
 
     info!("Reading all packs to build a new index");
     cached_backend
@@ -43,7 +43,8 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
         supersedes: superseded.clone(),
         ..Default::default()
     };
-    let indexer = thread::spawn(move || index::index(replacing, pack_rx, upload_tx));
+    let indexer =
+        thread::spawn(move || index::index(index::Resumable::No, replacing, pack_rx, upload_tx));
 
     upload::upload(&cached_backend, upload_rx)?;
 

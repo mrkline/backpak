@@ -60,9 +60,20 @@ impl Index {
     }
 }
 
+/// Should indexing be resumable?
+/// Saving a WIP index is the main machinery we have for resuming backups.
+/// But sometimes, especially when running rebuild-index,
+/// we already know about all the packs and just want to cram them in as quick as possible.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Resumable {
+    No,
+    Yes,
+}
+
 /// Gather metadata for completed packs from `rx` into an index file,
 /// and upload the index files when they reach a sufficient size.
 pub fn index(
+    resumable: Resumable,
     starting_index: Index,
     rx: Receiver<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
@@ -73,7 +84,7 @@ pub fn index(
     // If we're given a non-empty index, write that out to start with.
     // (For example, it could be an index from `prune` that omits packs
     // we no longer need. If we don't write it but delete those packs anyways...)
-    if !index.is_empty() {
+    if !index.is_empty() && resumable == Resumable::Yes {
         persisted = Some(to_temp_file(&index)?);
     }
 
@@ -87,9 +98,15 @@ pub fn index(
 
         trace!("Wrote {} packs into index", index.packs.len());
 
-        // Rewrite the index every time we get a pack.
-        // That way the temp index should always contain a complete list of packs,
-        // allowing us to resume a backup from the last finished pack.
+        if resumable == Resumable::Yes {
+            // Rewrite the index every time we get a pack.
+            // That way the temp index should always contain a complete list of packs,
+            // allowing us to resume a backup from the last finished pack.
+            persisted = Some(to_temp_file(&index)?);
+        }
+    }
+    // If we haven't been saving a WIP index, write it all out now.
+    if !index.is_empty() && resumable == Resumable::No {
         persisted = Some(to_temp_file(&index)?);
     }
 
