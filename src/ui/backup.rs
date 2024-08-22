@@ -312,17 +312,17 @@ fn backup_tree(
 
                 let mut chunk_ids = Vec::new();
                 let mut reused_bytes = 0;
-                let num_chunks = chunks.len();
-                for (i, chunk) in chunks.into_iter().enumerate() {
-                    let i = i + 1; // chunk 1/5, not 0/5
+                let mut new_chunks = false;
+                let mut total_chunks = 0usize;
+                for chunk in chunks {
                     chunk_ids.push(chunk.id);
 
                     if packed_blobs.borrow_mut().insert(chunk.id) {
-                        if num_chunks <= 1 {
-                            info!("{:>9} {}", "backup", path);
-                        } else {
-                            info!("{:>9} {} (chunk {}/{})", "backup", path, i, num_chunks);
+                        // The first time we get a new chunk, print "backup"
+                        if !new_chunks {
+                            info!("{:>9} {path}", "backup");
                         }
+                        new_chunks = true;
                         if let Some(b) = &backup {
                             b.chunk_tx
                                 .send(chunk)
@@ -330,14 +330,15 @@ fn backup_tree(
                         }
                     } else {
                         reused_bytes += chunk.bytes().len() as u64;
-                        if num_chunks <= 1 {
-                            info!("{:>9} {}", "deduped", path);
-                        } else {
-                            info!("{:>9} {} (chunk {}/{})", "deduped", path, i, num_chunks);
-                        }
                         trace!("chunk {} already packed", chunk.id);
                     }
+                    total_chunks += 1;
                 }
+                // We made it through the whole file without finding new data!
+                if !new_chunks {
+                    info!("{:>9} {path}", "deduped");
+                }
+                trace!("{path} was {total_chunks} chunks");
 
                 let t = tree::Node {
                     metadata,

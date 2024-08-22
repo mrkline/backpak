@@ -209,7 +209,7 @@ pub fn forest_from_fs(
                 contents: previous_node.unwrap().contents.clone(),
             },
             DirectoryEntry::ChangedFile => {
-                let chunks = chunk::chunk_file(path)?.into_iter().map(|c| c.id).collect();
+                let chunks = chunk::chunk_file(path)?.map(|c| c.id).collect();
                 tree::Node {
                     metadata,
                     contents: tree::NodeContents::File { chunks },

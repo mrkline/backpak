@@ -1,9 +1,3 @@
-## Multithread cutting and hashing
-
-It takes a while to find all the cut points for large files.
-Start hashing the chunks meanwhile, at least for large files (use the mmap boundary?).
-Return a chunk iterator that's some Hoare under the hood?
-
 ## Can we pipeline filter/unfilter?
 
 Trouble is that breaks the nice abstraction that a filtered backend is just another backend.

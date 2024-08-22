@@ -510,8 +510,9 @@ mod test {
 
     #[test]
     fn smoke() -> Result<()> {
-        let chunks = chunk::chunk_file("tests/references/sr71.txt")
-            .context("Couldn't chunk reference file")?;
+        let chunks: Vec<_> = chunk::chunk_file("tests/references/sr71.txt")
+            .context("Couldn't chunk reference file")?
+            .collect();
         let (chunk_tx, chunk_rx) = sync_channel(0);
         let (pack_tx, pack_rx) = sync_channel(0);
         let (upload_tx, upload_rx) = sync_channel(0);
