@@ -45,23 +45,56 @@ pub enum Kind {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Config {
+struct ConfigFile {
     #[serde(default = "defsize")]
-    pub pack_size: Byte,
+    pack_size: Byte,
     #[serde(rename = "backend")]
-    pub kind: Kind,
+    kind: Kind,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub filter: Option<String>,
+    filter: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub unfilter: Option<String>,
+    unfilter: Option<String>,
 }
 
-fn read_config(p: &Utf8Path) -> Result<Config> {
+/// Normalized version of [`ConfigFile`] where `filter` and `unfilter` must both be Some or None.
+#[derive(Debug)]
+pub struct Config {
+    pub pack_size: Byte,
+    pub kind: Kind,
+    pub filter: Option<(String, String)>,
+}
+
+pub fn read_config(p: &Utf8Path) -> Result<Config> {
     let s = std::fs::read_to_string(p).with_context(|| format!("Couldn't read config from {p}"))?;
-    let c = toml::from_str(&s).with_context(|| format!("Couldn't parse config in {p}"))?;
-    Ok(c)
+    let cf: ConfigFile =
+        toml::from_str(&s).with_context(|| format!("Couldn't parse config in {p}"))?;
+    let filter = match (cf.filter, cf.unfilter) {
+        (Some(f), Some(u)) => Some((f, u)),
+        (None, None) => None,
+        _ => bail!("{p} config should set `filter` and `unfilter` or neither."),
+    };
+    Ok(Config {
+        pack_size: cf.pack_size,
+        kind: cf.kind,
+        filter,
+    })
+}
+
+pub fn write_config<W: Write>(mut w: W, c: Config) -> Result<()> {
+    let (filter, unfilter) = match c.filter {
+        Some((f, u)) => (Some(f), Some(u)),
+        None => (None, None),
+    };
+    let cf = ConfigFile {
+        pack_size: c.pack_size,
+        kind: c.kind,
+        filter,
+        unfilter,
+    };
+    w.write_all(toml::to_string(&cf)?.as_bytes())?;
+    Ok(())
 }
 
 /// A backend is anything we can read from, write to, list, and remove items from.
@@ -312,10 +345,6 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
         bail!("{repository} is not a file or directory")
     }?;
     debug!("Read config: {c:?}");
-    ensure!(
-        c.filter.is_some() == c.unfilter.is_some(),
-        "{repository} config should set `filter` and `unfilter` or neither."
-    );
     // Don't bother checking unfilter; we ensure both are set if one is above.
     let cached_backend = match &c.kind {
         Kind::Filesystem { force_cache: false } if c.filter.is_none() => {
@@ -344,10 +373,10 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
 
             let cache = cache::setup(&conf)?;
 
-            if c.filter.is_some() {
+            if let Some((filter, unfilter)) = &c.filter {
                 backend = Box::new(filter::BackendFilter {
-                    filter: c.filter.clone().unwrap(),
-                    unfilter: c.unfilter.clone().unwrap(),
+                    filter: filter.clone(),
+                    unfilter: unfilter.clone(),
                     raw: backend,
                 });
             }

@@ -2,7 +2,7 @@ use super::*;
 
 use std::fs;
 
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use b2::Session;
 use byte_unit::Byte;
 
@@ -16,13 +16,8 @@ pub fn initialize(
     key_id: String,
     application_key: String,
     bucket: String,
-    filter: Option<String>,
-    unfilter: Option<String>,
+    filter: Option<(String, String)>,
 ) -> Result<()> {
-    ensure!(
-        filter.is_some() == unfilter.is_some(),
-        "{repository} config should set `filter` and `unfilter` or neither."
-    );
     let c = super::Config {
         pack_size,
         kind: super::Kind::Backblaze {
@@ -31,15 +26,14 @@ pub fn initialize(
             bucket,
         },
         filter,
-        unfilter,
     };
-    let mut fh = fs::OpenOptions::new()
+    let fh = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(repository)
         .with_context(|| format!("Couldn't create {repository}"))?;
 
-    fh.write_all(toml::to_string(&c).unwrap().as_bytes())?;
+    super::write_config(fh, c)?;
     Ok(())
 }
 

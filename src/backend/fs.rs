@@ -26,8 +26,7 @@ fn ensure_exists(e: &Utf8Path) -> Result<()> {
 pub fn initialize(
     repository: &Utf8Path,
     pack_size: Byte,
-    filter: Option<String>,
-    unfilter: Option<String>,
+    filter: Option<(String, String)>,
     force_cache: bool,
 ) -> Result<()> {
     if repository.exists() {
@@ -50,10 +49,14 @@ pub fn initialize(
         pack_size,
         kind: super::Kind::Filesystem { force_cache },
         filter,
-        unfilter,
     };
-    fs::write(repository.join("config.toml"), toml::to_string(&c)?)?;
+    let fh = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(repository.join("config.toml"))
+        .with_context(|| format!("Couldn't create {repository}/config.toml"))?;
 
+    write_config(fh, c)?;
     Ok(())
 }
 
