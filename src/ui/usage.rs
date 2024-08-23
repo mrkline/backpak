@@ -81,7 +81,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
         backend::Kind::Filesystem { .. } => "Filesystem",
         backend::Kind::Backblaze { .. } => "Backblaze",
     };
-    let filter_str = if let Some(f) = &config.filter {
+    let filter_str = if let Some((f, _)) = &config.filter {
         let fname = f.split_whitespace().next().expect("empty filter");
         " and ".to_owned() + fname
     } else {

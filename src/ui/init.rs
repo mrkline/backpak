@@ -51,21 +51,18 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         .transpose()
         .context("Couldn't parse --pack-size")?;
     let pack_size = pack_size.unwrap_or(pack::DEFAULT_PACK_SIZE);
-    let (filter, unfilter) = match args.gpg {
-        Some(g) => (
-            Some("gpg --encrypt --quiet --recipient ".to_owned() + &g),
-            Some("gpg --decrypt --quiet".to_owned()),
-        ),
-        None => (None, None),
-    };
-    if filter.is_some() {
-        // Precondition: filter needs an unfilter
-        assert!(unfilter.is_some());
-        round_trip_filter_test(filter.as_ref().unwrap(), unfilter.as_ref().unwrap())?;
+    let filter = args.gpg.map(|g| {
+        (
+            "gpg --encrypt --quiet --recipient ".to_owned() + &g,
+            "gpg --decrypt --quiet".to_owned(),
+        )
+    });
+    if let Some((f, u)) = &filter {
+        round_trip_filter_test(f, u)?;
     }
     match args.subcommand {
         Command::Filesystem { force_cache } => {
-            backend::fs::initialize(repository, pack_size, filter, unfilter, force_cache)
+            backend::fs::initialize(repository, pack_size, filter, force_cache)
         }
         Command::Backblaze {
             key_id,
@@ -78,7 +75,6 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
             application_key,
             bucket,
             filter,
-            unfilter,
         ),
     }
 }
