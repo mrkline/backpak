@@ -1,3 +1,25 @@
+## Cache a few packs' worth of blobs in BlobReader
+
+There's a pathological case, after forgetting some snapshots and pruning,
+to keep bouncing between packs. This is SLOW because we reseek each time.
+
+## Guard against colliding with another snapshot in the same working dir
+
+Track working dir in some global state somewhere? Shmem?
+
+## Better pack sizes?
+
+Get closer to the target by estimating the ratio *since last flush*?
+
+Check on each blob, without flushing, the size to catch gross overshoots?
+
+Just checking without flushing isn't very effective by itself - Zstd uses 60+ MB
+
+## Compress after the cache?
+
+Would require a fair amount of rework, but would also be a big speedup in-cache...
+Probably not worth it...
+
 ## Can we pipeline filter/unfilter?
 
 Trouble is that breaks the nice abstraction that a filtered backend is just another backend.
