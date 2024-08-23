@@ -1,3 +1,14 @@
+## Just compress pack amounts and stop
+
+Don't try to be clever by estimating compression ratios!
+it's fine if we have a series of smaller packs;
+this avoids the pathological behavior where we guess wrong and get huge files.
+
+## Compress after the cache?
+
+Would require a fair amount of rework, but would also be a big speedup in-cache...
+Probably not worth it...
+
 ## Can we pipeline filter/unfilter?
 
 Trouble is that breaks the nice abstraction that a filtered backend is just another backend.
