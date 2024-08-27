@@ -76,9 +76,7 @@ pub fn pack(
     let target_size = target_size.as_u64();
     let mut writer = PackfileWriter::new()?;
 
-    let mut pass_bytes_written: u64 = 0; // Bytes written since the last size check
     let mut bytes_in_pack: u64 = 0;
-    let mut bytes_before_next_check = target_size;
     let mut total_bytes_written: u64 = 0;
 
     // For each blob...
@@ -109,58 +107,29 @@ pub fn pack(
 
         // Write a blob and check how many (uncompressed) bytes we've written to the file so far.
         let blob_size = writer.write_blob(blob)?;
-        pass_bytes_written += blob_size;
         bytes_in_pack += blob_size;
 
-        // We've written as many bytes as we want the pack size to to be,
-        // but we don't know how much they've compressed to.
-        // Flush the compressor to see how much space we've actually taken up.
-        if pass_bytes_written >= bytes_before_next_check {
+        // If we pass our target size, stop
+        let compressed_size = writer.check_size()?;
+        if compressed_size >= target_size {
             trace!(
-                "Wrote {} bytes into pack, checking compressed size...",
-                nice_size(bytes_in_pack)
+                "Compressed pack size is {} (>= target of {}). Starting another pack.",
+                nice_size(compressed_size),
+                nice_size(target_size)
             );
+            let (metadata, persisted) = writer.finalize()?;
+            let finalized_path = format!("{}.pack", metadata.id);
 
-            let compressed_size = writer.flush_and_check_size()?;
+            to_upload
+                .send((finalized_path, persisted))
+                .context("packer -> uploader channel exited early")?;
+            to_index
+                .send(metadata)
+                .context("packer -> indexer channel exited early")?;
 
-            // If we pass our target size, stop
-            if compressed_size >= target_size {
-                trace!(
-                    "Compressed pack size is {} (>= target of {}). Starting another pack.",
-                    nice_size(compressed_size),
-                    nice_size(target_size)
-                );
-                let (metadata, persisted) = writer.finalize()?;
-                let finalized_path = format!("{}.pack", metadata.id);
-
-                to_upload
-                    .send((finalized_path, persisted))
-                    .context("packer -> uploader channel exited early")?;
-                to_index
-                    .send(metadata)
-                    .context("packer -> indexer channel exited early")?;
-
-                writer = PackfileWriter::new()?;
-                total_bytes_written += bytes_in_pack;
-                pass_bytes_written = 0;
-                bytes_in_pack = 0;
-                bytes_before_next_check = target_size;
-            }
-            // Otherwise, write some more
-            else {
-                // Take our current compression ratio to estimate how much more
-                // we need to write to hit the target pack size.
-                let current_ratio = bytes_in_pack as f64 / compressed_size as f64;
-                bytes_before_next_check =
-                    (current_ratio * (target_size - compressed_size) as f64) as u64;
-                pass_bytes_written = 0;
-                trace!(
-                    "Compressed pack size is {} (ratio {:.02}). Writing {} more bytes",
-                    nice_size(compressed_size),
-                    current_ratio,
-                    nice_size(bytes_before_next_check)
-                );
-            }
+            writer = PackfileWriter::new()?;
+            total_bytes_written += bytes_in_pack;
+            bytes_in_pack = 0;
         }
     }
     if bytes_in_pack > 0 {
@@ -230,13 +199,15 @@ impl PackfileWriter {
         Ok(blob_length as u64)
     }
 
-    /// Flush the compressor and check the size of the packfile so far.
+    /// Check the size of the packfile so far.
     ///
-    /// **Warning:** Doing this too frequently hurts the compression ratio.
-    fn flush_and_check_size(&mut self) -> Result<u64> {
-        self.writer.flush()?;
-        let fh = self.writer.get_ref().as_file();
-        Ok(fh.metadata()?.len())
+    /// This *doesn't* flush the compressor, so it might be off by the size of the zstd buffer,
+    /// but we expect this to be orders of magnitude smaller than the complete pack file,
+    /// and flushing hurts compression ratios.
+    /// (Right? It prevents lookbacks prior to the flush, right?)
+    fn check_size(&mut self) -> Result<u64> {
+        let posit = self.writer.get_ref().stream_position()?;
+        Ok(posit)
     }
 
     /// Finalize the packfile, returning the manifest & ID with a handle to
