@@ -98,7 +98,7 @@ pub struct ChunkReader<'a> {
     blob_map: &'a index::BlobMap,
     cache: ChunkCache,
     read_packs: FxHashSet<ObjectId>,
-    last_pack_size: usize,
+    biggest_pack_size: usize,
 }
 
 impl<'a> ChunkReader<'a> {
@@ -114,7 +114,7 @@ impl<'a> ChunkReader<'a> {
             blob_map,
             cache,
             read_packs: FxHashSet::default(),
-            last_pack_size: 0,
+            biggest_pack_size: 0,
         }
     }
 
@@ -139,8 +139,16 @@ impl<'a> ChunkReader<'a> {
             .load_pack(pack_id)
             .with_context(|| format!("Couldn't load pack {pack_id}"))?;
 
-        self.cache.shrink_to(self.last_pack_size + loaded_size);
-        self.last_pack_size = loaded_size;
+        // Hold onto 2x the most we loaded from one pack.
+        // Yes this is hokey as hell, but alternatives seem dumber:
+        //
+        // 1. Making it a multiple of the target pack size means we have to plumb that in here,
+        //    and we might evict some of the last few if they happen to be bigger.
+        //
+        // 2. Keeping track of a specific history of pack sizes - where do we stop?
+        //    The last 3? Last 5?
+        self.biggest_pack_size = self.biggest_pack_size.max(loaded_size);
+        self.cache.shrink_to(self.biggest_pack_size * 2);
 
         if !self.read_packs.insert(pack_id) {
             counters::bump(counters::Op::PackRereads);
