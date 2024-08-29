@@ -127,8 +127,7 @@ impl ThreadedChunker {
         let (blobs_tx, blobs_rx) = mpsc::sync_channel(128);
         let file2 = file.clone();
         thread::spawn(move || {
-            let mut chunker = new_cdc(file.bytes());
-            while let Some(cut) = chunker.next() {
+            for cut in new_cdc(file.bytes()) {
                 if cuts_tx.send(cut).is_err() {
                     break;
                 }
