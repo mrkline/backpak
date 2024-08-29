@@ -397,9 +397,9 @@ impl<'a> Cache<'a> {
             trace!("Found tree {id} in-cache");
             counters::bump(counters::Op::TreeCacheHit);
             return Ok(t.clone());
-        } else {
-            counters::bump(counters::Op::TreeCacheMiss);
         }
+
+        counters::bump(counters::Op::TreeCacheMiss);
 
         let pack_id = self
             .blob_to_pack_map

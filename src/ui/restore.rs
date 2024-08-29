@@ -17,7 +17,7 @@ use crate::{
     backend, diff, fs_tree,
     hashing::ObjectId,
     index,
-    read::BlobReader,
+    read::ChunkReader,
     snapshot,
     tree::{self, Forest, Node, NodeContents, NodeMetadata, NodeType, Tree},
 };
@@ -108,7 +108,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let mut res = Restorer {
         printer: super::diff::PrintDiffs { metadata },
         path_map: tree_and_mapping.path_map,
-        blob_reader: BlobReader::new(&cached_backend, &index, &blob_map),
+        blob_reader: ChunkReader::new(&cached_backend, &index, &blob_map),
         args: &args,
     };
 
@@ -280,7 +280,7 @@ fn to_timespec(c: DateTime<Utc>) -> Timespec {
 struct Restorer<'a> {
     printer: super::diff::PrintDiffs,
     path_map: FxHashMap<&'a str, Utf8PathBuf>,
-    blob_reader: BlobReader<'a>,
+    blob_reader: ChunkReader<'a>,
     args: &'a Args,
 }
 
@@ -425,7 +425,7 @@ impl Restorer<'_> {
     }
 }
 
-fn fill_file(mut fh: File, node: &Node, bl: &mut BlobReader<'_>) -> Result<()> {
+fn fill_file(mut fh: File, node: &Node, bl: &mut ChunkReader<'_>) -> Result<()> {
     let chunks = node.contents.chunks();
     for c in chunks {
         fh.write_all(&bl.read_blob(c)?)?;

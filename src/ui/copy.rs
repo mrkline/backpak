@@ -38,7 +38,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     )?;
 
     // Get a reader to load the chunks we're copying.
-    let mut reader = read::BlobReader::new(&src_cached_backend, &src_index, &src_blob_map);
+    let mut reader = read::ChunkReader::new(&src_cached_backend, &src_index, &src_blob_map);
 
     let (dst_backend_config, dst_cached_backend) =
         backend::open(&args.to, backend::CacheBehavior::Normal)?;
