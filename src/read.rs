@@ -1,141 +1,154 @@
 //! Tools to traverse a repository, reading blobs
 //!
 //! This is ultimately how we read backups back out for restore, repack, etc.
-use std::io::prelude::*;
-use std::io::{self, BufReader, SeekFrom};
+use std::{cmp::Ordering, io::prelude::*, rc::Rc, time::Instant};
 
 use anyhow::{anyhow, ensure, Context, Result};
+use mut_binary_heap::{BinaryHeap, FnComparator};
+use rustc_hash::FxHashSet;
 use tracing::*;
 
 use crate::backend;
+use crate::blob;
 use crate::counters;
+use crate::file_util;
 use crate::hashing::{HashingReader, ObjectId};
 use crate::index;
 use crate::pack;
 
 type ZstdDecoder<R> = zstd::stream::read::Decoder<'static, R>;
 
-/// Info about the currently-loaded packfile.
-///
-/// [`BlobReader`] works by lazily opening pack files containing the requested blobs,
-/// seeking forward through and (hopefully rarely!)
-/// restarting the compressed zstd stream to get it.
-struct CurrentPackfile<'a> {
-    id: ObjectId,
-    blob_stream: ZstdDecoder<BufReader<Box<dyn backend::SeekableRead>>>,
-    manifest: &'a pack::PackManifest,
-    current_blob_index: usize,
+struct TimestampedChunk {
+    stamp: Instant,
+    chunk: Rc<Vec<u8>>,
 }
 
-pub struct BlobReader<'a> {
+impl TimestampedChunk {
+    fn new(chunk: Vec<u8>) -> Self {
+        let stamp = Instant::now();
+        let chunk = Rc::new(chunk);
+        Self { stamp, chunk }
+    }
+}
+
+fn min_time(a: &TimestampedChunk, b: &TimestampedChunk) -> Ordering {
+    b.stamp.cmp(&a.stamp)
+}
+
+type ChunkOrder = fn(&TimestampedChunk, &TimestampedChunk) -> Ordering;
+type ChunkComparator = FnComparator<ChunkOrder>;
+
+struct ChunkCache {
+    cache: BinaryHeap<ObjectId, TimestampedChunk, ChunkComparator>,
+    space_used: usize,
+}
+
+impl ChunkCache {
+    fn new() -> Self {
+        // min heap by timestamp
+        let cache: BinaryHeap<ObjectId, TimestampedChunk, ChunkComparator> =
+            BinaryHeap::new_by(min_time);
+        let space_used = 0;
+        Self { cache, space_used }
+    }
+
+    fn get(&mut self, id: &ObjectId) -> Option<Rc<Vec<u8>>> {
+        if let Some(mut tb) = self.cache.get_mut(id) {
+            tb.stamp = Instant::now();
+            Some(tb.chunk.clone())
+        } else {
+            None
+        }
+    }
+
+    fn insert(&mut self, id: &ObjectId, chunk: &[u8]) {
+        // If this chunk is already in-cache, just bump its timestamp.
+        if let Some(mut tb) = self.cache.get_mut(id) {
+            tb.stamp = Instant::now();
+            return;
+        }
+
+        let new_entry = TimestampedChunk::new(Vec::from(chunk));
+        self.space_used += chunk.len();
+        self.cache.push(*id, new_entry);
+    }
+
+    fn shrink_to(&mut self, new_size: usize) {
+        let mut num_evicted: usize = 0;
+
+        // Free up needed space
+        while !self.cache.is_empty() && self.space_used > new_size {
+            let popped = self.cache.pop().unwrap();
+            assert!(self.space_used >= popped.chunk.len());
+            self.space_used -= popped.chunk.len();
+            num_evicted += 1;
+        }
+
+        trace!(
+            "Evicted {num_evicted} chunks from cache, {} ({}) left",
+            self.cache.len(),
+            file_util::nice_size(self.space_used as u64)
+        )
+    }
+}
+
+pub struct ChunkReader<'a> {
     cached_backend: &'a backend::CachedBackend,
     index: &'a index::Index,
     blob_map: &'a index::BlobMap,
-    current_pack: Option<CurrentPackfile<'a>>,
+    cache: ChunkCache,
+    read_packs: FxHashSet<ObjectId>,
+    last_pack_size: usize,
 }
 
-impl<'a> BlobReader<'a> {
+impl<'a> ChunkReader<'a> {
     pub fn new(
         cached_backend: &'a backend::CachedBackend,
         index: &'a index::Index,
         blob_map: &'a index::BlobMap,
     ) -> Self {
+        let cache = ChunkCache::new();
         Self {
             cached_backend,
             index,
             blob_map,
-            current_pack: None,
+            cache,
+            read_packs: FxHashSet::default(),
+            last_pack_size: 0,
         }
     }
 
-    pub fn read_blob(&mut self, blob_id: &ObjectId) -> Result<Vec<u8>> {
+    pub fn read_blob<'b>(&mut self, id: &'b ObjectId) -> Result<Rc<Vec<u8>>> {
+        // If we get a cache hit, EZ!
+        if let Some(b) = self.cache.get(id) {
+            trace!("Found tree {id} in-cache");
+            counters::bump(counters::Op::ChunkCacheHit);
+            return Ok(b);
+        }
+
+        counters::bump(counters::Op::ChunkCacheMiss);
+
+        // Otherwise we're gonna have to fish it out of a pack.
         let pack_id: ObjectId = *self
             .blob_map
-            .get(blob_id)
-            .ok_or_else(|| anyhow!("Blob {} not found in any pack", blob_id))?;
+            .get(id)
+            .ok_or_else(|| anyhow!("Chunk {id} not found in any pack"))?;
 
-        let should_load_new_pack = match &self.current_pack {
-            None => true,
-            Some(CurrentPackfile { id, .. }) => *id != pack_id,
-        };
+        debug!("Reading pack {pack_id} into tree cache to get chunk {id}");
+        let loaded_size = self
+            .load_pack(pack_id)
+            .with_context(|| format!("Couldn't load pack {pack_id}"))?;
 
-        if should_load_new_pack {
-            self.load_pack(pack_id)
-                .with_context(|| format!("Couldn't load pack {}", pack_id))?;
+        self.cache.shrink_to(self.last_pack_size + loaded_size);
+        self.last_pack_size = loaded_size;
+
+        if !self.read_packs.insert(pack_id) {
+            counters::bump(counters::Op::PackRereads);
         }
-        let mut current_pack = self.current_pack.as_mut().unwrap();
-
-        // Cool, we're in the right pack. Let's see where the blob is.
-        let blob_index = index_of(blob_id, current_pack.manifest, &current_pack.id)?;
-        if blob_index < current_pack.current_blob_index {
-            warn!(
-                "Restarting pack since we're at blob {} and want {} (can't read packs backwards)",
-                current_pack.current_blob_index, blob_index
-            );
-            self.restart_stream()?;
-
-            // self.current_pack was moved; update the reference.
-            current_pack = self.current_pack.as_mut().unwrap();
-            assert_eq!(current_pack.current_blob_index, 0);
-        }
-        assert!(blob_index >= current_pack.current_blob_index);
-
-        let mut sink = io::sink();
-
-        if blob_index != current_pack.current_blob_index {
-            trace!(
-                "Streaming past {} blobs to get to blob {}",
-                blob_index - current_pack.current_blob_index,
-                blob_id
-            );
-        }
-
-        let mut blob_bytes = None;
-
-        while blob_index >= current_pack.current_blob_index {
-            let entry: &pack::PackManifestEntry =
-                &current_pack.manifest[current_pack.current_blob_index];
-
-            if blob_index != current_pack.current_blob_index {
-                // Skip blobs until we get to the one we want.
-                io::copy(
-                    &mut (&mut current_pack.blob_stream).take(entry.length as u64),
-                    &mut sink,
-                )
-                .with_context(|| format!("Couldn't read past blob {}", entry.id))?;
-                counters::bump(counters::Op::PackSkippedBlob);
-            } else {
-                // This is it!
-                let mut hashing_decoder =
-                    HashingReader::new((&mut current_pack.blob_stream).take(entry.length as u64));
-                let mut buf = Vec::with_capacity(entry.length as usize);
-                hashing_decoder.read_to_end(&mut buf)?;
-                let (hash, _) = hashing_decoder.finalize();
-                ensure!(
-                    *blob_id == hash,
-                    "Calculated hash of blob ({}) doesn't match ID {}",
-                    hash,
-                    *blob_id
-                );
-                blob_bytes = Some(buf);
-            }
-
-            current_pack.current_blob_index += 1;
-        }
-
-        blob_bytes.ok_or_else(|| {
-            anyhow!(
-                "Couldn't find blob {} in pack {}, but the manifest says it's there",
-                blob_id,
-                current_pack.id
-            )
-        })
+        Ok(self.cache.get(id).unwrap())
     }
 
-    // This pokes around in the guts of a packfile, so it should arguably be in
-    // pack.rs, but is it worth breaking up?
-
-    fn load_pack(&mut self, id: ObjectId) -> Result<()> {
+    fn load_pack(&mut self, id: ObjectId) -> Result<usize> {
         let mut file = self.cached_backend.read_pack(&id)?;
         pack::check_magic(&mut file)?;
 
@@ -145,59 +158,40 @@ impl<'a> BlobReader<'a> {
             .get(&id)
             .ok_or_else(|| anyhow!("Couldn't find pack {} manifest in the index", id))?;
 
-        let blob_stream = ZstdDecoder::new(file).context("Decompression of blob stream failed")?;
+        let mut blob_stream =
+            ZstdDecoder::new(file).context("Decompression of blob stream failed")?;
 
-        let current_blob_index = 0;
+        let mut bytes_read = 0;
+        let mut blob_buf = vec![];
+        for entry in manifest {
+            if entry.blob_type != blob::Type::Chunk {
+                warn!(
+                    "Tree {} found in pack where we expected only chunks",
+                    entry.id
+                );
+                continue;
+            }
 
-        self.current_pack = Some(CurrentPackfile {
-            id,
-            blob_stream,
-            manifest,
-            current_blob_index,
-        });
+            blob_buf.clear();
+            blob_buf.reserve(entry.length as usize);
 
-        Ok(())
+            let mut hashing_decoder =
+                HashingReader::new((&mut blob_stream).take(entry.length as u64));
+            hashing_decoder.read_to_end(&mut blob_buf)?;
+            let (hash, _) = hashing_decoder.finalize();
+            ensure!(
+                entry.id == hash,
+                "Calculated hash of blob ({}) doesn't match ID {}",
+                hash,
+                entry.id
+            );
+            self.cache.insert(&entry.id, &blob_buf);
+
+            bytes_read += entry.length as usize;
+        }
+
+        Ok(bytes_read)
     }
-
-    fn restart_stream(&mut self) -> Result<()> {
-        let mut current_pack: CurrentPackfile = self
-            .current_pack
-            .take()
-            .expect("restart_stream called before pack was loaded");
-
-        let mut file = current_pack.blob_stream.finish();
-        // Seek back to the start of the zstd stream, past the magic bytes.
-        file.seek(SeekFrom::Start(pack::MAGIC_BYTES.len() as u64))?;
-        let blob_stream =
-            ZstdDecoder::with_buffer(file).context("Decompression of blob stream failed")?;
-
-        // Put the new stream back into current_pack and stuff that back into Self.
-        current_pack.blob_stream = blob_stream;
-        current_pack.current_blob_index = 0;
-        self.current_pack = Some(current_pack);
-        counters::bump(counters::Op::PackStreamRestart);
-
-        Ok(())
-    }
-}
-
-fn index_of(
-    id: &ObjectId,
-    manifest: &[pack::PackManifestEntry],
-    pack_id: &ObjectId,
-) -> Result<usize> {
-    let (index, _) = manifest
-        .iter()
-        .enumerate()
-        .find(|(_idx, entry)| entry.id == *id)
-        .ok_or_else(|| {
-            anyhow!(
-                "Pack {} doesn't contain blob {}, but blob map says it does",
-                pack_id,
-                id
-            )
-        })?;
-    Ok(index)
 }
 
 #[cfg(test)]
@@ -266,7 +260,7 @@ mod test {
         // (Should we wrap that in some utility function(s) for testing?
         // Or is each test bespoke enough that it wouldn't be helpful?)
         // let's test our reader.
-        let mut reader = BlobReader::new(&backend, &index, &blob_map);
+        let mut reader = ChunkReader::new(&backend, &index, &blob_map);
 
         // Read the first chunk:
         readback(&chunks[0], &mut reader)?;
@@ -284,11 +278,11 @@ mod test {
         Ok(())
     }
 
-    fn readback(blob: &blob::Blob, reader: &mut BlobReader) -> Result<()> {
+    fn readback(blob: &blob::Blob, reader: &mut ChunkReader) -> Result<()> {
         let read_blob = reader
             .read_blob(&blob.id)
             .with_context(|| format!("Couldn't read {}", blob.id))?;
-        assert_eq!(read_blob, blob.bytes());
+        assert_eq!(*read_blob, blob.bytes());
         Ok(())
     }
 }

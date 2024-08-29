@@ -21,8 +21,9 @@ pub enum Op {
     FileToMmap,
     TreeCacheHit,
     TreeCacheMiss,
-    PackSkippedBlob,
-    PackStreamRestart,
+    ChunkCacheHit,
+    ChunkCacheMiss,
+    PackRereads,
 }
 
 static COUNTER_MAP: LazyLock<EnumMap<Op, AtomicUsize>> = LazyLock::new(EnumMap::default);
@@ -62,8 +63,9 @@ pub fn log_counts() {
         Op::FileToMmap => "input files memory mapped",
         Op::TreeCacheHit => "tree cache hits",
         Op::TreeCacheMiss => "tree cache misses",
-        Op::PackSkippedBlob => "blobs skipped reading packs",
-        Op::PackStreamRestart => "pack read restarts",
+        Op::ChunkCacheHit => "chunk cache hits",
+        Op::ChunkCacheMiss => "chunk cache misses",
+        Op::PackRereads => "packs reread",
     };
 
     debug!("Counters:");

@@ -192,6 +192,7 @@ dependencies = [
  "home",
  "hostname",
  "memmap2",
+ "mut-binary-heap",
  "num",
  "num_cpus",
  "ouroboros",
@@ -464,6 +465,12 @@ name = "colorchoice"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fd119d74b830634cea2a0f58bbd0d54540518a14397557951e79340abc28c0"
+
+[[package]]
+name = "compare"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "120133d4db2ec47efe2e26502ee984747630c67f51974fca0b6c1340cf2368d3"
 
 [[package]]
 name = "core-foundation-sys"
@@ -904,6 +911,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8a240ddb74feaf34a79a7add65a741f3167852fba007066dcac1ca548d89c08"
 dependencies = [
  "adler",
+]
+
+[[package]]
+name = "mut-binary-heap"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aabb01d356cce09d46edd0b283382a08e1cfe7615eccfa9baeb326718cc11520"
+dependencies = [
+ "compare",
 ]
 
 [[package]]

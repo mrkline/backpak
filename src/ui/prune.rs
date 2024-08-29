@@ -167,7 +167,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     drop(packs_to_upload);
 
     // Get a reader to load the chunks we're repacking.
-    let mut reader = read::BlobReader::new(&cached_backend, &index, &blob_map);
+    let mut reader = read::ChunkReader::new(&cached_backend, &index, &blob_map);
 
     repack::walk_snapshots(
         repack::Op::Prune,

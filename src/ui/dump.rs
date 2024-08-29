@@ -140,7 +140,7 @@ fn dump_file(
     blob_map: &index::BlobMap,
     output_path: &Option<Utf8PathBuf>,
 ) -> Result<()> {
-    let mut reader = read::BlobReader::new(cached_backend, index, blob_map);
+    let mut reader = read::ChunkReader::new(cached_backend, index, blob_map);
     let mut writer = open_writer(output_path)?;
 
     for chunk_id in chunks {

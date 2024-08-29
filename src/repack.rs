@@ -40,7 +40,7 @@ pub enum Op {
 pub fn walk_snapshots(
     op: Op,
     snapshots_and_forests: &[SnapshotAndForest],
-    reader: &mut read::BlobReader,
+    reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
@@ -53,7 +53,7 @@ pub fn walk_snapshots(
 fn walk_snapshot(
     op: Op,
     snapshot_and_forest: &SnapshotAndForest,
-    reader: &mut read::BlobReader,
+    reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
@@ -77,7 +77,7 @@ fn walk_tree(
     op: Op,
     tree_id: &ObjectId,
     forest: &tree::Forest,
-    reader: &mut read::BlobReader,
+    reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
@@ -118,11 +118,11 @@ fn walk_tree(
     Ok(())
 }
 
-fn repack_chunk(
+fn repack_chunk<'a, 'b: 'a>(
     op: Op,
-    id: &ObjectId,
+    id: &'a ObjectId,
     path: &Utf8Path,
-    reader: &mut read::BlobReader,
+    reader: &mut read::ChunkReader<'b>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     let verb = match op {
@@ -131,7 +131,8 @@ fn repack_chunk(
     };
     trace!("{verb} chunk {id} from {path}");
     if let Some(b) = backup {
-        let contents = blob::Contents::Buffer(reader.read_blob(id)?);
+        // TODO: Don't clone this? Make the Buffer RC? The blob cache Arc? Ugh, where GC
+        let contents = blob::Contents::Buffer((*reader.read_blob(id)?).clone());
         b.chunk_tx.send(blob::Blob {
             contents,
             id: *id,
