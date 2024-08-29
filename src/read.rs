@@ -118,7 +118,7 @@ impl<'a> ChunkReader<'a> {
         }
     }
 
-    pub fn read_blob<'b>(&mut self, id: &'b ObjectId) -> Result<Rc<Vec<u8>>> {
+    pub fn read_blob(&mut self, id: &ObjectId) -> Result<Rc<Vec<u8>>> {
         // If we get a cache hit, EZ!
         if let Some(b) = self.cache.get(id) {
             trace!("Found tree {id} in-cache");
