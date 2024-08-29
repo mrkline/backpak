@@ -235,8 +235,8 @@ impl PackfileWriter {
     /// **Warning:** Doing this too frequently hurts the compression ratio.
     fn flush_and_check_size(&mut self) -> Result<u64> {
         self.writer.flush()?;
-        let fh = self.writer.get_ref().as_file();
-        Ok(fh.metadata()?.len())
+        let pos = self.writer.get_ref().stream_position()?;
+        Ok(pos)
     }
 
     /// Finalize the packfile, returning the manifest & ID with a handle to
