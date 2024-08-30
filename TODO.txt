@@ -1,19 +1,12 @@
-## Cache a few packs' worth of blobs in BlobReader
+## Web Retries!
 
-There's a pathological case, after forgetting some snapshots and pruning,
-to keep bouncing between packs. This is SLOW because we reseek each time.
+- Retry on any IO error? On HTTP 5xx? We need some retry logic with Backblaze.
+
+- Limit the number of concurrent requests?
 
 ## Guard against colliding with another snapshot in the same working dir
 
 Track working dir in some global state somewhere? Shmem?
-
-## Better pack sizes?
-
-Get closer to the target by estimating the ratio *since last flush*?
-
-Check on each blob, without flushing, the size to catch gross overshoots?
-
-Just checking without flushing isn't very effective by itself - Zstd uses 60+ MB
 
 ## Compress after the cache?
 
