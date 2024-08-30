@@ -112,10 +112,23 @@ pub fn pack(
         pass_bytes_written += blob_size;
         bytes_in_pack += blob_size;
 
+        // If we exceed our target size, stop.
+        // We'll probably overshoot since this isn't flushing the Zstd buffer,
+        // but it's quick and keeps us from running away.
+        let mut end_pack = false;
+        if writer.check_size()? >= target_size {
+            let compressed_size = writer.flush_and_check_size()?;
+            trace!(
+                "Compressed pack is {} (>= target of {}). Starting next pack.",
+                nice_size(compressed_size),
+                nice_size(target_size)
+            );
+            end_pack = true;
+        }
         // We've written as many bytes as we want the pack size to to be,
         // but we don't know how much they've compressed to.
         // Flush the compressor to see how much space we've actually taken up.
-        if pass_bytes_written >= bytes_before_next_check {
+        else if pass_bytes_written >= bytes_before_next_check {
             trace!(
                 "Wrote {} bytes into pack, checking compressed size...",
                 nice_size(bytes_in_pack)
@@ -125,26 +138,12 @@ pub fn pack(
 
             // If we pass our target size, stop
             if compressed_size >= target_size {
+                end_pack = true;
                 trace!(
-                    "Compressed pack size is {} (>= target of {}). Starting another pack.",
+                    "Compressed pack is {} (>= target of {}). Starting next pack.",
                     nice_size(compressed_size),
                     nice_size(target_size)
                 );
-                let (metadata, persisted) = writer.finalize()?;
-                let finalized_path = format!("{}.pack", metadata.id);
-
-                to_upload
-                    .send((finalized_path, persisted))
-                    .context("packer -> uploader channel exited early")?;
-                to_index
-                    .send(metadata)
-                    .context("packer -> indexer channel exited early")?;
-
-                writer = PackfileWriter::new()?;
-                total_bytes_written += bytes_in_pack;
-                pass_bytes_written = 0;
-                bytes_in_pack = 0;
-                bytes_before_next_check = target_size;
             }
             // Otherwise, write some more
             else {
@@ -155,12 +154,30 @@ pub fn pack(
                     (current_ratio * (target_size - compressed_size) as f64) as u64;
                 pass_bytes_written = 0;
                 trace!(
-                    "Compressed pack size is {} (ratio {:.02}). Writing {} more bytes",
+                    "Compressed pack is {} (ratio {:.02}). Writing {} before next flush",
                     nice_size(compressed_size),
                     current_ratio,
                     nice_size(bytes_before_next_check)
                 );
             }
+        }
+
+        if end_pack {
+            let (metadata, persisted) = writer.finalize()?;
+            let finalized_path = format!("{}.pack", metadata.id);
+
+            to_upload
+                .send((finalized_path, persisted))
+                .context("packer -> uploader channel exited early")?;
+            to_index
+                .send(metadata)
+                .context("packer -> indexer channel exited early")?;
+
+            writer = PackfileWriter::new()?;
+            total_bytes_written += bytes_in_pack;
+            pass_bytes_written = 0;
+            bytes_in_pack = 0;
+            bytes_before_next_check = target_size;
         }
     }
     if bytes_in_pack > 0 {
@@ -232,9 +249,18 @@ impl PackfileWriter {
 
     /// Flush the compressor and check the size of the packfile so far.
     ///
-    /// **Warning:** Doing this too frequently hurts the compression ratio.
+    /// **Warning:** Doing this too frequently hurts the compression ratio, at least a little.
     fn flush_and_check_size(&mut self) -> Result<u64> {
         self.writer.flush()?;
+        let pos = self.writer.get_ref().stream_position()?;
+        Ok(pos)
+    }
+
+    /// Check the size of the underlying compressed file *without* flushing.
+    ///
+    /// Doesn't account for whatever data is in the Zstd buffer,
+    /// but doesn't change compression ratios either.
+    fn check_size(&self) -> Result<u64> {
         let pos = self.writer.get_ref().stream_position()?;
         Ok(pos)
     }
