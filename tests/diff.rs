@@ -81,6 +81,7 @@ fn diff_src() -> Result<()> {
         "- src/backend/filter.rs",
         "- src/backend/fs.rs",
         "- src/backend/memory.rs",
+        "- src/backend/semaphored.rs",
         "- src/diff.rs",
         "C src/lib.rs",
         "P src/main.rs",
@@ -90,6 +91,7 @@ fn diff_src() -> Result<()> {
         "+ src/wackend/filter.rs",
         "+ src/wackend/fs.rs",
         "+ src/wackend/memory.rs",
+        "+ src/wackend/semaphored.rs",
         "T src/",
     ]);
 

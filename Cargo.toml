@@ -12,6 +12,7 @@ categories = ["command-line-utilities", "compression", "filesystem"]
 [dependencies]
 # Sane error handling
 anyhow = { version = "1.0", features = ["backtrace"] }
+atomic-wait = "1.1.0"
 #
 b2 = { path = "./b2" }
 # Pretty-printing byte counts

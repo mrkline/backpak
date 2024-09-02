@@ -23,6 +23,7 @@ pub mod cache;
 mod filter;
 pub mod fs;
 mod memory;
+mod semaphored;
 
 use cache::Cache;
 
@@ -362,11 +363,10 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
                     key_id,
                     application_key,
                     bucket,
-                } => Box::new(backblaze::BackblazeBackend::open(
-                    key_id,
-                    application_key,
-                    bucket,
-                )?),
+                } => Box::new(semaphored::Semaphored::new(
+                    backblaze::BackblazeBackend::open(key_id, application_key, bucket)?,
+                    4, // TODO: Configure
+                )),
             };
             // If we ever configure more, move this somewhere central (main()?)
             let conf = config::load()?;
