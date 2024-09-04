@@ -13,10 +13,11 @@ pub struct BackblazeBackend {
 pub fn initialize(
     repository: &camino::Utf8Path,
     pack_size: Byte,
+    filter: Option<(String, String)>,
     key_id: String,
     application_key: String,
     bucket: String,
-    filter: Option<(String, String)>,
+    concurrent_connections: u32,
 ) -> Result<()> {
     let c = super::Config {
         pack_size,
@@ -24,6 +25,7 @@ pub fn initialize(
             key_id,
             application_key,
             bucket,
+            concurrent_connections,
         },
         filter,
     };

@@ -41,6 +41,8 @@ enum Command {
         application_key: String,
         #[clap(short, long)]
         bucket: String,
+        #[clap(short, long, default_value_t = 4)]
+        concurrent_connections: u32,
     },
 }
 
@@ -68,13 +70,15 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
             key_id,
             application_key,
             bucket,
+            concurrent_connections,
         } => backend::backblaze::initialize(
             repository,
             pack_size,
+            filter,
             key_id,
             application_key,
             bucket,
-            filter,
+            concurrent_connections,
         ),
     }
 }

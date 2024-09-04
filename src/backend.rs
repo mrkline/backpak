@@ -42,6 +42,7 @@ pub enum Kind {
         key_id: String,
         application_key: String,
         bucket: String,
+        concurrent_connections: u32,
     }, // ...?
 }
 
@@ -363,9 +364,10 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
                     key_id,
                     application_key,
                     bucket,
+                    concurrent_connections,
                 } => Box::new(semaphored::Semaphored::new(
                     backblaze::BackblazeBackend::open(key_id, application_key, bucket)?,
-                    4, // TODO: Configure
+                    *concurrent_connections,
                 )),
             };
             // If we ever configure more, move this somewhere central (main()?)
