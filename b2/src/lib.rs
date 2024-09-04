@@ -8,7 +8,7 @@ use std::io::{prelude::*, Cursor};
 pub enum Error {
     #[error("B2 I/O failure: {0}")]
     Io(#[from] std::io::Error),
-    #[error("B2 HTTP transport: {0}")]
+    #[error("B2 HTTP transport error: {0}")]
     Http(Box<ureq::Transport>),
     #[error("B2 HTTP {code}: {reason}")]
     BadReply { code: u16, reason: String },
