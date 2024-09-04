@@ -46,27 +46,43 @@ impl BackblazeBackend {
     }
 }
 
-// Sad hackage. Make less sad once minreq (or our flavor thereof)
-// supports uploading and downloading as Read.
+// We could make the timeout configurable, make this generic across different errors, etc.
+fn retry<T, F: FnMut() -> b2::Result<T>>(mut f: F) -> b2::Result<T> {
+    loop {
+        match f() {
+            Ok(k) => return Ok(k),
+            Err(e) => {
+                // Assume IO errors are issues with our machine that won't resolve quickly,
+                // and everything else to be server-side, temporary sadness.
+                if matches!(e, b2::Error::Io(_)) {
+                    return Err(e);
+                } else {
+                    warn!("{e}, retrying");
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+            }
+        }
+    }
+}
 
 impl Backend for BackblazeBackend {
     fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
-        let r = self.session.get(from)?;
+        let r = retry(|| self.session.get(from))?;
         Ok(Box::new(r))
     }
 
     fn write(&self, len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
-        self.session.put(to, len, from)?;
+        retry(|| self.session.put(to, len, from))?;
         Ok(())
     }
 
     fn remove(&self, which: &str) -> Result<()> {
-        self.session.delete(which)?;
+        retry(|| self.session.delete(which))?;
         Ok(())
     }
 
     fn list(&self, prefix: &str) -> Result<Vec<(String, u64)>> {
-        let l = self.session.list(Some(prefix))?;
+        let l = retry(|| self.session.list(Some(prefix)))?;
         Ok(l)
     }
 }
