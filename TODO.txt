@@ -1,8 +1,6 @@
-## Web Retries!
+## Batch probes
 
-- Retry on any IO error? On HTTP 5xx? We need some retry logic with Backblaze.
-
-- Limit the number of concurrent requests?
+Probing for individual packs on check to a web API is real dum
 
 ## Guard against colliding with another snapshot in the same working dir
 
