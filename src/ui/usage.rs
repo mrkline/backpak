@@ -74,7 +74,8 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
         let ds = nice_size(reachable_blob_size - packed_blob_size);
         warn!("Snapshots contain {ds} more than packs! Consider running `backpak check`.")
     }
-    let pack_size = super::check::warn_on_unreachable_packs(&index, &cached_backend)?;
+    let all_packs = cached_backend.list_packs()?;
+    let pack_size = super::check::warn_on_unreachable_packs(&index, &all_packs)?;
     let index_size = index_sizes.iter().sum();
 
     let backend_kind = match config.kind {

@@ -37,13 +37,32 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let index = index::build_master_index(&cached_backend)?;
 
     info!("Checking all packs listed in indexes");
+    let all_packs = cached_backend.list_packs()?;
     let borked_packs = AtomicUsize::new(0);
-    index.packs.par_iter().for_each(|(pack_id, manifest)| {
-        if let Err(e) = check_pack(&cached_backend, pack_id, manifest, args.read_packs) {
-            error!("Problem with pack {}: {:?}", pack_id, e);
-            borked_packs.fetch_add(1, Ordering::Relaxed);
+    if args.read_packs {
+        // Actually read the packs; do this in parallel as much as the backend allows
+        index.packs.par_iter().for_each(|(pack_id, manifest)| {
+            match check_pack(&cached_backend, pack_id, manifest) {
+                Ok(()) => debug!("Pack {pack_id} verified"),
+                Err(e) => {
+                    error!("Pack {pack_id}: {e:?}");
+                    borked_packs.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        });
+    } else {
+        // If we don't have to read the packs, just list them all
+        // and make sure we find the indexed ones in that list.
+        for pack_id in index.packs.keys() {
+            match backend::probe_pack(&all_packs, pack_id) {
+                Ok(()) => debug!("Pack {} found", pack_id),
+                Err(e) => {
+                    error!("{e:?}"); // Error already has a message about specific pack
+                    borked_packs.fetch_add(1, Ordering::Relaxed);
+                }
+            }
         }
-    });
+    }
     let borked_packs = borked_packs.load(Ordering::SeqCst);
     if borked_packs != 0 {
         error!("{} broken packs", borked_packs);
@@ -51,7 +70,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     }
 
     info!("Checking for unreachable packs (not listed in indexes)");
-    warn_on_unreachable_packs(&index, &cached_backend)?;
+    warn_on_unreachable_packs(&index, &all_packs)?;
 
     info!("Checking that all chunks in snapshots are reachable");
     let blob_map = index::blob_to_pack_map(&index)?;
@@ -99,27 +118,16 @@ fn check_pack(
     cached_backend: &backend::CachedBackend,
     pack_id: &ObjectId,
     manifest: &[pack::PackManifestEntry],
-    read_packs: bool,
 ) -> Result<()> {
-    if read_packs {
-        let mut pack = cached_backend.read_pack(pack_id)?;
-        pack::verify(&mut pack, manifest)?;
-        debug!("Pack {} verified", pack_id);
-    } else {
-        cached_backend.probe_pack(pack_id)?;
-        debug!("Pack {} found", pack_id);
-    }
+    let mut pack = cached_backend.read_pack(pack_id)?;
+    pack::verify(&mut pack, manifest)?;
     Ok(())
 }
 
 /// Warns about unreachable packs. Returns the total pack size for usage stats.
-pub fn warn_on_unreachable_packs(
-    index: &index::Index,
-    cached_backend: &backend::CachedBackend,
-) -> Result<u64> {
+pub fn warn_on_unreachable_packs(index: &index::Index, all_packs: &[(String, u64)]) -> Result<u64> {
     let mut total_pack_size = 0u64;
-    let pack_ids = cached_backend
-        .list_packs()?
+    let pack_ids = all_packs
         .iter()
         .map(|(pack, pack_len)| {
             total_pack_size += *pack_len;
