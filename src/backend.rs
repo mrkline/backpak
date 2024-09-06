@@ -274,22 +274,6 @@ impl CachedBackend {
         self.list("packs/")
     }
 
-    pub fn probe_pack(&self, id: &ObjectId) -> Result<()> {
-        let base32 = id.to_string();
-        let pack_path = format!("packs/{}.pack", base32);
-        let found_packs = self
-            .list(&pack_path)
-            .with_context(|| format!("Couldn't find {}", pack_path))?;
-        match found_packs.len() {
-            0 => bail!("Couldn't find pack {}", base32),
-            1 => Ok(()),
-            multiple => panic!(
-                "Expected one pack at {}, found several! {:?}",
-                pack_path, multiple
-            ),
-        }
-    }
-
     pub fn read_pack(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead>> {
         let base32 = id.to_string();
         let pack_path = format!("{}.pack", base32);
@@ -323,6 +307,25 @@ impl CachedBackend {
     pub fn remove_snapshot(&self, id: &ObjectId) -> Result<()> {
         let snapshot_path = format!("{}.snapshot", id);
         self.remove(&snapshot_path)
+    }
+}
+
+/// Given a list of packs, find one with the given ID or return an error.
+pub fn probe_pack(packs: &[(String, u64)], id: &ObjectId) -> Result<()> {
+    let base32 = id.to_string();
+    let pack_path = format!("packs/{}.pack", base32);
+    let found_packs: Vec<_> = packs
+        .iter()
+        .map(|(s, _len)| s)
+        .filter(|s| **s == pack_path)
+        .collect();
+    match found_packs.len() {
+        0 => bail!("Couldn't find pack {}", base32),
+        1 => Ok(()),
+        multiple => panic!(
+            "Expected one pack at {}, found several! {:?}",
+            pack_path, multiple
+        ),
     }
 }
 

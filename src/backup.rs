@@ -262,20 +262,23 @@ pub fn find_resumable(backend: &backend::CachedBackend) -> Result<Option<Resumab
         assert!(missing_packfiles.remove(p));
     }
 
-    debug!("Checking backend for other packfiles in the index...");
-    // (We want to make sure that everything the index contains is backed up,
-    // or just has to be uploaded, so it's a valid starting point).
-    let mut errs = false;
-    for p in &missing_packfiles {
-        if let Err(e) = backend.probe_pack(p) {
-            error!("{e}");
-            errs = true;
-        } else {
-            trace!("Found pack {p}");
+    if !missing_packfiles.is_empty() {
+        debug!("Checking backend for other packfiles in the index...");
+        // (We want to make sure that everything the index contains is backed up,
+        // or just has to be uploaded, so it's a valid starting point).
+        let packs = backend.list_packs()?;
+        let mut errs = false;
+        for p in &missing_packfiles {
+            if let Err(e) = backend::probe_pack(&packs, p) {
+                error!("{e}");
+                errs = true;
+            } else {
+                trace!("Found pack {p}");
+            }
         }
-    }
-    if errs {
-        bail!("WIP index file references packfiles not backed up or in the working directory.");
+        if errs {
+            bail!("WIP index file references packfiles not backed up or in the working directory.");
+        }
     }
     Ok(Some(ResumableBackup {
         wip_index,
