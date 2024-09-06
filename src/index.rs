@@ -192,6 +192,7 @@ pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Ind
 /// [`build_master_index`] plus the size for each loaded index.
 ///
 /// Nice for usage reporting, since it saves us another backend query.
+#[expect(clippy::mut_mutex_lock)] // False positive; shared can't be mutable in par_iter()!
 pub fn build_master_index_with_sizes(
     cached_backend: &backend::CachedBackend,
 ) -> Result<(Index, Vec<u64>)> {
