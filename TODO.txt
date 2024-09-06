@@ -1,6 +1,10 @@
-## Batch probes
+## copy improvements
 
-Probing for individual packs on check to a web API is real dum
+Add `--filter`, specify snapshots or `--all`
+
+## filter-snapshot
+
+Make a new snapshot with previous contents of another in the same repo?
 
 ## Guard against colliding with another snapshot in the same working dir
 
