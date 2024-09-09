@@ -250,10 +250,6 @@ fn backup_tree(
     let skipset = RegexSet::new(skips).context("Skip rules are not valid regex")?;
 
     let mut filter = |path: &Utf8Path| {
-        // We could lift the filter into fs_tree as a dedicated argument to walk_fs()
-        // to avoid getting this file's metadata only to skip it,
-        // or worse - walking a directory just to skip it,
-        // but for now just make it part of this visiter.
         if skipset.is_match(path.as_str()) {
             info!("{:>9} {}", "skip", path);
             Ok(false)
