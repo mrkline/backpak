@@ -22,17 +22,46 @@ pub struct Args {
     /// Destination repository
     #[clap(short, long, name = "PATH")]
     to: Utf8PathBuf,
-    // TODO: Specify snapshots, or ALL
+
+    #[command(flatten)]
+    target: Target,
+}
+
+#[derive(Debug, Clone, clap::Args)]
+#[group(required = true, multiple = false)]
+pub struct Target {
+    #[clap(long)]
+    all: bool,
+
+    snapshots: Vec<String>,
 }
 
 pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
+    let target_snapshots = &args.target.snapshots;
+
+    // Trust but verify
+    assert!(args.target.all ^ !target_snapshots.is_empty());
+
     // Build the usual suspects.
     let (_, src_cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
     let src_index = index::build_master_index(&src_cached_backend)?;
     let src_blob_map = index::blob_to_pack_map(&src_index)?;
 
-    let src_snapshots_and_forests = repack::load_snapshots_and_forests(
-        &src_cached_backend,
+    let mut src_snapshots = snapshot::load_chronologically(&src_cached_backend)?;
+    if !target_snapshots.is_empty() {
+        let mut desired_snaps = Vec::with_capacity(target_snapshots.len());
+        for desired_snap in target_snapshots {
+            let (s, i) = snapshot::find(&src_snapshots, desired_snap)?;
+            desired_snaps.push((s.clone(), *i));
+        }
+        // Take whatever the user asked for and make it chronological with no duplicates.
+        desired_snaps.sort_by_key(|(snap, _)| snap.time);
+        desired_snaps.dedup_by(|(_, id1), (_, id2)| id1 == id2);
+        src_snapshots = desired_snaps;
+    }
+
+    let src_snapshots_and_forests = repack::load_forests(
+        src_snapshots,
         // We can drop the tree cache immediately once we have all our forests.
         &mut tree::Cache::new(&src_index, &src_blob_map, &src_cached_backend),
     )?;

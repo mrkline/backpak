@@ -37,7 +37,7 @@ fn copy_smoke() -> Result<()> {
         .success();
 
     cli_run(working_path, backup_path)?
-        .args(["copy", "--to"])
+        .args(["copy", "--all", "--to"])
         .arg(copy_path)
         .assert()
         .success();

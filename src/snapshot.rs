@@ -39,7 +39,7 @@ use crate::{
     hashing::{HashingReader, HashingWriter, ObjectId},
 };
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
     /// The time (local + TZ offset) whe the snapshot was taken
     pub time: DateTime<FixedOffset>,

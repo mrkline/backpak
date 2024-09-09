@@ -1,7 +1,3 @@
-## copy improvements
-
-Add `--filter`, specify snapshots or `--all`
-
 ## filter-snapshot
 
 Make a new snapshot with previous contents of another in the same repo?
