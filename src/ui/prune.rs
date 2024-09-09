@@ -16,6 +16,7 @@ use crate::index;
 use crate::pack;
 use crate::read;
 use crate::repack;
+use crate::snapshot;
 use crate::tree;
 
 /// Garbage collect: condense the backup, throwing out unused data.
@@ -43,8 +44,9 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
 
-    let snapshots_and_forests = repack::load_snapshots_and_forests(
-        &cached_backend,
+    let snapshots = snapshot::load_chronologically(&cached_backend)?;
+    let snapshots_and_forests = repack::load_forests(
+        snapshots,
         // We can drop the tree cache immediately once we have all our forests.
         &mut tree::Cache::new(&index, &blob_map, &cached_backend),
     )?;

@@ -5,7 +5,7 @@ use camino::Utf8Path;
 use rustc_hash::FxHashSet;
 use tracing::*;
 
-use crate::{backend, backup, blob, hashing::ObjectId, read, snapshot, tree};
+use crate::{backup, blob, hashing::ObjectId, read, snapshot, tree};
 
 pub struct SnapshotAndForest {
     pub id: ObjectId,
@@ -13,11 +13,11 @@ pub struct SnapshotAndForest {
     pub forest: tree::Forest,
 }
 
-pub fn load_snapshots_and_forests(
-    cached_backend: &backend::CachedBackend,
+pub fn load_forests(
+    snapshots: Vec<(snapshot::Snapshot, ObjectId)>,
     tree_cache: &mut tree::Cache,
 ) -> Result<Vec<SnapshotAndForest>> {
-    snapshot::load_chronologically(cached_backend)?
+    snapshots
         .into_iter()
         .map(|(snapshot, id)| {
             let forest = tree::forest_from_root(&snapshot.tree, tree_cache)?;
