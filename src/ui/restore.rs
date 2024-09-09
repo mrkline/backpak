@@ -94,14 +94,14 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
 
-    let (snapshot, id) = snapshot::find_and_load(&args.restore_from, &cached_backend)?;
+    let snapshots = snapshot::load_chronologically(&cached_backend)?;
+    let (snapshot, id) = snapshot::find(&snapshots, &args.restore_from)?;
     let snapshot_forest = tree::forest_from_root(
         &snapshot.tree,
         &mut tree::Cache::new(&index, &blob_map, &cached_backend),
     )?;
 
-    let tree_and_mapping =
-        load_fs_tree_and_mapping(&id, &snapshot, &snapshot_forest, &args.output)?;
+    let tree_and_mapping = load_fs_tree_and_mapping(id, snapshot, &snapshot_forest, &args.output)?;
 
     let metadata = args.times || args.permissions;
 

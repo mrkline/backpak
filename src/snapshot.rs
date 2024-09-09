@@ -27,7 +27,7 @@ use std::sync::{
 };
 
 use anyhow::{bail, ensure, Context, Result};
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8PathBuf;
 use chrono::prelude::*;
 use rayon::prelude::*;
 use regex::Regex;
@@ -112,14 +112,6 @@ fn from_reader<R: Read>(r: &mut R) -> Result<(Snapshot, ObjectId)> {
     Ok((snapshot, id))
 }
 
-pub fn find_and_load(
-    id_prefix: &str,
-    cached_backend: &backend::CachedBackend,
-) -> Result<(Snapshot, ObjectId)> {
-    let id = find(id_prefix, cached_backend)?;
-    Ok((load(&id, cached_backend)?, id))
-}
-
 /// Loads the snapshot with the given ID from the backend,
 /// verifying its contents match its ID.
 pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Snapshot> {
@@ -164,12 +156,19 @@ pub fn load_chronologically_with_total_size(
     Ok((snapshots, total.load(Ordering::SeqCst)))
 }
 
-pub fn find(prefix: &str, cached_backend: &backend::CachedBackend) -> Result<ObjectId> {
+/// Find a given snapshot and its ID from the loaded chronological list
+pub fn find<'a>(
+    chronological_snapshots: &'a [(Snapshot, ObjectId)],
+    prefix: &str,
+) -> Result<&'a (Snapshot, ObjectId)> {
     use std::str::FromStr;
 
     // See if we can skip all the below with an exact match.
     if let Ok(id) = ObjectId::from_str(prefix) {
-        return Ok(id);
+        match chronological_snapshots.iter().find(|(_s, i)| *i == id) {
+            Some(found) => return Ok(found),
+            None => bail!("No snapshot {id}"),
+        }
     }
 
     // Git-like syntax:
@@ -186,12 +185,8 @@ pub fn find(prefix: &str, cached_backend: &backend::CachedBackend) -> Result<Obj
             [_, None, Some(n)] => n.as_str().parse().unwrap(),
             _ => unreachable!(),
         };
-        match load_chronologically(cached_backend)?
-            .iter()
-            .rev()
-            .nth(index)
-        {
-            Some((_snap, id)) => return Ok(*id),
+        match chronological_snapshots.iter().rev().nth(index) {
+            Some(found) => return Ok(found),
             None => bail!("Don't have {} snapshots yet", index + 1),
         };
     }
@@ -201,15 +196,14 @@ pub fn find(prefix: &str, cached_backend: &backend::CachedBackend) -> Result<Obj
         bail!("Provide a snapshot ID with at least 4 digits!");
     }
 
-    let mut matches = cached_backend
-        .list_snapshots()?
-        .into_iter()
-        .filter(|(snap, _snap_len)| Utf8Path::new(snap).file_stem().unwrap().starts_with(prefix))
+    let matches = chronological_snapshots
+        .iter()
+        .filter(|(_s, id)| id.to_string().starts_with(prefix))
         .collect::<Vec<_>>();
 
     match matches.len() {
         0 => bail!("No snapshots start with {}", prefix),
-        1 => backend::id_from_path(matches.pop().unwrap().0),
+        1 => Ok(matches[0]),
         multiple => bail!("{} different snapshots start with {}", multiple, prefix,),
     }
 }
