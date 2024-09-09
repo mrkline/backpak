@@ -31,10 +31,11 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
 
     let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
 
+    let snapshots = snapshot::load_chronologically(&cached_backend)?;
     let success = if args.to_forget == ["duplicates"] {
-        forget_duplicate_snapshots(&cached_backend, args.dry_run)?
+        forget_duplicate_snapshots(&cached_backend, &snapshots, args.dry_run)?
     } else {
-        forget_snapshot_list(&cached_backend, &args)
+        forget_snapshot_list(&cached_backend, &snapshots, &args)
     };
 
     if success {
@@ -46,14 +47,13 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
 
 fn forget_duplicate_snapshots(
     cached_backend: &backend::CachedBackend,
+    snapshots: &[(snapshot::Snapshot, ObjectId)],
     dry_run: bool,
 ) -> Result<bool> {
-    let snapshots = snapshot::load_chronologically(cached_backend)?;
-
     let mut success = true;
     let mut last_unique_snapshot_and_tree: Option<(ObjectId, ObjectId)> = None;
 
-    for (snapshot, id) in &snapshots {
+    for (snapshot, id) in snapshots.iter() {
         if last_unique_snapshot_and_tree.is_none() {
             last_unique_snapshot_and_tree = Some((*id, snapshot.tree));
             continue;
@@ -74,11 +74,15 @@ fn forget_duplicate_snapshots(
     Ok(success)
 }
 
-fn forget_snapshot_list(cached_backend: &backend::CachedBackend, args: &Args) -> bool {
+fn forget_snapshot_list(
+    cached_backend: &backend::CachedBackend,
+    snapshots: &[(snapshot::Snapshot, ObjectId)],
+    args: &Args,
+) -> bool {
     let mut success = true;
 
     for id_prefix in &args.to_forget {
-        let id = match crate::snapshot::find(id_prefix, cached_backend) {
+        let (_snap, id) = match crate::snapshot::find(snapshots, id_prefix) {
             Ok(id) => id,
             Err(e) => {
                 error!("{:?}", e);
@@ -87,7 +91,7 @@ fn forget_snapshot_list(cached_backend: &backend::CachedBackend, args: &Args) ->
             }
         };
 
-        success &= forget_snapshot(cached_backend, &id, args.dry_run);
+        success &= forget_snapshot(cached_backend, id, args.dry_run);
     }
     success
 }
