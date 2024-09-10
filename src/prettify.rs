@@ -30,50 +30,52 @@ pub fn should_prettify() -> bool {
     unsafe { PRETTIFY }
 }
 
-pub mod date_time {
-    use chrono::serde::ts_nanoseconds;
-    use chrono::{offset::Utc, DateTime};
-    use serde::{Deserializer, Serialize, Serializer};
+pub mod instant {
+    use jiff::Timestamp;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S>(dt: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(dt: &Timestamp, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         if super::should_prettify() {
             dt.serialize(serializer)
         } else {
-            ts_nanoseconds::serialize(dt, serializer)
+            (dt.as_nanosecond() as i64).serialize(serializer)
         }
     }
 
-    pub fn deserialize<'de, D>(d: D) -> Result<DateTime<Utc>, D::Error>
+    pub fn deserialize<'de, D>(d: D) -> Result<Timestamp, D::Error>
     where
         D: Deserializer<'de>,
     {
-        ts_nanoseconds::deserialize(d)
+        let i = i64::deserialize(d)?;
+        Timestamp::from_nanosecond(i as i128).map_err(serde::de::Error::custom)
     }
 }
 
-pub mod date_time_option {
-    use chrono::serde::ts_nanoseconds_option;
-    use chrono::{offset::Utc, DateTime};
-    use serde::{Deserializer, Serialize, Serializer};
+pub mod instant_option {
+    use jiff::Timestamp;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S>(dt: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(dt: &Option<Timestamp>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         if super::should_prettify() {
             dt.serialize(serializer)
         } else {
-            ts_nanoseconds_option::serialize(dt, serializer)
+            dt.map(|t| t.as_nanosecond() as i64).serialize(serializer)
         }
     }
 
-    pub fn deserialize<'de, D>(d: D) -> Result<Option<DateTime<Utc>>, D::Error>
+    pub fn deserialize<'de, D>(d: D) -> Result<Option<Timestamp>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        ts_nanoseconds_option::deserialize(d)
+        let oi = Option::<i64>::deserialize(d)?;
+        oi.map(|i| Timestamp::from_nanosecond(i as i128))
+            .transpose()
+            .map_err(serde::de::Error::custom)
     }
 }

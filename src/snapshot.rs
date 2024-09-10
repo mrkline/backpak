@@ -28,7 +28,7 @@ use std::sync::{
 
 use anyhow::{bail, ensure, Context, Result};
 use camino::Utf8PathBuf;
-use chrono::prelude::*;
+use jiff::Zoned;
 use rayon::prelude::*;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
@@ -41,8 +41,9 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
-    /// The time (local + TZ offset) whe the snapshot was taken
-    pub time: DateTime<FixedOffset>,
+    /// The time (instant + local time + TZ) when the snapshot was taken
+    #[serde(deserialize_with = "deserialize_zoned")]
+    pub time: Zoned,
     /// Snapshot author, defaulting to the machine's hostname
     pub author: String,
     /// Arbitrary user tags
@@ -64,6 +65,20 @@ pub struct Snapshot {
     pub paths: BTreeSet<Utf8PathBuf>,
     /// A tree where each path is a child node.
     pub tree: ObjectId,
+}
+
+// Older snapshots saved with chrono will be yyyy-mm-ddTH:M:S.f:z
+pub fn deserialize_zoned<'de, D>(d: D) -> Result<Zoned, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    let as_str = String::deserialize(d)?;
+    as_str
+        .parse()
+        .or_else(|_e| Zoned::strptime("%FT%H:%M:%S%.f%:V", &as_str))
+        .map_err(serde::de::Error::custom)
 }
 
 const MAGIC_BYTES: &[u8] = b"MKBAKSNP1";
@@ -152,7 +167,7 @@ pub fn load_chronologically_with_total_size(
             Ok((snap, snapshot_id))
         })
         .collect::<Result<Vec<_>>>()?;
-    snapshots.sort_by_key(|(snap, _)| snap.time);
+    snapshots.sort_by_key(|(snap, _)| snap.time.timestamp());
     Ok((snapshots, total.load(Ordering::SeqCst)))
 }
 
@@ -216,7 +231,7 @@ mod test {
 
     fn build_test_snapshot() -> Snapshot {
         Snapshot {
-            time: DateTime::parse_from_rfc3339("1969-07-20T20:17:40Z").unwrap(),
+            time: "1969-07-20T20:17:40Z[UTC]".parse().unwrap(),
             author: String::from("Neil"),
             tags: ["Apollo", "NASA"]
                 .iter()
@@ -248,8 +263,8 @@ mod test {
 
         // ID remains stable
         assert_eq!(
-            format!("{}", id),
-            "pkfspsfbk6f085uj3t7m6sghec5oa7l3pelt6timapj6e"
+            id.to_string(),
+            "4t84ab7sgsjjss803e30mdrokbnibg7ubpb4leds2e91g"
         );
         // Contents remain stable
         // (We could just use the ID and length,

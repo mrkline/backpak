@@ -195,7 +195,7 @@ impl Cache {
 }
 
 fn now_nanos() -> i64 {
-    chrono::Utc::now().timestamp_nanos_opt().unwrap()
+    jiff::Timestamp::now().as_nanosecond() as i64
 }
 
 pub fn setup(conf: &config::Configuration) -> Result<Cache> {
