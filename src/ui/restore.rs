@@ -7,8 +7,8 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
-use chrono::prelude::*;
 use clap::Parser;
+use jiff::Timestamp;
 use rustc_hash::FxHashMap;
 use rustix::fs::Timespec;
 use tracing::*;
@@ -270,10 +270,10 @@ fn load_fs_tree_and_mapping<'a>(
 }
 
 #[cfg(unix)]
-fn to_timespec(c: DateTime<Utc>) -> Timespec {
+fn to_timespec(t: Timestamp) -> Timespec {
     Timespec {
-        tv_sec: c.timestamp(),
-        tv_nsec: c.timestamp_subsec_nanos().into(),
+        tv_sec: t.as_second(),
+        tv_nsec: t.subsec_nanosecond() as i64,
     }
 }
 
@@ -316,8 +316,9 @@ impl Restorer<'_> {
             if mtime.is_none() && atime.is_none() {
                 trace!("--times given but {node_path} has no time metadata");
             } else {
-                let atime = atime.unwrap_or_else(Utc::now);
-                let mtime = mtime.unwrap_or_else(Utc::now);
+                let now = Timestamp::now();
+                let atime = atime.unwrap_or(now);
+                let mtime = mtime.unwrap_or(now);
                 trace!("setting timestamps for {node_path}");
                 // trace!("    atime: {:?}", atime);
                 // trace!("    tmtime: {:?}", mtime);

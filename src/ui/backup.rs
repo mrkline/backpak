@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
-use chrono::prelude::*;
 use clap::Parser;
 use regex::RegexSet;
 use rustc_hash::FxHashSet;
@@ -166,8 +165,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
                 .to_string(),
         };
 
-        // DateTime<Local> -> DateTime<FixedOffset>
-        let time: DateTime<FixedOffset> = Local::now().into();
+        let time = jiff::Zoned::now();
 
         let snapshot = Snapshot {
             time,

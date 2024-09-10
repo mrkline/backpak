@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
-use chrono::prelude::*;
+use jiff::Timestamp;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::{Deserialize, Serialize};
 use tracing::*;
@@ -92,10 +92,10 @@ pub struct PosixMetadata {
     pub user_id: u32,
     #[serde(rename = "gid")]
     pub group_id: u32,
-    #[serde(rename = "atime", with = "prettify::date_time")]
-    pub access_time: DateTime<Utc>,
-    #[serde(rename = "mtime", with = "prettify::date_time")]
-    pub modify_time: DateTime<Utc>,
+    #[serde(rename = "atime", with = "prettify::instant")]
+    pub access_time: Timestamp,
+    #[serde(rename = "mtime", with = "prettify::instant")]
+    pub modify_time: Timestamp,
     // No change time - it's when the metadata changes, and since we can't set that
     // when restoring a file, nor compare it meaningfully between snapshots,
     // just leave it off.
@@ -112,12 +112,12 @@ pub struct WindowsMetadata {
     // Unlike POSIX, all three of these can be set:
     // https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime
     // so recording them is helpful.
-    #[serde(with = "prettify::date_time_option")]
-    pub creation_time: Option<DateTime<Utc>>,
-    #[serde(with = "prettify::date_time_option")]
-    pub access_time: Option<DateTime<Utc>>,
-    #[serde(with = "prettify::date_time_option")]
-    pub write_time: Option<DateTime<Utc>>,
+    #[serde(with = "prettify::instant_option")]
+    pub creation_time: Option<Timestamp>,
+    #[serde(with = "prettify::instant_option")]
+    pub access_time: Option<Timestamp>,
+    #[serde(with = "prettify::instant_option")]
+    pub write_time: Option<Timestamp>,
 }
 
 /// A file or directory's metadata - Windows or Posix.
@@ -210,14 +210,14 @@ impl NodeMetadata {
         }
     }
 
-    pub fn modification_time(&self) -> Option<DateTime<Utc>> {
+    pub fn modification_time(&self) -> Option<Timestamp> {
         match self {
             NodeMetadata::Posix(p) => Some(p.modify_time),
             NodeMetadata::Windows(w) => w.write_time,
         }
     }
 
-    pub fn access_time(&self) -> Option<DateTime<Utc>> {
+    pub fn access_time(&self) -> Option<Timestamp> {
         match self {
             NodeMetadata::Posix(p) => Some(p.access_time),
             NodeMetadata::Windows(w) => w.access_time,
@@ -238,12 +238,8 @@ pub fn get_metadata(symlink_behavior: Symlink, path: &Utf8Path) -> Result<NodeMe
     let size = (posix_kind(mode) == NodeType::File).then(|| meta.size());
     let user_id = meta.uid();
     let group_id = meta.gid();
-    let access_time = chrono::Utc
-        .timestamp_opt(meta.atime(), meta.atime_nsec() as u32)
-        .unwrap();
-    let modify_time = chrono::Utc
-        .timestamp_opt(meta.mtime(), meta.mtime_nsec() as u32)
-        .unwrap();
+    let access_time = Timestamp::new(meta.atime(), meta.atime_nsec() as i32).unwrap();
+    let modify_time = Timestamp::new(meta.mtime(), meta.mtime_nsec() as i32).unwrap();
 
     Ok(NodeMetadata::Posix(PosixMetadata {
         mode,
@@ -280,7 +276,7 @@ pub fn get_metadata(symlink_behavior: Symlink, path: &Utf8Path) -> Result<NodeMe
 }
 
 #[cfg(windows)]
-fn windows_timestamp(ts: u64) -> Option<DateTime<Utc>> {
+fn windows_timestamp(ts: u64) -> Option<Timestamp> {
     // Windows returns 100ns intervals since January 1, 1601
     const TICKS_PER_SECOND: u64 = 1_000_000_000 / 100;
 
@@ -597,12 +593,8 @@ mod test {
                     size: Some(42),
                     user_id: 1234,
                     group_id: 5678,
-                    access_time: DateTime::parse_from_rfc3339("2020-10-30T06:30:25.157873535Z")
-                        .unwrap()
-                        .into(),
-                    modify_time: DateTime::parse_from_rfc3339("2020-10-30T06:30:25.034542588Z")
-                        .unwrap()
-                        .into(),
+                    access_time: "2020-10-30T06:30:25.157873535Z".parse().unwrap(),
+                    modify_time: "2020-10-30T06:30:25.034542588Z".parse().unwrap(),
                 }),
             },
         );
@@ -616,16 +608,8 @@ mod test {
                     attributes: 0xdeadbeef,
                     size: None,
                     creation_time: None,
-                    access_time: Some(
-                        DateTime::parse_from_rfc3339("2020-10-29T09:11:05.701157660Z")
-                            .unwrap()
-                            .into(),
-                    ),
-                    write_time: Some(
-                        DateTime::parse_from_rfc3339("2020-10-24T01:22:27.624697907Z")
-                            .unwrap()
-                            .into(),
-                    ),
+                    access_time: Some("2020-10-29T09:11:05.701157660Z".parse().unwrap()),
+                    write_time: Some("2020-10-24T01:22:27.624697907Z".parse().unwrap()),
                 }),
             },
         );

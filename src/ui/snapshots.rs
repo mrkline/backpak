@@ -92,7 +92,10 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         }
         println!("Author: {}", snapshot.author);
 
-        println!("Date:   {}", snapshot.time.format("%a %F %H:%M:%S %z"));
+        // Shamelessly stolen from Git; it's nice!
+        let datestr = snapshot.time.strftime("%a %b %-e %H:%M:%S %Y %:V");
+        println!("Date:   {datestr}");
+
         for path in snapshot.paths {
             println!("    - {path}");
         }

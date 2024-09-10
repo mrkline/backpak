@@ -32,8 +32,8 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
         println!(
             "{} snapshots, from {} to {}",
             snapshots.len(),
-            snapshots.first().unwrap().0.time.date_naive(),
-            snapshots.last().unwrap().0.time.date_naive()
+            snapshots.first().unwrap().0.time.datetime(),
+            snapshots.last().unwrap().0.time.datetime()
         );
         let mut totals = tree::ForestSizes::default();
 

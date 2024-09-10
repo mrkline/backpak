@@ -55,7 +55,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             desired_snaps.push((s.clone(), *i));
         }
         // Take whatever the user asked for and make it chronological with no duplicates.
-        desired_snaps.sort_by_key(|(snap, _)| snap.time);
+        desired_snaps.sort_by_key(|(snap, _)| snap.time.timestamp());
         desired_snaps.dedup_by(|(_, id1), (_, id2)| id1 == id2);
         src_snapshots = desired_snaps;
     }
