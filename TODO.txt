@@ -1,13 +1,3 @@
-## jiff?
-
-- Should be able to drop into tree and snapshot - maybe with a little custom parsing?
-
-- Named time zones sounds nice
-
-- Rounding to nearest second seems nice for snapshots - any potential sorting issues?
-  (Do we care? We'd like `snapshots` not to change based on backend fetch order,
-  but do we need to guard against multiple snapshots per seconds? Git doesn't.)
-
 ## filter-snapshot
 
 Make a new snapshot with previous contents of another in the same repo?
