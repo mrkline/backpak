@@ -5,7 +5,6 @@ use std::sync::Arc;
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
-use regex::RegexSet;
 use rustc_hash::FxHashSet;
 use tracing::*;
 
@@ -14,6 +13,7 @@ use crate::backup::*;
 use crate::blob::{self, Blob};
 use crate::chunk;
 use crate::file_util::nice_size;
+use crate::filter;
 use crate::fs_tree;
 use crate::hashing::ObjectId;
 use crate::index;
@@ -245,15 +245,13 @@ fn backup_tree(
 ) -> Result<(ObjectId, u64)> {
     use fs_tree::DirectoryEntry;
 
-    let skipset = RegexSet::new(skips).context("Skip rules are not valid regex")?;
-
-    let mut filter = |path: &Utf8Path| {
-        if skipset.is_match(path.as_str()) {
+    let mf = filter::skip_matching_paths(skips)?;
+    let mut filter = move |path: &Utf8Path| {
+        let res = mf(path);
+        if !res {
             info!("{:>9} {}", "skip", path);
-            Ok(false)
-        } else {
-            Ok(true)
         }
+        Ok(res)
     };
 
     // Both closures need to get at packed_blobs at some point...
