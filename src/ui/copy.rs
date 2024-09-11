@@ -6,6 +6,7 @@ use clap::Parser;
 
 use crate::backend;
 use crate::backup;
+use crate::filter;
 use crate::index;
 use crate::read;
 use crate::repack;
@@ -18,6 +19,10 @@ use crate::tree;
 pub struct Args {
     #[clap(short = 'n', long)]
     dry_run: bool,
+
+    /// Skip anything whose absolute path matches the given regular expression
+    #[clap(short = 's', long = "skip", name = "regex")]
+    skips: Vec<String>,
 
     /// Destination repository
     #[clap(short, long, name = "PATH")]
@@ -99,9 +104,13 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     }
     drop(cwd_packfiles);
 
+    let mf = filter::skip_matching_paths(&args.skips)?;
+    let filter = |p: &Utf8Path| Ok(mf(p));
+
     repack::walk_snapshots(
         repack::Op::Copy,
         &src_snapshots_and_forests,
+        filter,
         &mut reader,
         &mut packed_blobs,
         &mut backup,

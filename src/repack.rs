@@ -37,26 +37,40 @@ pub enum Op {
     Prune,
 }
 
-pub fn walk_snapshots(
+pub fn walk_snapshots<Filter>(
     op: Op,
     snapshots_and_forests: &[SnapshotAndForest],
+    mut filter: Filter,
     reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
-) -> Result<()> {
+) -> Result<()>
+where
+    Filter: FnMut(
+        &Utf8Path,
+        // More some day?
+    ) -> Result<bool>,
+{
     for snapshot in snapshots_and_forests.iter() {
-        walk_snapshot(op, snapshot, reader, packed_blobs, backup)?
+        walk_snapshot(op, snapshot, &mut filter, reader, packed_blobs, backup)?
     }
     Ok(())
 }
 
-fn walk_snapshot(
+fn walk_snapshot<Filter>(
     op: Op,
     snapshot_and_forest: &SnapshotAndForest,
+    filter: &mut Filter,
     reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
-) -> Result<()> {
+) -> Result<()>
+where
+    Filter: FnMut(
+        &Utf8Path,
+        // More some day?
+    ) -> Result<bool>,
+{
     let action = match op {
         Op::Copy => "Copying snapshot",
         Op::Prune => "Repacking loose blobs from snapshot",
@@ -64,6 +78,7 @@ fn walk_snapshot(
     info!("{action} {}", snapshot_and_forest.id);
     walk_tree(
         op,
+        filter,
         Utf8Path::new(""),
         &snapshot_and_forest.snapshot.tree,
         &snapshot_and_forest.forest,
@@ -74,15 +89,23 @@ fn walk_snapshot(
     .with_context(|| format!("In snapshot {}", snapshot_and_forest.id))
 }
 
-fn walk_tree(
+#[expect(clippy::too_many_arguments)] // We know, sit down.
+fn walk_tree<Filter>(
     op: Op,
+    filter: &mut Filter,
     tree_path: &Utf8Path,
     tree_id: &ObjectId,
     forest: &tree::Forest,
     reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Option<backup::Backup>,
-) -> Result<()> {
+) -> Result<()>
+where
+    Filter: FnMut(
+        &Utf8Path,
+        // More some day?
+    ) -> Result<bool>,
+{
     let tree: &tree::Tree = forest
         .get(tree_id)
         .ok_or_else(|| anyhow!("Missing tree {}", tree_id))
@@ -91,6 +114,10 @@ fn walk_tree(
     for (path, node) in tree {
         let mut node_path = tree_path.to_owned();
         node_path.push(path);
+        if !filter(&node_path)? {
+            info!("  {:>9} {node_path}", "skip");
+            continue;
+        }
 
         match &node.contents {
             tree::NodeContents::File { chunks } => {
@@ -120,6 +147,7 @@ fn walk_tree(
             tree::NodeContents::Directory { subtree } => {
                 walk_tree(
                     op,
+                    filter,
                     &node_path,
                     subtree,
                     forest,

@@ -171,9 +171,13 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Get a reader to load the chunks we're repacking.
     let mut reader = read::ChunkReader::new(&cached_backend, &index, &blob_map);
 
+    // We don't skip over anything as we prune; that'd leave us in a nasy state.
+    let filter = |_p: &Utf8Path| Ok(true);
+
     repack::walk_snapshots(
         repack::Op::Prune,
         &snapshots_and_forests,
+        filter,
         &mut reader,
         &mut packed_blobs,
         &mut backup,
