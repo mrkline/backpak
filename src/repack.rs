@@ -58,12 +58,13 @@ fn walk_snapshot(
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     let action = match op {
-        Op::Copy => "Copying snapshot ",
-        Op::Prune => "Repacking any loose blobs from snapshot ",
+        Op::Copy => "Copying snapshot",
+        Op::Prune => "Repacking loose blobs from snapshot",
     };
-    debug!("{action} {}", snapshot_and_forest.id);
+    info!("{action} {}", snapshot_and_forest.id);
     walk_tree(
         op,
+        Utf8Path::new(""),
         &snapshot_and_forest.snapshot.tree,
         &snapshot_and_forest.forest,
         reader,
@@ -75,6 +76,7 @@ fn walk_snapshot(
 
 fn walk_tree(
     op: Op,
+    tree_path: &Utf8Path,
     tree_id: &ObjectId,
     forest: &tree::Forest,
     reader: &mut read::ChunkReader,
@@ -87,25 +89,49 @@ fn walk_tree(
         .unwrap();
 
     for (path, node) in tree {
+        let mut node_path = tree_path.to_owned();
+        node_path.push(path);
+
         match &node.contents {
             tree::NodeContents::File { chunks } => {
+                let mut chunks_repacked = false;
+                let verb = match op {
+                    Op::Copy => "copied",
+                    Op::Prune => "repacked",
+                };
+
                 for chunk in chunks {
                     if packed_blobs.insert(*chunk) {
-                        repack_chunk(op, chunk, path, reader, backup)?;
+                        repack_chunk(op, chunk, reader, backup)?;
+                        chunks_repacked = true;
                     } else {
-                        let verb = match op {
-                            Op::Copy => "copied",
-                            Op::Prune => "repacked",
-                        };
-                        trace!("Skipping chunk {chunk}; already {verb}");
+                        trace!("chunk {chunk} already {verb}");
                     }
+                }
+                if chunks_repacked {
+                    info!("  {verb:>9} {node_path}");
+                } else {
+                    info!("  {:>9} {node_path}", "deduped"); // Sorta; "unneeded"? Bleh.
                 }
             }
             tree::NodeContents::Symlink { .. } => {
                 // Nothing to repack for symlinks.
             }
             tree::NodeContents::Directory { subtree } => {
-                walk_tree(op, subtree, forest, reader, packed_blobs, backup)?
+                walk_tree(
+                    op,
+                    &node_path,
+                    subtree,
+                    forest,
+                    reader,
+                    packed_blobs,
+                    backup,
+                )?;
+                info!(
+                    "  {:>9} {node_path}{}",
+                    "finished",
+                    std::path::MAIN_SEPARATOR
+                );
             }
         }
     }
@@ -113,7 +139,7 @@ fn walk_tree(
     if packed_blobs.insert(*tree_id) {
         repack_tree(op, tree_id, tree, backup)?;
     } else {
-        trace!("Skipping tree {}; already packed", tree_id);
+        trace!("tree {} already packed", tree_id);
     }
     Ok(())
 }
@@ -121,15 +147,14 @@ fn walk_tree(
 fn repack_chunk<'a, 'b: 'a>(
     op: Op,
     id: &'a ObjectId,
-    path: &Utf8Path,
     reader: &mut read::ChunkReader<'b>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     let verb = match op {
-        Op::Copy => "Copying",
-        Op::Prune => "Repacking",
+        Op::Copy => "copy",
+        Op::Prune => "repack",
     };
-    trace!("{verb} chunk {id} from {path}");
+    trace!("{verb} chunk {id}");
     if let Some(b) = backup {
         // TODO: Don't clone this? Make the Buffer RC? The blob cache Arc? Ugh, where GC
         let contents = blob::Contents::Buffer((*reader.read_blob(id)?).clone());
@@ -149,8 +174,8 @@ fn repack_tree(
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
     let verb = match op {
-        Op::Copy => "Copying",
-        Op::Prune => "Repacking",
+        Op::Copy => "copy",
+        Op::Prune => "repack",
     };
     trace!("{verb} tree {}", id);
 
