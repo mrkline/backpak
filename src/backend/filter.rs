@@ -41,11 +41,9 @@ impl Drop for UnfilterRead {
                     self.from, self.unfilter, e
                 )
             });
-        trace!("Waiting for {} < {} to exit...", self.unfilter, self.from);
         if !self.child.wait().unwrap().success() {
             panic!("{} < {} failed", self.unfilter, self.from)
         }
-        trace!("...{} < {} exited", self.unfilter, self.from);
     }
 }
 
@@ -130,12 +128,10 @@ impl Backend for BackendFilter {
         })
         .with_context(|| format!("Piping {to} through {} failed", self.filter))?;
 
-        trace!("Waiting for {} > {to} to exit...", self.filter);
         ensure!(
             f.wait().unwrap().success(),
             format!("{} > {to} failed", self.filter)
         );
-        trace!("...{} > {to} exited", self.filter);
 
         // Meanwhile, in this thread, copy to the underlying backend.
         let len = filtered.stream_position()?;

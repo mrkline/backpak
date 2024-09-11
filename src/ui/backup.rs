@@ -265,12 +265,14 @@ fn backup_tree(
      -> Result<()> {
         let (subnode, subnode_bytes_reused) = match entry {
             DirectoryEntry::Directory((subtree, subtree_bytes_reused)) => {
+                /*
                 trace!(
                     "{}{} packed as {}",
                     path,
                     std::path::MAIN_SEPARATOR,
                     subtree
                 );
+                */
                 info!("{:>9} {}{}", "finished", path, std::path::MAIN_SEPARATOR);
 
                 let t = tree::Node {
@@ -322,7 +324,6 @@ fn backup_tree(
                         }
                     } else {
                         reused_bytes += chunk.bytes().len() as u64;
-                        trace!("chunk {} already packed", chunk.id);
                     }
                     total_chunks += 1;
                 }

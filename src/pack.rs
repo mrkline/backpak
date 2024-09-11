@@ -224,15 +224,6 @@ impl PackfileWriter {
 
     /// Write the given file chunk or tree to the packfile and add it to the manifest.
     fn write_blob(&mut self, blob: Blob) -> io::Result<u64> {
-        match blob.kind {
-            blob::Type::Chunk => {
-                trace!("Writing chunk {}", blob.id);
-            }
-            blob::Type::Tree => {
-                trace!("Writing tree {}", blob.id);
-            }
-        };
-
         let blob_bytes: &[u8] = blob.bytes();
 
         let blob_length = blob_bytes.len();
@@ -332,7 +323,6 @@ pub fn verify<R: Read + Seek>(
             hash,
             entry.id
         );
-        trace!("Blob {} matches its ID", entry.id);
     }
 
     // Attempting to read the manifest from CBOR
@@ -461,7 +451,6 @@ pub fn append_to_forest<R: Read + Seek>(
         }
 
         if forest.contains_key(&entry.id) {
-            trace!("Tree {} is already in the forest, skipping", entry.id);
             continue;
         }
 

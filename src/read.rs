@@ -121,7 +121,6 @@ impl<'a> ChunkReader<'a> {
     pub fn read_blob(&mut self, id: &ObjectId) -> Result<Rc<Vec<u8>>> {
         // If we get a cache hit, EZ!
         if let Some(b) = self.cache.get(id) {
-            trace!("Found tree {id} in-cache");
             counters::bump(counters::Op::ChunkCacheHit);
             return Ok(b);
         }
@@ -134,7 +133,7 @@ impl<'a> ChunkReader<'a> {
             .get(id)
             .ok_or_else(|| anyhow!("Chunk {id} not found in any pack"))?;
 
-        debug!("Reading pack {pack_id} into tree cache to get chunk {id}");
+        debug!("Chunk cache miss; reading pack {pack_id}");
         let loaded_size = self
             .load_pack(pack_id)
             .with_context(|| format!("Couldn't load pack {pack_id}"))?;

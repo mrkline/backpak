@@ -4,10 +4,9 @@ use std::sync::{mpsc, Arc};
 use std::thread;
 
 use anyhow::{Context, Result};
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::Utf8Path;
 use fastcdc::v2020::{Chunk, FastCDC};
 use ouroboros::self_referencing;
-use tracing::*;
 
 use crate::blob::{self, Blob};
 use crate::file_util::{self, LoadedFile};
@@ -41,7 +40,7 @@ use crate::hashing::ObjectId;
 pub fn chunk_file<P: AsRef<Utf8Path>>(path: P) -> Result<impl Iterator<Item = Blob>> {
     let path: &Utf8Path = path.as_ref();
     let file = file_util::read_file(path).with_context(|| format!("Couldn't read {path}"))?;
-    Ok(ChunkIterator::new(path.to_owned(), file))
+    Ok(ChunkIterator::new(file))
 }
 
 fn new_cdc(src: &[u8]) -> FastCDC {
@@ -59,11 +58,11 @@ enum ChunkIterator {
 }
 
 impl ChunkIterator {
-    fn new(path: Utf8PathBuf, file: Arc<LoadedFile>) -> Self {
+    fn new(file: Arc<LoadedFile>) -> Self {
         // "small" is decided by whether we read or memory-mapped the file in `read_file()`
         match *file {
-            LoadedFile::Buffered(_) => ChunkIterator::Simple(SmallFileChunker::from(path, file)),
-            LoadedFile::Mapped(_) => ChunkIterator::Threaded(ThreadedChunker::from(path, file)),
+            LoadedFile::Buffered(_) => ChunkIterator::Simple(SmallFileChunker::from(file)),
+            LoadedFile::Mapped(_) => ChunkIterator::Threaded(ThreadedChunker::from(file)),
         }
     }
 }
@@ -83,8 +82,6 @@ impl Iterator for ChunkIterator {
 /// that into [`chunk_file()`]'s caller.
 #[self_referencing]
 struct SmallFileChunker {
-    /// Just for tracing the file's blob spans
-    path: Utf8PathBuf,
     file: Arc<LoadedFile>,
     #[borrows(file)]
     #[not_covariant]
@@ -92,10 +89,9 @@ struct SmallFileChunker {
 }
 
 impl SmallFileChunker {
-    fn from(path: Utf8PathBuf, file: Arc<LoadedFile>) -> Self {
+    fn from(file: Arc<LoadedFile>) -> Self {
         assert!(matches!(*file, LoadedFile::Buffered(_)));
         SmallFileChunkerBuilder {
-            path,
             file,
             chunker_builder: |f: &Arc<LoadedFile>| new_cdc(f.bytes()),
         }
@@ -107,18 +103,14 @@ impl Iterator for SmallFileChunker {
     type Item = Blob;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.with_mut(|s| {
-            s.chunker
-                .next()
-                .map(|c| chunk_to_blob(s.path, s.file.clone(), c))
-        })
+        self.with_mut(|s| s.chunker.next().map(|c| chunk_to_blob(s.file.clone(), c)))
     }
 }
 
 struct ThreadedChunker(mpsc::IntoIter<Blob>);
 
 impl ThreadedChunker {
-    fn from(path: Utf8PathBuf, file: Arc<LoadedFile>) -> Self {
+    fn from(file: Arc<LoadedFile>) -> Self {
         assert!(matches!(*file, LoadedFile::Mapped(_)));
         // Arbitrary-sized channels, but bust our usual "no buffering" rule -
         // the code that calls `chunk_file()` is only doing this once at a time,
@@ -135,10 +127,7 @@ impl ThreadedChunker {
         });
         thread::spawn(move || {
             while let Ok(cut) = cuts_rx.recv() {
-                if blobs_tx
-                    .send(chunk_to_blob(&path, file2.clone(), cut))
-                    .is_err()
-                {
+                if blobs_tx.send(chunk_to_blob(file2.clone(), cut)).is_err() {
                     break;
                 }
             }
@@ -170,14 +159,14 @@ impl AsRef<[u8]> for FileSpan {
     }
 }
 
-fn chunk_to_blob(path: &Utf8Path, file: Arc<LoadedFile>, chunk: Chunk) -> Blob {
+fn chunk_to_blob(file: Arc<LoadedFile>, chunk: Chunk) -> Blob {
     let start = chunk.offset;
     let end = chunk.offset + chunk.length;
     let span = FileSpan { file, start, end };
 
     let id = ObjectId::hash(span.as_ref());
 
-    trace!("{}: [{}..{}] {}", path, start, end, id);
+    // trace!("{}: [{}..{}] {}", path, start, end, id);
 
     Blob {
         contents: blob::Contents::Span(span),

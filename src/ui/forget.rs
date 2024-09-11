@@ -98,8 +98,10 @@ fn forget_snapshot_list(
 
 fn forget_snapshot(cached_backend: &backend::CachedBackend, id: &ObjectId, dry_run: bool) -> bool {
     if dry_run {
-        info!("Would remove {}", id);
+        info!("Would remove {id}");
         return true;
+    } else {
+        info!("Forgetting {id}");
     }
 
     match cached_backend.remove_snapshot(id) {
