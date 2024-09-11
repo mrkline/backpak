@@ -133,7 +133,7 @@ impl<'a> ChunkReader<'a> {
             .get(id)
             .ok_or_else(|| anyhow!("Chunk {id} not found in any pack"))?;
 
-        debug!("Chunk cache miss; reading pack {pack_id}");
+        trace!("Chunk cache miss; reading pack {pack_id}");
         let loaded_size = self
             .load_pack(pack_id)
             .with_context(|| format!("Couldn't load pack {pack_id}"))?;
