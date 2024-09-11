@@ -83,13 +83,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
 
     let mut missing_chunks: usize = 0;
     for (chunk, snapshots) in &chunks_to_snapshots {
-        if blob_map.contains_key(chunk) {
-            trace!(
-                "Chunk {} is reachable (used by {} snapshots)",
-                chunk,
-                snapshots.len()
-            );
-        } else {
+        if !blob_map.contains_key(chunk) {
             error!(
                 "Chunk {} is unreachable! (Used by snapshots {})",
                 chunk,

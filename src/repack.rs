@@ -129,10 +129,8 @@ where
 
                 for chunk in chunks {
                     if packed_blobs.insert(*chunk) {
-                        repack_chunk(op, chunk, reader, backup)?;
+                        repack_chunk(chunk, reader, backup)?;
                         chunks_repacked = true;
-                    } else {
-                        trace!("chunk {chunk} already {verb}");
                     }
                 }
                 if chunks_repacked {
@@ -165,24 +163,16 @@ where
     }
 
     if packed_blobs.insert(*tree_id) {
-        repack_tree(op, tree_id, tree, backup)?;
-    } else {
-        trace!("tree {} already packed", tree_id);
+        repack_tree(tree_id, tree, backup)?;
     }
     Ok(())
 }
 
 fn repack_chunk<'a, 'b: 'a>(
-    op: Op,
     id: &'a ObjectId,
     reader: &mut read::ChunkReader<'b>,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
-    let verb = match op {
-        Op::Copy => "copy",
-        Op::Prune => "repack",
-    };
-    trace!("{verb} chunk {id}");
     if let Some(b) = backup {
         // TODO: Don't clone this? Make the Buffer RC? The blob cache Arc? Ugh, where GC
         let contents = blob::Contents::Buffer((*reader.read_blob(id)?).clone());
@@ -196,17 +186,10 @@ fn repack_chunk<'a, 'b: 'a>(
 }
 
 fn repack_tree(
-    op: Op,
     id: &ObjectId,
     tree: &tree::Tree,
     backup: &mut Option<backup::Backup>,
 ) -> Result<()> {
-    let verb = match op {
-        Op::Copy => "copy",
-        Op::Prune => "repack",
-    };
-    trace!("{verb} tree {}", id);
-
     let (reserialized, check_id) = tree::serialize_and_hash(tree)?;
     // Sanity check:
     ensure!(

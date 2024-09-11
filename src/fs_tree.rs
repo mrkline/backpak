@@ -36,16 +36,15 @@ pub fn file_changed(
 
     let previous_metadata = &previous_node.metadata;
     if metadata.modification_time() != previous_metadata.modification_time() {
-        trace!("{path} was changed since its backup");
+        trace!("{path} has a new mtime");
         return true;
     }
 
     if metadata.size() != previous_metadata.size() {
-        trace!("{path} is a different size than its backup");
+        trace!("{path} has a new size");
         return true;
     }
 
-    trace!("{path} matches its previous size and modification time. Reuse previous chunks");
     false
 }
 
@@ -234,7 +233,6 @@ pub fn forest_from_fs(
 
         if let Some(previous) = forest.insert(id, tree.clone()) {
             debug_assert_eq!(*previous, *tree);
-            trace!("tree {} already hashed", id);
         }
         Ok((id, forest))
     }

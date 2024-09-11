@@ -48,13 +48,11 @@ pub fn read_file(path: &Utf8Path) -> Result<Arc<LoadedFile>> {
     let file_length = fh.metadata()?.len();
 
     let file = if file_length < 10 * MEGA {
-        trace!("{path} is < 10MB, reading to buffer");
         let mut buffer = Vec::with_capacity(file_length as usize);
         fh.read_to_end(&mut buffer)?;
         counters::bump(counters::Op::FileToBuffer);
         LoadedFile::Buffered(buffer)
     } else {
-        trace!("{path} is > 10MB, memory mapping");
         let mapping = unsafe { memmap2::Mmap::map(&fh)? };
         counters::bump(counters::Op::FileToMmap);
         LoadedFile::Mapped(mapping)
@@ -81,7 +79,7 @@ where
     // POSIX lets us rename opened files. Neat!
     match std::fs::rename(from, to) {
         Ok(()) => {
-            debug!("Renamed {from} to {to}");
+            trace!("Renamed {from} to {to}");
             Ok(from_fh)
         },
         // Once stabilized: e.kind() == ErrorKind::CrossesDevices
@@ -109,7 +107,7 @@ fn move_by_copy(from: &Utf8Path, mut from_fh: File, to: &Utf8Path) -> Result<Fil
 
     // Axe /src/foo
     std::fs::remove_file(from).with_context(|| format!("Couldn't remove {from}"))?;
-    debug!("Moved {from} to {to}");
+    trace!("Moved {from} to {to}");
     Ok(to_fh)
 }
 

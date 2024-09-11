@@ -390,7 +390,6 @@ impl<'a> Cache<'a> {
     /// reading a new packfile if required.
     pub fn read(&mut self, id: &ObjectId) -> Result<Arc<Tree>> {
         if let Some(t) = self.tree_cache.get(id) {
-            trace!("Found tree {id} in-cache");
             counters::bump(counters::Op::TreeCacheHit);
             return Ok(t.clone());
         }
@@ -402,7 +401,7 @@ impl<'a> Cache<'a> {
             .get(id)
             .ok_or_else(|| anyhow!("No pack contains tree {}", id))?;
 
-        debug!("Reading pack {pack_id} into tree cache to get tree {id}");
+        trace!("Cache miss; reading pack {pack_id}");
         let mut pack_containing_tree = self.pack_cache.read_pack(pack_id)?;
         let manifest = self
             .index
@@ -421,7 +420,7 @@ impl<'a> Cache<'a> {
 
 /// Reads the given tree and all its subtrees from the given tree cache.
 pub fn forest_from_root(root: &ObjectId, cache: &mut Cache) -> Result<Forest> {
-    trace!("Assembling tree from root {}", root);
+    trace!("Assembling forest from root {}", root);
     let mut forest = Forest::default();
     let mut stack_set = FxHashSet::default();
     append_tree(root, &mut forest, cache, &mut stack_set)?;
