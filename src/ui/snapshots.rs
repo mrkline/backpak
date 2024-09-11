@@ -97,7 +97,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         println!("Date:   {datestr}");
 
         for path in snapshot.paths {
-            println!("    - {path}");
+            println!("  - {path}");
         }
 
         println!();
