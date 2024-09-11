@@ -442,19 +442,26 @@ pub fn append_to_forest<R: Read + Seek>(
     let mut decoder = ZstdDecoder::new(packfile).context("Decompression of blob stream failed")?;
 
     for entry in manifest_from_index {
-        if entry.blob_type != blob::Type::Tree {
+        // If it's not a tree, or if we have it already, skip it!
+        let skip = if entry.blob_type != blob::Type::Tree {
             warn!(
                 "Chunk {} found in pack where we expected only trees",
                 entry.id
             );
+            true
+        } else {
+            forest.contains_key(&entry.id)
+        };
+        let entry_length = entry.length as u64;
+        if skip {
+            assert_eq!(
+                entry_length,
+                io::copy(&mut (&mut decoder).take(entry_length), &mut io::sink())?
+            );
             continue;
         }
 
-        if forest.contains_key(&entry.id) {
-            continue;
-        }
-
-        let mut hashing_decoder = HashingReader::new((&mut decoder).take(entry.length as u64));
+        let mut hashing_decoder = HashingReader::new((&mut decoder).take(entry_length));
 
         let to_add: tree::Tree = ciborium::from_reader(&mut hashing_decoder)
             .with_context(|| format!("CBOR decoding of tree {} failed", entry.id))?;
