@@ -10,6 +10,7 @@ pub mod config;
 pub mod counters;
 pub mod diff;
 pub mod file_util;
+pub mod filter;
 pub mod fs_tree;
 pub mod hashing;
 pub mod index;
