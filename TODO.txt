@@ -1,3 +1,11 @@
+## "snapshot has a different ID when reserialized"
+
+2024-08-21T01:42:26.393143891-07:00 -> 2024-08-21T01:42:26.393143891-07:00[-07:00]
+
+Fix it.
+
+On failure, subsequent check fails because we're missing trees
+
 ## filter-snapshot
 
 Make a new snapshot with previous contents of another in the same repo?
