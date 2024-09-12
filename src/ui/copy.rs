@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 
@@ -107,7 +107,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let mf = filter::skip_matching_paths(&args.skips)?;
     let filter = |p: &Utf8Path| Ok(mf(p));
 
-    repack::walk_snapshots(
+    let new_snapshots = repack::walk_snapshots(
         repack::Op::Copy,
         &src_snapshots_and_forests,
         filter,
@@ -122,13 +122,8 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let _stats = backup.map(|b| b.join()).transpose()?;
 
     if !args.dry_run {
-        for sf in &src_snapshots_and_forests {
-            let new_id = snapshot::upload(&sf.snapshot, &dst_cached_backend)?;
-            ensure!(
-                new_id == sf.id,
-                "Snapshot {} has a different ID ({new_id}) when reserialized",
-                sf.id
-            );
+        for snap in &new_snapshots {
+            snapshot::upload(snap, &dst_cached_backend)?;
         }
     }
 
