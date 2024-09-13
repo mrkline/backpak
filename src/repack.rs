@@ -160,6 +160,7 @@ where
                 node.clone()
             }
             tree::NodeContents::Symlink { .. } => {
+                info!("  {:>9} {node_path}", "deduped"); // Keep consistent with above
                 // Nothing to change or repack for symlinks.
                 node.clone()
             }
