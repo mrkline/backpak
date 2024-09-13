@@ -4,6 +4,7 @@ pub mod check;
 pub mod copy;
 pub mod diff;
 pub mod dump;
+pub mod filter_snapshot;
 pub mod forget;
 pub mod init;
 pub mod ls;
