@@ -55,7 +55,7 @@ where
     Filter: FnMut(
         &Utf8Path,
         // More some day?
-    ) -> Result<bool>,
+    ) -> bool,
 {
     let new_snaps = snapshots_and_forests
         .iter()
@@ -77,7 +77,7 @@ where
     Filter: FnMut(
         &Utf8Path,
         // More some day?
-    ) -> Result<bool>,
+    ) -> bool,
 {
     let action = match op {
         Op::Copy => "Copying snapshot",
@@ -116,7 +116,7 @@ where
     Filter: FnMut(
         &Utf8Path,
         // More some day?
-    ) -> Result<bool>,
+    ) -> bool,
 {
     let tree: &tree::Tree = forest
         .get(tree_id)
@@ -132,7 +132,7 @@ where
     for (path, node) in tree {
         let mut node_path = tree_path.to_owned();
         node_path.push(path);
-        if !filter(&node_path)? {
+        if !filter(&node_path) {
             info!("  {:>9} {node_path}", "skip");
             continue;
         }
