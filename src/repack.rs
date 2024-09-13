@@ -20,15 +20,21 @@ pub fn load_forests(
 ) -> Result<Vec<SnapshotAndForest>> {
     snapshots
         .into_iter()
-        .map(|(snapshot, id)| {
-            let forest = tree::forest_from_root(&snapshot.tree, tree_cache)?;
-            Ok(SnapshotAndForest {
-                id,
-                snapshot,
-                forest,
-            })
-        })
+        .map(|(snapshot, id)| load_forest(snapshot, id, tree_cache))
         .collect()
+}
+
+pub fn load_forest(
+    snapshot: Snapshot,
+    id: ObjectId,
+    tree_cache: &mut tree::Cache,
+) -> Result<SnapshotAndForest> {
+    let forest = tree::forest_from_root(&snapshot.tree, tree_cache)?;
+    Ok(SnapshotAndForest {
+        id,
+        snapshot,
+        forest,
+    })
 }
 
 /// What we're doing (different log messages make more sense for each)
@@ -161,6 +167,7 @@ where
             }
             tree::NodeContents::Symlink { .. } => {
                 info!("  {:>9} {node_path}", "deduped"); // Keep consistent with above
+
                 // Nothing to change or repack for symlinks.
                 node.clone()
             }
