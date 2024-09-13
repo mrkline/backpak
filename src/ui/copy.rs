@@ -104,8 +104,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     }
     drop(cwd_packfiles);
 
-    let mf = filter::skip_matching_paths(&args.skips)?;
-    let filter = |p: &Utf8Path| Ok(mf(p));
+    let filter = filter::skip_matching_paths(&args.skips)?;
 
     let new_snapshots = repack::walk_snapshots(
         repack::Op::Copy,
