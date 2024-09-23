@@ -157,14 +157,19 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         }
     }
 
+    let bmode = if args.dry_run {
+        backup::Mode::DryRun
+    } else {
+        backup::Mode::LiveFire
+    };
     let backend_config = Arc::new(backend_config);
     let cached_backend = Arc::new(cached_backend);
-    let mut backup = (!args.dry_run)
-        .then(|| backup::spawn_backup_threads(backend_config, cached_backend.clone(), new_index));
+    let mut backup =
+        backup::spawn_backup_threads(bmode, backend_config, cached_backend.clone(), new_index);
 
     // Finish the WIP resume business.
-    if let Some(b) = &mut backup {
-        backup::upload_cwd_packfiles(&mut b.upload_tx, &packs_to_upload)?;
+    if !args.dry_run {
+        backup::upload_cwd_packfiles(&mut backup.upload_tx, &packs_to_upload)?;
     }
     drop(packs_to_upload);
 
@@ -190,9 +195,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     //     Any concurrent writers (writing a backup at the same time)
     //     will upload their own index only after all packs are uploaded,
     //     making sure indexes never refer to missing packs. (I hope...)
-    if let Some(b) = backup {
-        b.join()?;
-    }
+    backup.join()?;
 
     if !args.dry_run {
         // Remove old indexes _before_ removing packs such that we don't have

@@ -67,6 +67,11 @@ use crate::index;
 use crate::pack;
 use crate::upload;
 
+pub enum Mode {
+    DryRun,
+    LiveFire,
+}
+
 pub struct Backup {
     pub chunk_tx: SyncSender<Blob>,
     pub tree_tx: SyncSender<Blob>,
@@ -109,6 +114,7 @@ impl Backup {
 }
 
 pub fn spawn_backup_threads(
+    mode: Mode,
     backend_config: Arc<backend::Config>,
     cached_backend: Arc<backend::CachedBackend>,
     starting_index: index::Index,
@@ -132,6 +138,7 @@ pub fn spawn_backup_threads(
         .name(String::from("backup master"))
         .spawn(move || {
             backup_master_thread(
+                mode,
                 chunk_rx,
                 tree_rx,
                 upload_tx2,
@@ -154,6 +161,7 @@ pub fn spawn_backup_threads(
 }
 
 fn backup_master_thread(
+    mode: Mode,
     chunk_rx: Receiver<Blob>,
     tree_rx: Receiver<Blob>,
     upload_tx: SyncSender<(String, File)>,
@@ -206,11 +214,16 @@ fn backup_master_thread(
             })
             .unwrap();
 
+        let resumable = match mode {
+            Mode::LiveFire => index::Resumable::Yes,
+            // Don't bother making WIP indexes for a dry run.
+            Mode::DryRun => index::Resumable::No,
+        };
         let indexer = thread::Builder::new()
             .name(String::from("indexer"))
             .spawn_scoped(s, move || {
                 index::index(
-                    index::Resumable::Yes,
+                    resumable,
                     starting_index,
                     index_rx,
                     index_upload_tx,
@@ -219,10 +232,14 @@ fn backup_master_thread(
             })
             .unwrap();
 
+        let umode = match mode {
+            Mode::LiveFire => upload::Mode::LiveFire,
+            Mode::DryRun => upload::Mode::DryRun,
+        };
         let uploader = thread::Builder::new()
             .name(String::from("uploader"))
             .spawn_scoped(s, move || {
-                upload::upload(&cached_backend, upload_rx, uploaded_bytes)
+                upload::upload(umode, &cached_backend, upload_rx, uploaded_bytes)
             })
             .unwrap();
 

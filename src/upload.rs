@@ -8,13 +8,26 @@ use anyhow::Result;
 
 use crate::backend;
 
+pub enum Mode {
+    DryRun,
+    LiveFire,
+}
+
 pub fn upload(
+    mode: Mode,
     cached_backend: &backend::CachedBackend,
     rx: Receiver<(String, File)>,
     upload_byte_count: &AtomicU64,
 ) -> Result<()> {
     while let Ok((path, fh)) = rx.recv() {
-        cached_backend.write(&path, fh, upload_byte_count)?;
+        match mode {
+            Mode::LiveFire => cached_backend.write(&path, fh, upload_byte_count)?,
+            Mode::DryRun => {
+                // Just axe it, it isn't going anywhere.
+                drop(fh);
+                std::fs::remove_file(path)?;
+            }
+        };
     }
     Ok(())
 }
