@@ -3,6 +3,7 @@
 
 use std::fs::File;
 use std::io::{self, prelude::*};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use byte_unit::Byte;
@@ -155,6 +156,30 @@ pub enum CachedBackend {
 pub trait SeekableRead: Read + Seek + Send + 'static {}
 impl<T> SeekableRead for T where T: Read + Seek + Send + 'static {}
 
+// Used for printing progress as we go
+struct AtomicCountRead<'a, R> {
+    inner: R,
+    count: &'a AtomicU64,
+}
+
+impl<'a, R: Read> AtomicCountRead<'a, R> {
+    fn new(inner: R, count: &'a AtomicU64) -> Self {
+        Self { inner, count }
+    }
+
+    fn into_inner(self: Self) -> R {
+        self.inner
+    }
+}
+
+impl<R: Read> Read for AtomicCountRead<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let num_read = self.inner.read(buf)?;
+        self.count.fetch_add(num_read as u64, Ordering::Relaxed);
+        Ok(num_read)
+    }
+}
+
 // NB: We use a flat cache structure (where every file is just <hash>.pack/index/etc)
 // but prepend prefixes with `destination()` prior to giving the path to the backend.
 // (This allows prefix-based listing, which can save us a bunch on a big cloud store.)
@@ -204,7 +229,7 @@ impl CachedBackend {
     /// Take the completed file and its `<id>.<type>` name and
     /// store it to an object with the appropriate key per
     /// `destination()`
-    pub fn write(&self, name: &str, mut fh: File) -> Result<()> {
+    pub fn write(&self, name: &str, mut fh: File, bytes_uploaded: &AtomicU64) -> Result<()> {
         bump(Op::BackendWrite);
         let len = fh.metadata()?.len();
         match &self {
@@ -212,15 +237,17 @@ impl CachedBackend {
                 debug!("Saving {name} ({})", nice_size(len));
                 let to = backend.path_of(&destination(name));
                 move_opened(name, fh, to)?;
+                bytes_uploaded.fetch_add(len, Ordering::Relaxed);
             }
             CachedBackend::Cached { cache, backend, .. } => {
                 // Write through!
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
                 debug!("Uploading {name} ({})", nice_size(len));
-                backend.write(len, &mut fh, &destination(name))?;
+                let mut counter = AtomicCountRead::new(fh, bytes_uploaded);
+                backend.write(len, &mut counter, &destination(name))?;
                 // Insert it into the cache.
-                cache.insert_file(name, fh)?;
+                cache.insert_file(name, counter.into_inner())?;
                 // Prune the cache.
                 cache.prune()?;
             }
@@ -228,6 +255,7 @@ impl CachedBackend {
                 debug!("Saving {name} ({}, in-memory)", nice_size(len));
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 backend.write(len, &mut fh, &destination(name))?;
+                bytes_uploaded.fetch_add(len, Ordering::Relaxed);
                 std::fs::remove_file(name)?;
             }
         }

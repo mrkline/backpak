@@ -242,7 +242,8 @@ mod test {
         let uploader = std::thread::spawn(move || -> Result<backend::CachedBackend> {
             let mut num_packs = 0;
             while let Ok((path, fh)) = upload_rx.recv() {
-                backend.write(&path, fh)?;
+                let unused_byte_count = std::sync::atomic::AtomicU64::new(0);
+                backend.write(&path, fh, &unused_byte_count)?;
                 num_packs += 1;
             }
 
