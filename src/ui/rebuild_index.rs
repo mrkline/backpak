@@ -26,6 +26,9 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
         supersedes: superseded.clone(),
         ..Default::default()
     };
+    // Like backup::spawn_backup_threads, but with no packing threads.
+    // We don't need to make new packs, just enumerate the ones we have, index them,
+    // and upload that new index.
     let (pack_tx, pack_rx) = sync_channel(num_cpus::get_physical());
     let (upload_tx, upload_rx) = sync_channel(0);
 
@@ -46,7 +49,8 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
             Ok(())
         })?;
 
-    upload::upload(&cached_backend, upload_rx)?;
+    let uploaded_bytes = std::sync::atomic::AtomicU64::new(0); // TODO: Progress CLI!
+    upload::upload(&cached_backend, upload_rx, &uploaded_bytes)?;
 
     // NB: Before deleting the old indexes, we make sure the new one's been written.
     //     This ensures there's no point in time when we don't have a valid index

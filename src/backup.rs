@@ -79,6 +79,7 @@ pub struct Backup {
 pub struct BackupStats {
     pub chunk_bytes: AtomicU64,
     pub tree_bytes: AtomicU64,
+    pub uploaded_bytes: AtomicU64,
 }
 
 impl Backup {
@@ -174,6 +175,7 @@ fn backup_master_thread(
 
     let chunk_bytes = &statistics.chunk_bytes;
     let tree_bytes = &statistics.tree_bytes;
+    let uploaded_bytes = &statistics.uploaded_bytes;
 
     thread::scope(|s| {
         let chunk_packer = thread::Builder::new()
@@ -216,7 +218,9 @@ fn backup_master_thread(
 
         let uploader = thread::Builder::new()
             .name(String::from("uploader"))
-            .spawn_scoped(s, move || upload::upload(&cached_backend, upload_rx))
+            .spawn_scoped(s, move || {
+                upload::upload(&cached_backend, upload_rx, uploaded_bytes)
+            })
             .unwrap();
 
         let mut errors: Vec<anyhow::Error> = Vec::new();
