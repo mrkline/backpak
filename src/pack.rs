@@ -19,7 +19,10 @@
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
-use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    mpsc::{Receiver, SyncSender},
+};
 
 use anyhow::{ensure, Context, Result};
 use byte_unit::Byte;
@@ -72,14 +75,14 @@ pub fn pack(
     rx: Receiver<Blob>,
     to_index: SyncSender<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
-) -> Result<u64> {
+    total_bytes_packed: &AtomicU64,
+) -> Result<()> {
     let target_size = target_size.as_u64();
     let mut writer = PackfileWriter::new()?;
 
     let mut pass_bytes_written: u64 = 0; // Bytes written since the last size check
     let mut bytes_in_pack: u64 = 0;
     let mut bytes_before_next_check = target_size;
-    let mut total_bytes_written: u64 = 0;
 
     // For each blob...
     while let Ok(blob) = rx.recv() {
@@ -111,6 +114,7 @@ pub fn pack(
         let blob_size = writer.write_blob(blob)?;
         pass_bytes_written += blob_size;
         bytes_in_pack += blob_size;
+        total_bytes_packed.fetch_add(blob_size, Ordering::Relaxed);
 
         // If we exceed our target size, stop.
         // We'll probably overshoot since this isn't flushing the Zstd buffer,
@@ -174,7 +178,6 @@ pub fn pack(
                 .context("packer -> indexer channel exited early")?;
 
             writer = PackfileWriter::new()?;
-            total_bytes_written += bytes_in_pack;
             pass_bytes_written = 0;
             bytes_in_pack = 0;
             bytes_before_next_check = target_size;
@@ -189,9 +192,8 @@ pub fn pack(
         to_index
             .send(metadata)
             .context("packer -> indexer channel exited early")?;
-        total_bytes_written += bytes_in_pack;
     }
-    Ok(total_bytes_written)
+    Ok(())
 }
 
 type ZstdEncoder<W> = zstd::stream::write::Encoder<'static, W>;
@@ -533,8 +535,16 @@ mod test {
         let (pack_tx, pack_rx) = sync_channel(0);
         let (upload_tx, upload_rx) = sync_channel(0);
 
-        let chunk_packer =
-            std::thread::spawn(move || pack(DEFAULT_PACK_SIZE, chunk_rx, pack_tx, upload_tx));
+        let unused_byte_count = std::sync::atomic::AtomicU64::new(0);
+        let chunk_packer = std::thread::spawn(move || {
+            pack(
+                DEFAULT_PACK_SIZE,
+                chunk_rx,
+                pack_tx,
+                upload_tx,
+                &unused_byte_count,
+            )
+        });
 
         let upload_chucker = std::thread::spawn(move || -> Result<()> {
             // This test doesn't actually care about the files themselves,

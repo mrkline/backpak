@@ -48,8 +48,11 @@
 
 use std::fs::{self, File};
 use std::str::FromStr;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
-use std::sync::Arc;
+use std::sync::{
+    atomic::AtomicU64,
+    mpsc::{sync_channel, Receiver, SyncSender},
+    Arc,
+};
 use std::thread;
 
 use anyhow::{bail, Context, Result};
@@ -68,13 +71,14 @@ pub struct Backup {
     pub chunk_tx: SyncSender<Blob>,
     pub tree_tx: SyncSender<Blob>,
     pub upload_tx: SyncSender<(String, File)>,
-    threads: thread::JoinHandle<Result<BackupStats>>,
+    pub statistics: Arc<BackupStats>,
+    threads: thread::JoinHandle<Result<()>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BackupStats {
-    pub chunk_bytes: u64,
-    pub tree_bytes: u64,
+    pub chunk_bytes: AtomicU64,
+    pub tree_bytes: AtomicU64,
 }
 
 impl Backup {
@@ -84,7 +88,7 @@ impl Backup {
         drop(self.chunk_tx);
         drop(self.tree_tx);
         drop(self.upload_tx);
-        let stats = self.threads.join().unwrap()?;
+        self.threads.join().unwrap()?;
 
         // If everything exited cleanly, we uploaded the new index.
         // We can axe the WIP one, which we kept around until now to make sure we're resumable.
@@ -95,6 +99,9 @@ impl Backup {
             otherwise => otherwise,
         }
         .with_context(|| format!("Couldn't remove {}", index::WIP_NAME))?;
+
+        let stats = Arc::into_inner(self.statistics)
+            .expect("joined backup threads but someone still has a stats refcount");
         Ok(stats)
     }
 }
@@ -116,6 +123,8 @@ pub fn spawn_backup_threads(
     let (tree_tx, tree_rx) = sync_channel(0);
     let (upload_tx, upload_rx) = sync_channel(0);
     let upload_tx2 = upload_tx.clone();
+    let statistics = Arc::new(BackupStats::default());
+    let stats2 = statistics.clone();
 
     let threads = thread::Builder::new()
         .name(String::from("backup master"))
@@ -127,6 +136,7 @@ pub fn spawn_backup_threads(
                 upload_rx,
                 backend_config,
                 cached_backend,
+                stats2,
                 starting_index,
             )
         })
@@ -136,6 +146,7 @@ pub fn spawn_backup_threads(
         chunk_tx,
         tree_tx,
         upload_tx,
+        statistics,
         threads,
     }
 }
@@ -147,12 +158,13 @@ fn backup_master_thread(
     upload_rx: Receiver<(String, File)>,
     backend_config: Arc<backend::Config>,
     cached_backend: Arc<backend::CachedBackend>,
+    statistics: Arc<BackupStats>,
     starting_index: index::Index,
-) -> Result<BackupStats> {
+) -> Result<()> {
     // ALL THE CONCURRENCY
 
     // We shouldn't be swamped with a bunch of indexes at once since packing is the slow part,
-    // and we only have two packers (chunks and trees) feeding this.
+    // and we only have two packers () feeding this.
     let (chunk_index_tx, index_rx) = sync_channel(0);
     let tree_index_tx = chunk_index_tx.clone();
     let chunk_pack_upload_tx = upload_tx;
@@ -160,70 +172,75 @@ fn backup_master_thread(
     let index_upload_tx = chunk_pack_upload_tx.clone();
     let pack_size = backend_config.pack_size;
 
-    let chunk_packer = thread::Builder::new()
-        .name(String::from("chunk packer"))
-        .spawn(move || pack::pack(pack_size, chunk_rx, chunk_index_tx, chunk_pack_upload_tx))
-        .unwrap();
+    let chunk_bytes = &statistics.chunk_bytes;
+    let tree_bytes = &statistics.tree_bytes;
 
-    let tree_packer = thread::Builder::new()
-        .name(String::from("tree packer"))
-        .spawn(move || pack::pack(pack_size, tree_rx, tree_index_tx, tree_pack_upload_tx))
-        .unwrap();
+    thread::scope(|s| {
+        let chunk_packer = thread::Builder::new()
+            .name(String::from("chunk packer"))
+            .spawn_scoped(s, move || {
+                pack::pack(
+                    pack_size,
+                    chunk_rx,
+                    chunk_index_tx,
+                    chunk_pack_upload_tx,
+                    chunk_bytes,
+                )
+            })
+            .unwrap();
 
-    let indexer = thread::Builder::new()
-        .name(String::from("indexer"))
-        .spawn(move || {
-            index::index(
-                index::Resumable::Yes,
-                starting_index,
-                index_rx,
-                index_upload_tx,
-            )
-        })
-        .unwrap();
+        let tree_packer = thread::Builder::new()
+            .name(String::from("tree packer"))
+            .spawn_scoped(s, move || {
+                pack::pack(
+                    pack_size,
+                    tree_rx,
+                    tree_index_tx,
+                    tree_pack_upload_tx,
+                    tree_bytes,
+                )
+            })
+            .unwrap();
 
-    let uploader = thread::Builder::new()
-        .name(String::from("uploader"))
-        .spawn(move || upload::upload(&cached_backend, upload_rx))
-        .unwrap();
+        let indexer = thread::Builder::new()
+            .name(String::from("indexer"))
+            .spawn_scoped(s, move || {
+                index::index(
+                    index::Resumable::Yes,
+                    starting_index,
+                    index_rx,
+                    index_upload_tx,
+                )
+            })
+            .unwrap();
 
-    let mut errors: Vec<anyhow::Error> = Vec::new();
+        let uploader = thread::Builder::new()
+            .name(String::from("uploader"))
+            .spawn_scoped(s, move || upload::upload(&cached_backend, upload_rx))
+            .unwrap();
 
-    let chunk_bytes = match chunk_packer.join().unwrap() {
-        Ok(cb) => Some(cb),
-        Err(e) => {
-            errors.push(e.context("Packing chunks failed"));
-            None
+        let mut errors: Vec<anyhow::Error> = Vec::new();
+
+        let mut append_error = |thread: &'static str, result: Option<anyhow::Error>| {
+            if let Some(e) = result {
+                errors.push(e.context(thread));
+            }
+        };
+
+        append_error("Packing chunks failed", chunk_packer.join().unwrap().err());
+        append_error("Packing trees failed", tree_packer.join().unwrap().err());
+        append_error("Indexing failed", indexer.join().unwrap().err());
+        append_error("Uploading failed", uploader.join().unwrap().err());
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            for e in errors {
+                error!("{:?}", e);
+            }
+            bail!("backup failed");
         }
-    };
-    let tree_bytes = match tree_packer.join().unwrap() {
-        Ok(tb) => Some(tb),
-        Err(e) => {
-            errors.push(e.context("Packing trees failed"));
-            None
-        }
-    };
-
-    let mut append_error = |thread: &'static str, result: Option<anyhow::Error>| {
-        if let Some(e) = result {
-            errors.push(e.context(thread));
-        }
-    };
-
-    append_error("Indexing failed", indexer.join().unwrap().err());
-    append_error("Uploading failed", uploader.join().unwrap().err());
-
-    if errors.is_empty() {
-        Ok(BackupStats {
-            chunk_bytes: chunk_bytes.unwrap(),
-            tree_bytes: tree_bytes.unwrap(),
-        })
-    } else {
-        for e in errors {
-            error!("{:?}", e);
-        }
-        bail!("backup failed");
-    }
+    })
 }
 
 #[derive(Default)]
