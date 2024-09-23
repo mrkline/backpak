@@ -79,6 +79,7 @@ pub struct Backup {
 pub struct BackupStats {
     pub chunk_bytes: AtomicU64,
     pub tree_bytes: AtomicU64,
+    pub indexed_packs: AtomicU64,
     pub uploaded_bytes: AtomicU64,
 }
 
@@ -175,6 +176,7 @@ fn backup_master_thread(
 
     let chunk_bytes = &statistics.chunk_bytes;
     let tree_bytes = &statistics.tree_bytes;
+    let indexed_packs = &statistics.indexed_packs;
     let uploaded_bytes = &statistics.uploaded_bytes;
 
     thread::scope(|s| {
@@ -212,6 +214,7 @@ fn backup_master_thread(
                     starting_index,
                     index_rx,
                     index_upload_tx,
+                    indexed_packs,
                 )
             })
             .unwrap();

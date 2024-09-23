@@ -21,8 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::sync::mpsc::{Receiver, SyncSender};
-use std::sync::Mutex;
+use std::sync::{atomic::{AtomicU64, Ordering}, mpsc::{Receiver, SyncSender}, Mutex};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use rayon::prelude::*;
@@ -77,6 +76,7 @@ pub fn index(
     starting_index: Index,
     rx: Receiver<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
+    indexed_packs: &AtomicU64,
 ) -> Result<bool> {
     let mut index = starting_index;
     let mut persisted = None;
@@ -96,7 +96,7 @@ pub fn index(
             id
         );
 
-        trace!("Wrote {} packs into index", index.packs.len());
+        indexed_packs.fetch_add(1, Ordering::Relaxed);
 
         if resumable == Resumable::Yes {
             // Rewrite the index every time we get a pack.
