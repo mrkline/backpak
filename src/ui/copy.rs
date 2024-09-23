@@ -92,15 +92,23 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         }
     }
 
+    let bmode = if args.dry_run {
+        backup::Mode::DryRun
+    } else {
+        backup::Mode::LiveFire
+    };
     let dst_backend_config = Arc::new(dst_backend_config);
     let dst_cached_backend = Arc::new(dst_cached_backend);
-    let mut backup = (!args.dry_run).then(|| {
-        backup::spawn_backup_threads(dst_backend_config, dst_cached_backend.clone(), wip_index)
-    });
+    let mut backup = backup::spawn_backup_threads(
+        bmode,
+        dst_backend_config,
+        dst_cached_backend.clone(),
+        wip_index,
+    );
 
     // Finish the WIP resume business.
-    if let Some(b) = &mut backup {
-        backup::upload_cwd_packfiles(&mut b.upload_tx, &cwd_packfiles)?;
+    if !args.dry_run {
+        backup::upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
     }
     drop(cwd_packfiles);
 
@@ -118,7 +126,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Important: make sure all blobs and the index are written BEFORE
     // we upload the snapshots.
     // It's meaningless unless everything else is there first!
-    let _stats = backup.map(|b| b.join()).transpose()?;
+    let _stats = backup.join()?;
 
     if !args.dry_run {
         for snap in &new_snapshots {

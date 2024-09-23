@@ -3,6 +3,7 @@ use std::sync::{atomic::AtomicU64, mpsc::sync_channel};
 use std::thread;
 
 use anyhow::{ensure, Context, Result};
+use clap::Parser;
 use rayon::prelude::*;
 use tracing::*;
 
@@ -12,7 +13,15 @@ use crate::index;
 use crate::pack;
 use crate::upload;
 
-pub fn run(repository: &camino::Utf8Path) -> Result<()> {
+/// Copy a snapshot, filtering out given paths
+#[derive(Debug, Parser)]
+#[command(verbatim_doc_comment)]
+pub struct Args {
+    #[clap(short = 'n', long)]
+    dry_run: bool,
+}
+
+pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
 
     let superseded = cached_backend
@@ -33,8 +42,15 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     let (upload_tx, upload_rx) = sync_channel(0);
 
     let indexed_packs = AtomicU64::new(0); // TODO: Progress CLI!
-    let indexer =
-        thread::spawn(move || index::index(index::Resumable::No, replacing, pack_rx, upload_tx, &indexed_packs));
+    let indexer = thread::spawn(move || {
+        index::index(
+            index::Resumable::No,
+            replacing,
+            pack_rx,
+            upload_tx,
+            &indexed_packs,
+        )
+    });
 
     info!("Reading all packs to build a new index");
     cached_backend
@@ -51,7 +67,12 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
         })?;
 
     let uploaded_bytes = AtomicU64::new(0); // TODO: Progress CLI!
-    upload::upload(&cached_backend, upload_rx, &uploaded_bytes)?;
+    let umode = if args.dry_run {
+        upload::Mode::DryRun
+    } else {
+        upload::Mode::LiveFire
+    };
+    upload::upload(umode, &cached_backend, upload_rx, &uploaded_bytes)?;
 
     // NB: Before deleting the old indexes, we make sure the new one's been written.
     //     This ensures there's no point in time when we don't have a valid index
@@ -62,9 +83,11 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     //     making sure indexes never refer to missing packs. (I hope...)
     ensure!(indexer.join().unwrap()?, "No new index built");
 
-    info!("Uploaded a new index; removing previous ones");
-    for old_index in superseded {
-        cached_backend.remove_index(&old_index)?;
+    if !args.dry_run {
+        info!("Uploaded a new index; removing previous ones");
+        for old_index in superseded {
+            cached_backend.remove_index(&old_index)?;
+        }
     }
 
     Ok(())

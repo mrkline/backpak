@@ -55,7 +55,7 @@ pub fn walk_snapshots<Filter>(
     mut filter: Filter,
     reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
-    backup: &mut Option<backup::Backup>,
+    backup: &mut backup::Backup,
 ) -> Result<Vec<Snapshot>>
 where
     Filter: FnMut(
@@ -77,7 +77,7 @@ fn walk_snapshot<Filter>(
     filter: &mut Filter,
     reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
-    backup: &mut Option<backup::Backup>,
+    backup: &mut backup::Backup,
 ) -> Result<Snapshot>
 where
     Filter: FnMut(
@@ -116,7 +116,7 @@ fn walk_tree<Filter>(
     forest: &tree::Forest,
     reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
-    backup: &mut Option<backup::Backup>,
+    backup: &mut backup::Backup,
 ) -> Result<ObjectId>
 where
     Filter: FnMut(
@@ -203,13 +203,11 @@ where
     let (serialized, new_tree_id) = tree::serialize_and_hash(&new_tree)?;
     // If we don't have this tree, new or old, in the backup, add it.
     if packed_blobs.insert(new_tree_id) {
-        if let Some(b) = backup {
-            b.tree_tx.send(blob::Blob {
-                contents: blob::Contents::Buffer(serialized),
-                id: new_tree_id,
-                kind: blob::Type::Tree,
-            })?;
-        }
+        backup.tree_tx.send(blob::Blob {
+            contents: blob::Contents::Buffer(serialized),
+            id: new_tree_id,
+            kind: blob::Type::Tree,
+        })?;
     }
     Ok(new_tree_id)
 }
@@ -217,16 +215,14 @@ where
 fn repack_chunk<'a, 'b: 'a>(
     id: &'a ObjectId,
     reader: &mut read::ChunkReader<'b>,
-    backup: &mut Option<backup::Backup>,
+    backup: &mut backup::Backup,
 ) -> Result<()> {
-    if let Some(b) = backup {
-        // TODO: Don't clone this? Make the Buffer RC? The blob cache Arc? Ugh, where GC
-        let contents = blob::Contents::Buffer((*reader.read_blob(id)?).clone());
-        b.chunk_tx.send(blob::Blob {
-            contents,
-            id: *id,
-            kind: blob::Type::Chunk,
-        })?;
-    }
+    // TODO: Don't clone this? Make the Buffer RC? The blob cache Arc? Ugh, where GC
+    let contents = blob::Contents::Buffer((*reader.read_blob(id)?).clone());
+    backup.chunk_tx.send(blob::Blob {
+        contents,
+        id: *id,
+        kind: blob::Type::Chunk,
+    })?;
     Ok(())
 }

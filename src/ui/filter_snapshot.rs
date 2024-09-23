@@ -67,11 +67,19 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Let's not do anything resumable for now;
     // this should be a cheap operation that only creates new, (smaller) trees.
 
+    let bmode = if args.dry_run {
+        backup::Mode::DryRun
+    } else {
+        backup::Mode::LiveFire
+    };
     let backend_config = Arc::new(backend_config);
     let cached_backend = Arc::new(cached_backend);
-    let mut backup = (!args.dry_run).then(|| {
-        backup::spawn_backup_threads(backend_config, cached_backend.clone(), Index::default())
-    });
+    let mut backup = backup::spawn_backup_threads(
+        bmode,
+        backend_config,
+        cached_backend.clone(),
+        Index::default(),
+    );
 
     let mut filter = filter::skip_matching_paths(&args.skips)?;
 
@@ -85,7 +93,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Important: make sure all new trees and the index are written BEFORE
     // we upload the new snapshot.
     // It's meaningless unless everything else is there first!
-    let _stats = backup.map(|b| b.join()).transpose()?;
+    let _stats = backup.join()?;
 
     if new_snapshot == *target {
         info!("Nothing filtered; no new snapshot");
@@ -115,7 +123,7 @@ fn walk_snapshot<Filter>(
     snapshot_and_forest: &repack::SnapshotAndForest,
     filter: &mut Filter,
     packed_blobs: &mut FxHashSet<ObjectId>,
-    backup: &mut Option<backup::Backup>,
+    backup: &mut backup::Backup,
 ) -> Result<snapshot::Snapshot>
 where
     Filter: FnMut(
@@ -145,7 +153,7 @@ fn walk_tree<Filter>(
     tree_id: &ObjectId,
     forest: &tree::Forest,
     packed_blobs: &mut FxHashSet<ObjectId>,
-    backup: &mut Option<backup::Backup>,
+    backup: &mut backup::Backup,
 ) -> Result<ObjectId>
 where
     Filter: FnMut(
@@ -215,13 +223,11 @@ where
     let (serialized, new_tree_id) = tree::serialize_and_hash(&new_tree)?;
     // If we don't have this tree, new or old, in the backup, add it.
     if packed_blobs.insert(new_tree_id) {
-        if let Some(b) = backup {
-            b.tree_tx.send(blob::Blob {
-                contents: blob::Contents::Buffer(serialized),
-                id: new_tree_id,
-                kind: blob::Type::Tree,
-            })?;
-        }
+        backup.tree_tx.send(blob::Blob {
+            contents: blob::Contents::Buffer(serialized),
+            id: new_tree_id,
+            kind: blob::Type::Tree,
+        })?;
     }
     Ok(new_tree_id)
 }

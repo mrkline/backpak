@@ -9,7 +9,7 @@ use rustc_hash::FxHashSet;
 use tracing::*;
 
 use crate::backend;
-use crate::backup::*;
+use crate::backup::{self, *};
 use crate::blob::{self, Blob};
 use crate::chunk;
 use crate::file_util::nice_size;
@@ -109,14 +109,18 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         }
     }
 
+    let bmode = if args.dry_run {
+        backup::Mode::DryRun
+    } else {
+        backup::Mode::LiveFire
+    };
     let backend_config = Arc::new(backend_config);
     let cached_backend = Arc::new(cached_backend);
-    let mut backup = (!args.dry_run)
-        .then(|| spawn_backup_threads(backend_config, cached_backend.clone(), wip_index));
+    let mut backup = spawn_backup_threads(bmode, backend_config, cached_backend.clone(), wip_index);
 
     // Finish the WIP resume business.
-    if let Some(b) = &mut backup {
-        upload_cwd_packfiles(&mut b.upload_tx, &cwd_packfiles)?;
+    if !args.dry_run {
+        upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
     }
     drop(cwd_packfiles);
 
@@ -144,41 +148,41 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Important: make sure all blobs and the index is written BEFORE
     // we upload the snapshot.
     // It's meaningless unless everything else is there first!
-    let stats = backup.map(|b| b.join()).transpose()?;
+    let stats = backup.join()?;
 
     debug!("Root tree packed as {}", root);
 
     info!("{} reused", nice_size(bytes_reused));
-    if let Some(s) = stats {
-        let chunk_bytes = s.chunk_bytes.load(Ordering::Relaxed);
-        let tree_bytes = s.tree_bytes.load(Ordering::Relaxed);
+    let chunk_bytes = stats.chunk_bytes.load(Ordering::Relaxed);
+    let tree_bytes = stats.tree_bytes.load(Ordering::Relaxed);
 
-        let total_bytes = nice_size(chunk_bytes + tree_bytes);
-        let chunk_bytes = nice_size(chunk_bytes);
-        let tree_bytes = nice_size(tree_bytes);
-        info!("{total_bytes} new data ({chunk_bytes} files, {tree_bytes} metadata)");
-    }
+    let total_bytes = nice_size(chunk_bytes + tree_bytes);
+    let chunk_bytes = nice_size(chunk_bytes);
+    let tree_bytes = nice_size(tree_bytes);
+    info!("{total_bytes} new data ({chunk_bytes} files, {tree_bytes} metadata)");
+
+    let author = match args.author {
+        Some(a) => a,
+        None => hostname::get()
+            .context("Couldn't get hostname")?
+            .to_string_lossy()
+            .to_string(),
+    };
+
+    let time = jiff::Zoned::now().round(jiff::Unit::Second)?;
+
+    let snapshot = Snapshot {
+        time,
+        author,
+        tags: args.tags.into_iter().collect(),
+        paths,
+        tree: root,
+    };
 
     if !args.dry_run {
-        let author = match args.author {
-            Some(a) => a,
-            None => hostname::get()
-                .context("Couldn't get hostname")?
-                .to_string_lossy()
-                .to_string(),
-        };
-
-        let time = jiff::Zoned::now().round(jiff::Unit::Second)?;
-
-        let snapshot = Snapshot {
-            time,
-            author,
-            tags: args.tags.into_iter().collect(),
-            paths,
-            tree: root,
-        };
-
         snapshot::upload(&snapshot, &cached_backend)?;
+    } else {
+        info!("Dry run complete, snapshot would be {snapshot:?}");
     }
     Ok(())
 }
@@ -244,7 +248,7 @@ fn backup_tree(
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
     packed_blobs: &mut FxHashSet<ObjectId>,
-    backup: &mut Option<Backup>,
+    backup: &mut Backup,
 ) -> Result<(ObjectId, u64)> {
     use fs_tree::DirectoryEntry;
 
@@ -320,11 +324,10 @@ fn backup_tree(
                             info!("{:>9} {path}", "backup");
                         }
                         new_chunks = true;
-                        if let Some(b) = &backup {
-                            b.chunk_tx
-                                .send(chunk)
-                                .context("backup -> chunk packer channel exited early")?;
-                        }
+                        backup
+                            .chunk_tx
+                            .send(chunk)
+                            .context("backup -> chunk packer channel exited early")?;
                     } else {
                         reused_bytes += chunk.bytes().len() as u64;
                     }
@@ -367,15 +370,14 @@ fn backup_tree(
         let (bytes, id) = tree::serialize_and_hash(&tree)?;
 
         if packed_blobs.borrow_mut().insert(id) {
-            if let Some(b) = &backup {
-                b.tree_tx
-                    .send(Blob {
-                        contents: blob::Contents::Buffer(bytes),
-                        id,
-                        kind: blob::Type::Tree,
-                    })
-                    .context("backup -> tree packer channel exited early")?;
-            }
+            backup
+                .tree_tx
+                .send(Blob {
+                    contents: blob::Contents::Buffer(bytes),
+                    id,
+                    kind: blob::Type::Tree,
+                })
+                .context("backup -> tree packer channel exited early")?;
         } else {
             trace!("tree {} already packed", id);
             bytes_reused += bytes.len() as u64;

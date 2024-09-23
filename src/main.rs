@@ -55,7 +55,7 @@ enum Command {
     Restore(restore::Args),
     Snapshots(snapshots::Args),
     /// Build a new index from all existing packs and delete all old ones.
-    RebuildIndex,
+    RebuildIndex(rebuild_index::Args),
     /// Print repository size stats.
     Usage,
 }
@@ -89,7 +89,7 @@ fn run() -> Result<()> {
         Command::Prune(p) => prune::run(&args.repository, p),
         Command::Restore(r) => restore::run(&args.repository, r),
         Command::Snapshots(s) => snapshots::run(&args.repository, s),
-        Command::RebuildIndex => rebuild_index::run(&args.repository),
+        Command::RebuildIndex(r) => rebuild_index::run(&args.repository, r),
         Command::Usage => usage::run(&args.repository),
     }?;
 
