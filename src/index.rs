@@ -21,7 +21,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::sync::{atomic::{AtomicU64, Ordering}, mpsc::{Receiver, SyncSender}, Mutex};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    mpsc::{Receiver, SyncSender},
+    Mutex,
+};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use rayon::prelude::*;
