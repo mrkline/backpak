@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::sync::mpsc::sync_channel;
+use std::sync::{atomic::AtomicU64, mpsc::sync_channel};
 use std::thread;
 
 use anyhow::{ensure, Context, Result};
@@ -32,8 +32,9 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     let (pack_tx, pack_rx) = sync_channel(num_cpus::get_physical());
     let (upload_tx, upload_rx) = sync_channel(0);
 
+    let indexed_packs = AtomicU64::new(0); // TODO: Progress CLI!
     let indexer =
-        thread::spawn(move || index::index(index::Resumable::No, replacing, pack_rx, upload_tx));
+        thread::spawn(move || index::index(index::Resumable::No, replacing, pack_rx, upload_tx, &indexed_packs));
 
     info!("Reading all packs to build a new index");
     cached_backend
@@ -49,7 +50,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
             Ok(())
         })?;
 
-    let uploaded_bytes = std::sync::atomic::AtomicU64::new(0); // TODO: Progress CLI!
+    let uploaded_bytes = AtomicU64::new(0); // TODO: Progress CLI!
     upload::upload(&cached_backend, upload_rx, &uploaded_bytes)?;
 
     // NB: Before deleting the old indexes, we make sure the new one's been written.
