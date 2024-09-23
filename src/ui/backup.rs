@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -150,9 +150,12 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     info!("{} reused", nice_size(bytes_reused));
     if let Some(s) = stats {
-        let total_bytes = nice_size(s.chunk_bytes + s.tree_bytes);
-        let chunk_bytes = nice_size(s.chunk_bytes);
-        let tree_bytes = nice_size(s.tree_bytes);
+        let chunk_bytes = s.chunk_bytes.load(Ordering::Relaxed);
+        let tree_bytes = s.tree_bytes.load(Ordering::Relaxed);
+
+        let total_bytes = nice_size(chunk_bytes + tree_bytes);
+        let chunk_bytes = nice_size(chunk_bytes);
+        let tree_bytes = nice_size(tree_bytes);
         info!("{total_bytes} new data ({chunk_bytes} files, {tree_bytes} metadata)");
     }
 

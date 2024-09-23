@@ -228,8 +228,15 @@ mod test {
         let (pack_tx, pack_rx) = sync_channel(0);
         let (upload_tx, upload_rx) = sync_channel(0);
 
+        let unused_byte_count = std::sync::atomic::AtomicU64::new(0);
         let chunk_packer = std::thread::spawn(move || {
-            pack::pack(pack::DEFAULT_PACK_SIZE, chunk_rx, pack_tx, upload_tx)
+            pack::pack(
+                pack::DEFAULT_PACK_SIZE,
+                chunk_rx,
+                pack_tx,
+                upload_tx,
+                &unused_byte_count,
+            )
         });
 
         let uploader = std::thread::spawn(move || -> Result<backend::CachedBackend> {
