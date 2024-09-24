@@ -23,6 +23,13 @@ struct UnfilterRead {
     child: Child,
 }
 
+// DANGER WILL ROBINSIN:
+//
+// This might suck more than I initially thought - since the panic doens't happen until
+// after the read is dropped, callers might think it succeeded.
+// If we're not careful to pass this by value and drop it,
+// it breaks everything, especially our `safe_copy_to_file()` hopes.
+
 // It would be nice to have some join(self) to gracefully catch errors,
 // but then Backend::read() couldn't return a generic Read trait object,
 // we'd need some JoinableRead...
