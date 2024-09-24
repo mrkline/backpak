@@ -1,12 +1,19 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::sync::{atomic::Ordering, Arc};
+use std::io;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
+use std::time::Duration;
 
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
+use console::Term;
 use rustc_hash::FxHashSet;
 use tracing::*;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::backend;
 use crate::backup::{self, *};
@@ -15,10 +22,11 @@ use crate::chunk;
 use crate::file_util::nice_size;
 use crate::filter;
 use crate::fs_tree;
-use crate::hashing::ObjectId;
+use crate::hashing::{HashingWriter, ObjectId};
 use crate::index;
 use crate::snapshot::{self, Snapshot};
 use crate::tree;
+use crate::ui::progress::{spinner, ProgressThread};
 
 /// Create a snapshot of the given files and directories.
 #[derive(Debug, Parser)]
@@ -41,6 +49,10 @@ pub struct Args {
 
     #[clap(short = 'n', long)]
     dry_run: bool,
+
+    /// Don't print progress to stdout
+    #[clap(short, long)]
+    quiet: bool,
 
     /// The paths to back up
     ///
@@ -118,6 +130,16 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let cached_backend = Arc::new(cached_backend);
     let mut backup = spawn_backup_threads(bmode, backend_config, cached_backend.clone(), wip_index);
 
+    let walk_stats = Arc::new(WalkStats::default());
+    let progress_thread = (!args.quiet).then(|| {
+        let s2 = backup.statistics.clone();
+        let ws = walk_stats.clone();
+        let t = Term::stdout();
+        ProgressThread::spawn(Duration::from_millis(100), move |i| {
+            print_progress(i, &t, &s2, &ws)
+        })
+    });
+
     // Finish the WIP resume business.
     if !args.dry_run {
         upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
@@ -133,7 +155,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             .join(", ")
     );
 
-    let (root, bytes_reused) = backup_tree(
+    let root = backup_tree(
         symlink_behavior,
         &paths,
         &args.skips,
@@ -141,6 +163,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         &parent_forest,
         &mut packed_blobs,
         &mut backup,
+        &walk_stats,
     )?;
     drop(parent_forest);
     drop(packed_blobs);
@@ -150,9 +173,14 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // It's meaningless unless everything else is there first!
     let stats = backup.join()?;
 
+    progress_thread.map(|h| h.join()).transpose()?;
+
     debug!("Root tree packed as {}", root);
 
-    info!("{} reused", nice_size(bytes_reused));
+    info!(
+        "{} reused",
+        nice_size(walk_stats.reused_bytes.load(Ordering::Relaxed))
+    );
     let chunk_bytes = stats.chunk_bytes.load(Ordering::Relaxed);
     let tree_bytes = stats.tree_bytes.load(Ordering::Relaxed);
 
@@ -178,12 +206,68 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         paths,
         tree: root,
     };
+    trace!("{snapshot:?}");
 
-    if !args.dry_run {
-        snapshot::upload(&snapshot, &cached_backend)?;
+    let snap_id = if !args.dry_run {
+        snapshot::upload(&snapshot, &cached_backend)?
     } else {
-        info!("Dry run complete, snapshot would be {snapshot:?}");
+        let mut hasher = HashingWriter::new(io::sink());
+        ciborium::into_writer(&snapshot, &mut hasher)?;
+        let (id, _) = hasher.finalize();
+        id
+    };
+
+    if !args.quiet {
+        println!("Snaphsot {snap_id} done");
     }
+    Ok(())
+}
+
+/// Spit out by our fs walk below
+#[derive(Default)]
+struct WalkStats {
+    current_file: Mutex<Utf8PathBuf>,
+    reused_bytes: AtomicU64,
+}
+
+fn print_progress(
+    i: usize,
+    term: &Term,
+    bstats: &backup::BackupStats,
+    wstats: &WalkStats,
+) -> Result<()> {
+    if i > 0 {
+        term.clear_last_lines(3)?;
+    }
+    let spin = spinner(i);
+    let cb = nice_size(bstats.chunk_bytes.load(Ordering::Relaxed));
+    let tb = nice_size(bstats.tree_bytes.load(Ordering::Relaxed));
+    let rb = nice_size(wstats.reused_bytes.load(Ordering::Relaxed));
+    let cz = nice_size(bstats.compressed_bytes.load(Ordering::Relaxed));
+    let ub = nice_size(bstats.uploaded_bytes.load(Ordering::Relaxed));
+    println!("{spin} P {cb} + {tb} | R {rb} | Z {cz} | U {ub}");
+
+    let idxd = bstats.indexed_packs.load(Ordering::Relaxed);
+    let ispin = if idxd % 2 != 0 { 'i' } else { 'I' };
+    println!("{ispin} {idxd} packs indexed");
+
+    let cf: Utf8PathBuf = wstats.current_file.lock().unwrap().clone();
+    // Arbitrary truncation; do something smarter?
+    let w = term.size_checked().unwrap_or((0, 80)).1 as usize; // (h, w) wut
+    let syms: Vec<_> = cf.as_str().graphemes(true).collect();
+    let cf: String = if syms.len() > w {
+        let back = cf.file_name().unwrap();
+        if back.len() >= (w - 3) {
+            format!("...{back}")
+        } else {
+            let backsyms = back.graphemes(true).count();
+            let front = &syms[0..(w - backsyms - 3)];
+            format!("{}...{}", front.join(""), back)
+        }
+    } else {
+        cf.as_str().to_owned()
+    };
+    println!("{cf}");
     Ok(())
 }
 
@@ -241,6 +325,7 @@ fn check_paths(symlink_behavior: tree::Symlink, paths: &BTreeSet<Utf8PathBuf>) -
     )
 }
 
+#[expect(clippy::too_many_arguments)] // Stop shame culture
 fn backup_tree(
     symlink_behavior: tree::Symlink,
     paths: &BTreeSet<Utf8PathBuf>,
@@ -249,7 +334,8 @@ fn backup_tree(
     previous_forest: &tree::Forest,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Backup,
-) -> Result<(ObjectId, u64)> {
+    walk_stats: &WalkStats,
+) -> Result<ObjectId> {
     use fs_tree::DirectoryEntry;
 
     let mf = filter::skip_matching_paths(skips)?;
@@ -264,14 +350,15 @@ fn backup_tree(
     // Both closures need to get at packed_blobs at some point...
     let packed_blobs = RefCell::new(packed_blobs);
 
-    let mut visit = |(tree, bytes_reused): &mut (tree::Tree, u64),
+    let mut visit = |tree: &mut tree::Tree,
                      path: &Utf8Path,
                      metadata: tree::NodeMetadata,
                      previous_node: Option<&tree::Node>,
-                     entry: DirectoryEntry<(ObjectId, u64)>|
+                     entry: DirectoryEntry<ObjectId>|
      -> Result<()> {
-        let (subnode, subnode_bytes_reused) = match entry {
-            DirectoryEntry::Directory((subtree, subtree_bytes_reused)) => {
+        *walk_stats.current_file.lock().unwrap() = path.to_owned();
+        let subnode = match entry {
+            DirectoryEntry::Directory(subtree) => {
                 /*
                 trace!(
                     "{}{} packed as {}",
@@ -286,7 +373,7 @@ fn backup_tree(
                     metadata,
                     contents: tree::NodeContents::Directory { subtree },
                 };
-                (t, subtree_bytes_reused)
+                t
             }
             DirectoryEntry::Symlink { target } => {
                 assert_eq!(symlink_behavior, tree::Symlink::Read);
@@ -296,23 +383,25 @@ fn backup_tree(
                     metadata,
                     contents: tree::NodeContents::Symlink { target },
                 };
-                (t, 0)
+                t
             }
             DirectoryEntry::UnchangedFile => {
                 info!("{:>9} {}", "unchanged", path);
 
-                let reused_bytes = metadata.size().expect("files have sizes");
+                let rb = metadata.size().expect("files have sizes");
+                walk_stats
+                    .reused_bytes
+                    .fetch_add(rb as u64, Ordering::Relaxed);
                 let t = tree::Node {
                     metadata,
                     contents: previous_node.unwrap().contents.clone(),
                 };
-                (t, reused_bytes)
+                t
             }
             DirectoryEntry::ChangedFile => {
                 let chunks = chunk::chunk_file(path)?;
 
                 let mut chunk_ids = Vec::new();
-                let mut reused_bytes = 0;
                 let mut new_chunks = false;
                 let mut total_chunks = 0usize;
                 for chunk in chunks {
@@ -329,7 +418,9 @@ fn backup_tree(
                             .send(chunk)
                             .context("backup -> chunk packer channel exited early")?;
                     } else {
-                        reused_bytes += chunk.bytes().len() as u64;
+                        walk_stats
+                            .reused_bytes
+                            .fetch_add(chunk.bytes().len() as u64, Ordering::Relaxed);
                     }
                     total_chunks += 1;
                 }
@@ -343,7 +434,7 @@ fn backup_tree(
                     metadata,
                     contents: tree::NodeContents::File { chunks: chunk_ids },
                 };
-                (t, reused_bytes)
+                t
             }
         };
         ensure!(
@@ -362,11 +453,10 @@ fn backup_tree(
                 .is_none(),
             "Duplicate tree entries"
         );
-        *bytes_reused += subnode_bytes_reused;
         Ok(())
     };
 
-    let mut finalize = |(tree, mut bytes_reused): (tree::Tree, u64)| -> Result<(ObjectId, u64)> {
+    let mut finalize = |tree: tree::Tree| -> Result<ObjectId> {
         let (bytes, id) = tree::serialize_and_hash(&tree)?;
 
         if packed_blobs.borrow_mut().insert(id) {
@@ -380,9 +470,11 @@ fn backup_tree(
                 .context("backup -> tree packer channel exited early")?;
         } else {
             trace!("tree {} already packed", id);
-            bytes_reused += bytes.len() as u64;
+            walk_stats
+                .reused_bytes
+                .fetch_add(bytes.len() as u64, Ordering::Relaxed);
         }
-        Ok((id, bytes_reused))
+        Ok(id)
     };
 
     fs_tree::walk_fs(

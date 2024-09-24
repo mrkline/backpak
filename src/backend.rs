@@ -156,30 +156,6 @@ pub enum CachedBackend {
 pub trait SeekableRead: Read + Seek + Send + 'static {}
 impl<T> SeekableRead for T where T: Read + Seek + Send + 'static {}
 
-// Used for printing progress as we go
-struct AtomicCountRead<'a, R> {
-    inner: R,
-    count: &'a AtomicU64,
-}
-
-impl<'a, R: Read> AtomicCountRead<'a, R> {
-    fn new(inner: R, count: &'a AtomicU64) -> Self {
-        Self { inner, count }
-    }
-
-    fn into_inner(self: Self) -> R {
-        self.inner
-    }
-}
-
-impl<R: Read> Read for AtomicCountRead<'_, R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let num_read = self.inner.read(buf)?;
-        self.count.fetch_add(num_read as u64, Ordering::Relaxed);
-        Ok(num_read)
-    }
-}
-
 // NB: We use a flat cache structure (where every file is just <hash>.pack/index/etc)
 // but prepend prefixes with `destination()` prior to giving the path to the backend.
 // (This allows prefix-based listing, which can save us a bunch on a big cloud store.)
@@ -244,7 +220,7 @@ impl CachedBackend {
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
                 debug!("Uploading {name} ({})", nice_size(len));
-                let mut counter = AtomicCountRead::new(fh, bytes_uploaded);
+                let mut counter = crate::ui::progress::AtomicCountRead::new(fh, bytes_uploaded);
                 backend.write(len, &mut counter, &destination(name))?;
                 // Insert it into the cache.
                 cache.insert_file(name, counter.into_inner())?;

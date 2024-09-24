@@ -84,6 +84,7 @@ pub struct Backup {
 pub struct BackupStats {
     pub chunk_bytes: AtomicU64,
     pub tree_bytes: AtomicU64,
+    pub compressed_bytes: AtomicU64,
     pub indexed_packs: AtomicU64,
     pub uploaded_bytes: AtomicU64,
 }
@@ -91,7 +92,7 @@ pub struct BackupStats {
 impl Backup {
     /// Convenience function to join the threads
     /// assuming the channels haven't been moved out.
-    pub fn join(self) -> Result<BackupStats> {
+    pub fn join(self) -> Result<Arc<BackupStats>> {
         drop(self.chunk_tx);
         drop(self.tree_tx);
         drop(self.upload_tx);
@@ -107,9 +108,7 @@ impl Backup {
         }
         .with_context(|| format!("Couldn't remove {}", index::WIP_NAME))?;
 
-        let stats = Arc::into_inner(self.statistics)
-            .expect("joined backup threads but someone still has a stats refcount");
-        Ok(stats)
+        Ok(self.statistics)
     }
 }
 
@@ -160,6 +159,7 @@ pub fn spawn_backup_threads(
     }
 }
 
+#[expect(clippy::too_many_arguments)] // We know, sit down.
 fn backup_master_thread(
     mode: Mode,
     chunk_rx: Receiver<Blob>,
@@ -184,6 +184,7 @@ fn backup_master_thread(
 
     let chunk_bytes = &statistics.chunk_bytes;
     let tree_bytes = &statistics.tree_bytes;
+    let comp_bytes = &statistics.compressed_bytes;
     let indexed_packs = &statistics.indexed_packs;
     let uploaded_bytes = &statistics.uploaded_bytes;
 
@@ -197,6 +198,7 @@ fn backup_master_thread(
                     chunk_index_tx,
                     chunk_pack_upload_tx,
                     chunk_bytes,
+                    comp_bytes,
                 )
             })
             .unwrap();
@@ -210,6 +212,7 @@ fn backup_master_thread(
                     tree_index_tx,
                     tree_pack_upload_tx,
                     tree_bytes,
+                    comp_bytes,
                 )
             })
             .unwrap();
