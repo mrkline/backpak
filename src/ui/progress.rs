@@ -9,6 +9,9 @@ use std::{
 };
 
 use anyhow::Result;
+use camino::Utf8Path;
+use console::Term;
+use unicode_segmentation::UnicodeSegmentation;
 
 // Used for printing progress as we go
 pub struct AtomicCountRead<'a, R> {
@@ -71,10 +74,8 @@ pub struct ProgressThread {
 }
 
 impl ProgressThread {
-    pub fn spawn<F: FnMut(usize) -> Result<()> + Send + 'static>(
-        rate: Duration,
-        f: F,
-    ) -> ProgressThread {
+    pub fn spawn<F: FnMut(usize) -> Result<()> + Send + 'static>(f: F) -> ProgressThread {
+        let rate = Duration::from_millis(100);
         let done_flag = Arc::new(AtomicBool::new(false));
         let df = done_flag.clone();
         let handle = thread::Builder::new()
@@ -135,5 +136,23 @@ pub fn spinner(i: usize) -> char {
         2 => '-',
         3 => '\\',
         _ => unsafe { std::hint::unreachable_unchecked() },
+    }
+}
+
+pub fn truncate_path(p: &Utf8Path, term: &Term) -> impl std::fmt::Display {
+    // Arbitrary truncation; do something smarter?
+    let w = term.size_checked().unwrap_or((0, 80)).1 as usize; // (h, w) wut
+    let syms: Vec<_> = p.as_str().graphemes(true).collect();
+    if syms.len() > w {
+        let back = p.file_name().unwrap();
+        if back.len() >= (w - 3) {
+            format!("...{back}")
+        } else {
+            let backsyms = back.graphemes(true).count();
+            let front = &syms[0..(w - backsyms - 3)];
+            format!("{}...{}", front.join(""), back)
+        }
+    } else {
+        format!("{}", p.as_str())
     }
 }

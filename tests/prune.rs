@@ -52,7 +52,7 @@ fn backup_src() -> Result<()> {
         .arg("prune")
         .assert()
         .success()
-        .stderr(contains("Nothing to do."));
+        .stdout(contains("Nothing to do."));
 
     // Axe the first backup. This will create a situation where the pack(s)
     // can be pruned - we still need the chunks for `tests/references`
@@ -71,7 +71,7 @@ fn backup_src() -> Result<()> {
         .args(&["prune", "-n"])
         .assert()
         .success()
-        .stderr(
+        .stdout(
             contains("Keep 1 packs")
                 .and(contains("rewrite 2"))
                 .and(contains("drop 0 (0 B), and replace the 2 current indexes")),
@@ -91,7 +91,7 @@ fn backup_src() -> Result<()> {
         .arg("prune")
         .assert()
         .success()
-        .stderr(
+        .stdout(
             contains("Keep 1 packs")
                 .and(contains("rewrite 2"))
                 .and(contains("drop 0 (0 B), and replace the 2 current indexes")),
@@ -110,7 +110,7 @@ fn backup_src() -> Result<()> {
         .arg("prune")
         .assert()
         .success()
-        .stderr(predicates::str::contains("Nothing to do."));
+        .stdout(predicates::str::contains("Nothing to do."));
 
     // To examine results
     // std::mem::forget(backup_dir);
@@ -163,7 +163,7 @@ fn no_repacks_needed() -> Result<()> {
         .arg("prune")
         .assert()
         .success()
-        .stderr(
+        .stdout(
             contains("Keep 2 packs")
                 .and(contains("rewrite 0 (0 B), drop 2"))
                 .and(contains("and replace the 2 current indexes")),

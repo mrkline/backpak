@@ -5,7 +5,6 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc, Mutex,
 };
-use std::time::Duration;
 
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -13,7 +12,6 @@ use clap::Parser;
 use console::Term;
 use rustc_hash::FxHashSet;
 use tracing::*;
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::backend;
 use crate::backup::{self, *};
@@ -26,7 +24,7 @@ use crate::hashing::{HashingWriter, ObjectId};
 use crate::index;
 use crate::snapshot::{self, Snapshot};
 use crate::tree;
-use crate::ui::progress::{spinner, ProgressThread};
+use crate::ui::progress::{spinner, truncate_path, ProgressThread};
 
 /// Create a snapshot of the given files and directories.
 #[derive(Debug, Parser)]
@@ -130,14 +128,12 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let cached_backend = Arc::new(cached_backend);
     let mut backup = spawn_backup_threads(bmode, backend_config, cached_backend.clone(), wip_index);
 
-    let walk_stats = Arc::new(WalkStats::default());
+    let walk_stats = Arc::new(WalkStatistics::default());
     let progress_thread = (!args.quiet).then(|| {
         let s2 = backup.statistics.clone();
         let ws = walk_stats.clone();
         let t = Term::stdout();
-        ProgressThread::spawn(Duration::from_millis(100), move |i| {
-            print_progress(i, &t, &s2, &ws)
-        })
+        ProgressThread::spawn(move |i| print_progress(i, &t, &s2, &ws))
     });
 
     // Finish the WIP resume business.
@@ -225,7 +221,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
 /// Spit out by our fs walk below
 #[derive(Default)]
-struct WalkStats {
+struct WalkStatistics {
     current_file: Mutex<Utf8PathBuf>,
     reused_bytes: AtomicU64,
 }
@@ -234,7 +230,7 @@ fn print_progress(
     i: usize,
     term: &Term,
     bstats: &backup::BackupStats,
-    wstats: &WalkStats,
+    wstats: &WalkStatistics,
 ) -> Result<()> {
     if i > 0 {
         term.clear_last_lines(3)?;
@@ -252,21 +248,7 @@ fn print_progress(
     println!("{ispin} {idxd} packs indexed");
 
     let cf: Utf8PathBuf = wstats.current_file.lock().unwrap().clone();
-    // Arbitrary truncation; do something smarter?
-    let w = term.size_checked().unwrap_or((0, 80)).1 as usize; // (h, w) wut
-    let syms: Vec<_> = cf.as_str().graphemes(true).collect();
-    let cf: String = if syms.len() > w {
-        let back = cf.file_name().unwrap();
-        if back.len() >= (w - 3) {
-            format!("...{back}")
-        } else {
-            let backsyms = back.graphemes(true).count();
-            let front = &syms[0..(w - backsyms - 3)];
-            format!("{}...{}", front.join(""), back)
-        }
-    } else {
-        cf.as_str().to_owned()
-    };
+    let cf = truncate_path(&cf, term);
     println!("{cf}");
     Ok(())
 }
@@ -334,7 +316,7 @@ fn backup_tree(
     previous_forest: &tree::Forest,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut Backup,
-    walk_stats: &WalkStats,
+    walk_stats: &WalkStatistics,
 ) -> Result<ObjectId> {
     use fs_tree::DirectoryEntry;
 

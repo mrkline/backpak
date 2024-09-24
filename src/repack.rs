@@ -1,11 +1,22 @@
 //! Shared utilities to repack blobs,
 //! either loose ones in `backpak prune` or to another repo in `backpak copy`
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex,
+};
+
 use anyhow::{anyhow, Context, Result};
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use rustc_hash::FxHashSet;
 use tracing::*;
 
-use crate::{backup, blob, hashing::ObjectId, read, snapshot::Snapshot, tree};
+use crate::{
+    backup, blob,
+    hashing::ObjectId,
+    read,
+    snapshot::{self, Snapshot},
+    tree,
+};
 
 pub struct SnapshotAndForest {
     pub id: ObjectId,
@@ -44,6 +55,13 @@ pub enum Op {
     Prune,
 }
 
+#[derive(Default)]
+pub struct WalkStatistics {
+    pub current_snapshot: Mutex<String>,
+    pub current_file: Mutex<Utf8PathBuf>,
+    pub reused_bytes: AtomicU64,
+}
+
 /// Walk each snapshot and its forest, copying as-needed to the given backup.
 ///
 /// This returns a new list of snapshots since filtering a tree changes its contents,
@@ -56,6 +74,7 @@ pub fn walk_snapshots<Filter>(
     reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut backup::Backup,
+    stats: &WalkStatistics,
 ) -> Result<Vec<Snapshot>>
 where
     Filter: FnMut(
@@ -65,7 +84,7 @@ where
 {
     let new_snaps = snapshots_and_forests
         .iter()
-        .map(|snf| walk_snapshot(op, snf, &mut filter, reader, packed_blobs, backup))
+        .map(|snf| walk_snapshot(op, snf, &mut filter, reader, packed_blobs, backup, stats))
         .collect::<Result<Vec<_>>>()?;
     Ok(new_snaps)
 }
@@ -78,6 +97,7 @@ fn walk_snapshot<Filter>(
     reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut backup::Backup,
+    stats: &WalkStatistics,
 ) -> Result<Snapshot>
 where
     Filter: FnMut(
@@ -90,6 +110,12 @@ where
         Op::Prune => "Repacking loose blobs from snapshot",
     };
     info!("{action} {}", snapshot_and_forest.id);
+    *stats.current_snapshot.lock().unwrap() = format!(
+        "{} ({})",
+        snapshot_and_forest.id,
+        snapshot::strftime(&snapshot_and_forest.snapshot.time)
+    );
+
     let new_root = walk_tree(
         op,
         filter,
@@ -99,6 +125,7 @@ where
         reader,
         packed_blobs,
         backup,
+        stats,
     )
     .with_context(|| format!("In snapshot {}", snapshot_and_forest.id))?;
 
@@ -117,6 +144,7 @@ fn walk_tree<Filter>(
     reader: &mut read::ChunkReader,
     packed_blobs: &mut FxHashSet<ObjectId>,
     backup: &mut backup::Backup,
+    stats: &WalkStatistics,
 ) -> Result<ObjectId>
 where
     Filter: FnMut(
@@ -143,6 +171,8 @@ where
             continue;
         }
 
+        *stats.current_file.lock().unwrap() = node_path.clone();
+
         let new_node: tree::Node = match &node.contents {
             tree::NodeContents::File { chunks } => {
                 let mut chunks_repacked = false;
@@ -155,6 +185,9 @@ where
                     if packed_blobs.insert(*chunk) {
                         repack_chunk(chunk, reader, backup)?;
                         chunks_repacked = true;
+                    } else {
+                        let cs = reader.blob_size(chunk)? as u64;
+                        stats.reused_bytes.fetch_add(cs, Ordering::Relaxed);
                     }
                 }
                 if chunks_repacked {
@@ -181,6 +214,7 @@ where
                     reader,
                     packed_blobs,
                     backup,
+                    stats,
                 )?;
                 info!(
                     "  {:>9} {node_path}{}",
@@ -208,6 +242,12 @@ where
             id: new_tree_id,
             kind: blob::Type::Tree,
         })?;
+    }
+    // Otherwise it's reused.
+    else {
+        stats
+            .reused_bytes
+            .fetch_add(serialized.len() as u64, Ordering::Relaxed);
     }
     Ok(new_tree_id)
 }

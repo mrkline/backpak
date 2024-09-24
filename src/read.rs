@@ -118,6 +118,27 @@ impl<'a> ChunkReader<'a> {
         }
     }
 
+    /// Just get a blob's size from the index. Much cheaper than actually reading the blob.
+    pub fn blob_size(&mut self, id: &ObjectId) -> Result<u32> {
+        let pack_id: ObjectId = *self
+            .blob_map
+            .get(id)
+            .ok_or_else(|| anyhow!("Chunk {id} not found in any pack"))?;
+
+        let manifest = self
+            .index
+            .packs
+            .get(&pack_id)
+            .ok_or_else(|| anyhow!("Couldn't find pack {pack_id} manifest in the index"))?;
+
+        let entry = manifest
+            .iter()
+            .find(|e| e.id == *id)
+            .ok_or_else(|| anyhow!("Chunk {id} isn't in pack {pack_id} like the index said"))?;
+
+        Ok(entry.length)
+    }
+
     pub fn read_blob(&mut self, id: &ObjectId) -> Result<Rc<Vec<u8>>> {
         // If we get a cache hit, EZ!
         if let Some(b) = self.cache.get(id) {

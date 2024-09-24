@@ -70,7 +70,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     let reusable_size = packs_blob_size(reusable_packs.values());
     if packs_to_prune.is_empty() {
-        info!("All {reusable_size} in use! Nothing to do.");
+        println!("All {reusable_size} in use! Nothing to do.");
         return Ok(());
     }
 
@@ -95,7 +95,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     debug!("Packs [{}] could be repacked", idlist(sparse_packs.keys()));
     debug!("Packs [{}] can be dropped", idlist(droppable_packs.keys()));
     debug!("Indexes [{}] could be replaced", idlist(superseded.iter()));
-    info!(
+    println!(
         "Keep {} packs ({reusable_size}), rewrite {} ({}), drop {} ({}), and replace the {} current indexes",
         reusable_packs.len(),
         sparse_packs.len(),
@@ -176,9 +176,10 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Get a reader to load the chunks we're repacking.
     let mut reader = read::ChunkReader::new(&cached_backend, &index, &blob_map);
 
-    // We don't skip over anything as we prune; that'd leave us in a nasy state.
+    // We don't skip over anything as we prune; that'd leave us in a nasty state.
     let filter = |_p: &Utf8Path| true;
 
+    let wstats = Arc::new(repack::WalkStatistics::default());
     repack::walk_snapshots(
         repack::Op::Prune,
         &snapshots_and_forests,
@@ -186,6 +187,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         &mut reader,
         &mut packed_blobs,
         &mut backup,
+        &wstats,
     )?;
 
     // NB: Before deleting the old indexes, we make sure the new one's been written.

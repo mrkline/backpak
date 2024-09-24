@@ -93,7 +93,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         println!("Author: {}", snapshot.author);
 
         // Very similar to Git's - it's nice! - but put date, then time.
-        let datestr = snapshot.time.strftime("%a %b %-e %-Y %H:%M:%S %:V");
+        let datestr = snapshot::strftime(&snapshot.time);
         println!("Date:   {datestr}");
 
         for path in snapshot.paths {
