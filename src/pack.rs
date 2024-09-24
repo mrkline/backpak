@@ -35,6 +35,7 @@ use crate::blob::{self, Blob};
 use crate::file_util::{self, nice_size};
 use crate::hashing::{HashingReader, ObjectId};
 use crate::tree;
+use crate::ui::progress::AtomicCountWrite;
 
 pub const MAGIC_BYTES: &[u8] = b"MKBAKPAK1";
 
@@ -76,9 +77,10 @@ pub fn pack(
     to_index: SyncSender<PackMetadata>,
     to_upload: SyncSender<(String, File)>,
     total_bytes_packed: &AtomicU64,
+    total_bytes_compressed: &AtomicU64,
 ) -> Result<()> {
     let target_size = target_size.as_u64();
-    let mut writer = PackfileWriter::new()?;
+    let mut writer = PackfileWriter::new(total_bytes_compressed)?;
 
     let mut pass_bytes_written: u64 = 0; // Bytes written since the last size check
     let mut bytes_in_pack: u64 = 0;
@@ -177,7 +179,7 @@ pub fn pack(
                 .send(metadata)
                 .context("packer -> indexer channel exited early")?;
 
-            writer = PackfileWriter::new()?;
+            writer = PackfileWriter::new(total_bytes_compressed)?;
             pass_bytes_written = 0;
             bytes_in_pack = 0;
             bytes_before_next_check = target_size;
@@ -199,15 +201,15 @@ pub fn pack(
 type ZstdEncoder<W> = zstd::stream::write::Encoder<'static, W>;
 type ZstdDecoder<R> = zstd::stream::read::Decoder<'static, R>;
 
-struct PackfileWriter {
-    writer: ZstdEncoder<NamedTempFile>,
+struct PackfileWriter<'a> {
+    writer: ZstdEncoder<AtomicCountWrite<'a, NamedTempFile>>,
     manifest: PackManifest,
 }
 
 // TODO: Obviously this should all take place in a configurable temp directory
 
-impl PackfileWriter {
-    fn new() -> Result<Self> {
+impl<'a> PackfileWriter<'a> {
+    fn new(byte_count: &'a AtomicU64) -> Result<Self> {
         let mut fh = tempfile::Builder::new()
             .prefix("temp-backpak-")
             .suffix(".pack")
@@ -215,8 +217,8 @@ impl PackfileWriter {
             .context("Couldn't open temporary packfile for writing")?;
 
         fh.write_all(MAGIC_BYTES)?;
-
-        let mut zstd = ZstdEncoder::new(fh, 0)?;
+        let acw = AtomicCountWrite::new(fh, byte_count);
+        let mut zstd = ZstdEncoder::new(acw, 0)?;
         zstd.multithread(num_cpus::get_physical() as u32)?;
         Ok(Self {
             writer: zstd,
@@ -245,7 +247,7 @@ impl PackfileWriter {
     /// **Warning:** Doing this too frequently hurts the compression ratio, at least a little.
     fn flush_and_check_size(&mut self) -> Result<u64> {
         self.writer.flush()?;
-        let pos = self.writer.get_ref().stream_position()?;
+        let pos = self.writer.get_ref().get_ref().stream_position()?;
         Ok(pos)
     }
 
@@ -254,7 +256,7 @@ impl PackfileWriter {
     /// Doesn't account for whatever data is in the Zstd buffer,
     /// but doesn't change compression ratios either.
     fn check_size(&self) -> Result<u64> {
-        let pos = self.writer.get_ref().stream_position()?;
+        let pos = self.writer.get_ref().get_ref().stream_position()?;
         Ok(pos)
     }
 
@@ -266,7 +268,7 @@ impl PackfileWriter {
         // Finish the compression stream for blobs and trees.
         // We'll compress the manifest separately so we can decompress it
         // without reading everything before it.
-        let mut fh: NamedTempFile = self.writer.finish()?;
+        let mut fh: NamedTempFile = self.writer.finish()?.into_inner();
 
         // The manifest CBOR will have lots of redundant data - compress it down.
         // TODO: Is multithreading worth it here?
@@ -542,6 +544,7 @@ mod test {
                 chunk_rx,
                 pack_tx,
                 upload_tx,
+                &unused_byte_count,
                 &unused_byte_count,
             )
         });

@@ -23,6 +23,8 @@ camino = { version = "1.0", features = ["serde1"] }
 ciborium = "0.2.1"
 # Arg parsing
 clap = { version = "4.0", features = ["derive"] }
+# Minimalist TUI nonsense
+console = "0.15"
 # Base-32 encoding
 data-encoding = "2.3"
 # Stats map
@@ -69,6 +71,7 @@ toml = "0.8"
 # It's the good logger now.
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["std", "ansi", "fmt"] }
+unicode-segmentation = "1.12.0"
 # Thank you Yann.
 zstd = { version = "0.13", features = ["zstdmt"] }
 

@@ -236,6 +236,7 @@ mod test {
                 pack_tx,
                 upload_tx,
                 &unused_byte_count,
+                &unused_byte_count,
             )
         });
 
