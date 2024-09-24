@@ -100,7 +100,7 @@ impl Cache {
     /// Insert the given contents into the cache with the given name.
     /// Returns the file in the cache
     /// (since reads that just inserted will want to read the contents immediately).
-    pub fn insert(&self, name: &str, contents: &mut dyn Read) -> Result<File> {
+    pub fn insert<R: Read>(&self, name: &str, contents: R) -> Result<File> {
         let to = self.directory.join(name);
         let cached = file_util::safe_copy_to_file(contents, &to)?;
         self.bump_row(name, cached.metadata()?.len())?;

@@ -187,8 +187,7 @@ impl CachedBackend {
                 } else {
                     debug!("Downloading {name}");
                     bump(Op::BackendRead);
-                    let mut inserted =
-                        cache.insert(name, &mut *backend.read(&destination(name))?)?;
+                    let mut inserted = cache.insert(name, backend.read(&destination(name))?)?;
                     cache.prune()?;
                     inserted.seek(io::SeekFrom::Start(0))?;
                     Ok(Box::new(inserted))
