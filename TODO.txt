@@ -1,6 +1,11 @@
-## More progress info!()s
+## Cache got an empty file if GPG failed on download
 
-Especially for `check`. TUI some day?
+Investigate.
+Self healing cache - chuck reads out of it that fail?
+
+## Colorized progress
+
+## auto-quiet if not a tty?
 
 ## filter-snapshot
 
