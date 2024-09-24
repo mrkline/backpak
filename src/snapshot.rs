@@ -81,6 +81,10 @@ where
         .map_err(serde::de::Error::custom)
 }
 
+pub fn strftime(z: &Zoned) -> impl std::fmt::Display {
+    z.strftime("%a %b %-e %-Y %H:%M:%S %:V")
+}
+
 const MAGIC_BYTES: &[u8] = b"MKBAKSNP1";
 
 fn to_file(fh: &mut fs::File, snapshot: &Snapshot) -> Result<ObjectId> {
