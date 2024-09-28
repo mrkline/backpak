@@ -132,7 +132,7 @@ pub enum CacheBehavior {
 /// The backend is also responsible for unlinking the files
 /// it's given once they're safely backed up.
 /// (Bad separation of concerns? Perhaps. Convenient API? Yes.)
-pub enum CachedBackend {
+enum CachedBackendKind {
     /// Since a filesystem backend is, well, on the file system,
     /// we don't win anything by caching.
     /// Just read and write files directly. Nice.
@@ -153,6 +153,22 @@ pub enum CachedBackend {
     },
 }
 
+pub struct CachedBackend {
+    inner: CachedBackendKind,
+    pub bytes_downloaded: AtomicU64,
+    pub bytes_uploaded: AtomicU64,
+}
+
+impl CachedBackend {
+    fn new(inner: CachedBackendKind) -> Self {
+        Self {
+            inner,
+            bytes_downloaded: AtomicU64::new(0),
+            bytes_uploaded: AtomicU64::new(0),
+        }
+    }
+}
+
 pub trait SeekableRead: Read + Seek + Send + 'static {}
 impl<T> SeekableRead for T where T: Read + Seek + Send + 'static {}
 
@@ -162,15 +178,15 @@ impl<T> SeekableRead for T where T: Read + Seek + Send + 'static {}
 impl CachedBackend {
     /// Read the object at the given key and return its file.
     fn read(&self, name: &str) -> Result<Box<dyn SeekableRead>> {
-        match &self {
-            CachedBackend::File { backend } => {
+        match &self.inner {
+            CachedBackendKind::File { backend } => {
                 debug!("Loading {name}");
                 bump(Op::BackendRead);
                 let from = backend.path_of(&destination(name));
                 let fd = File::open(&from).with_context(|| format!("Couldn't open {from}"))?;
                 Ok(Box::new(fd))
             }
-            CachedBackend::Cached {
+            CachedBackendKind::Cached {
                 cache,
                 behavior,
                 backend,
@@ -193,7 +209,7 @@ impl CachedBackend {
                     Ok(Box::new(inserted))
                 }
             }
-            CachedBackend::Memory { backend } => {
+            CachedBackendKind::Memory { backend } => {
                 debug!("Loading {name} (in-memory)");
                 bump(Op::BackendRead);
                 Ok(Box::new(backend.read_cursor(&destination(name))?))
@@ -204,33 +220,33 @@ impl CachedBackend {
     /// Take the completed file and its `<id>.<type>` name and
     /// store it to an object with the appropriate key per
     /// `destination()`
-    pub fn write(&self, name: &str, mut fh: File, bytes_uploaded: &AtomicU64) -> Result<()> {
+    pub fn write(&self, name: &str, mut fh: File) -> Result<()> {
         bump(Op::BackendWrite);
         let len = fh.metadata()?.len();
-        match &self {
-            CachedBackend::File { backend } => {
+        match &self.inner {
+            CachedBackendKind::File { backend } => {
                 debug!("Saving {name} ({})", nice_size(len));
                 let to = backend.path_of(&destination(name));
                 move_opened(name, fh, to)?;
-                bytes_uploaded.fetch_add(len, Ordering::Relaxed);
+                self.bytes_uploaded.fetch_add(len, Ordering::Relaxed);
             }
-            CachedBackend::Cached { cache, backend, .. } => {
+            CachedBackendKind::Cached { cache, backend, .. } => {
                 // Write through!
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
                 debug!("Uploading {name} ({})", nice_size(len));
-                let mut counter = crate::progress::AtomicCountRead::new(fh, bytes_uploaded);
+                let mut counter = crate::progress::AtomicCountRead::new(fh, &self.bytes_uploaded);
                 backend.write(len, &mut counter, &destination(name))?;
                 // Insert it into the cache.
                 cache.insert_file(name, counter.into_inner())?;
                 // Prune the cache.
                 cache.prune()?;
             }
-            CachedBackend::Memory { backend } => {
+            CachedBackendKind::Memory { backend } => {
                 debug!("Saving {name} ({}, in-memory)", nice_size(len));
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 backend.write(len, &mut fh, &destination(name))?;
-                bytes_uploaded.fetch_add(len, Ordering::Relaxed);
+                self.bytes_uploaded.fetch_add(len, Ordering::Relaxed);
                 std::fs::remove_file(name)?;
             }
         }
@@ -240,16 +256,16 @@ impl CachedBackend {
     fn remove(&self, name: &str) -> Result<()> {
         debug!("Deleting {name}");
         bump(Op::BackendDelete);
-        match &self {
-            CachedBackend::File { backend } => backend.remove(&destination(name)),
-            CachedBackend::Cached { cache, backend, .. } => {
+        match &self.inner {
+            CachedBackendKind::File { backend } => backend.remove(&destination(name)),
+            CachedBackendKind::Cached { cache, backend, .. } => {
                 // Remove it from the cache too.
                 // No worries if it isn't there, no need to prune.
                 cache.evict(name)?;
                 backend.remove(&destination(name))?;
                 Ok(())
             }
-            CachedBackend::Memory { backend } => backend.remove(&destination(name)),
+            CachedBackendKind::Memory { backend } => backend.remove(&destination(name)),
         }
     }
 
@@ -258,10 +274,10 @@ impl CachedBackend {
 
     fn list(&self, which: &str) -> Result<Vec<(String, u64)>> {
         debug!("Querying backend for {which}*");
-        match &self {
-            CachedBackend::File { backend } => backend.list(which),
-            CachedBackend::Cached { backend, .. } => backend.list(which),
-            CachedBackend::Memory { backend } => backend.list(which),
+        match &self.inner {
+            CachedBackendKind::File { backend } => backend.list(which),
+            CachedBackendKind::Cached { backend, .. } => backend.list(which),
+            CachedBackendKind::Memory { backend } => backend.list(which),
         }
     }
 
@@ -334,9 +350,9 @@ pub fn probe_pack(packs: &[(String, u64)], id: &ObjectId) -> Result<()> {
 
 /// Initializes an in-memory cache for testing purposes.
 pub fn in_memory() -> CachedBackend {
-    CachedBackend::Memory {
+    CachedBackend::new(CachedBackendKind::Memory {
         backend: memory::MemoryBackend::new(),
-    }
+    })
 }
 
 /// Factory function to open the appropriate type of backend from the repository path
@@ -358,7 +374,7 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
         Kind::Filesystem { force_cache: false } if c.filter.is_none() => {
             // Uncached filesystem backends are a special case
             // (they let us directly manipulate files.)
-            CachedBackend::File {
+            CachedBackendKind::File {
                 backend: fs::FilesystemBackend::open(repository)?,
             }
         }
@@ -389,13 +405,14 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
                 });
             }
 
-            CachedBackend::Cached {
+            CachedBackendKind::Cached {
                 backend,
                 behavior,
                 cache,
             }
         }
     };
+    let cached_backend = CachedBackend::new(cached_backend);
     Ok((c, cached_backend))
 }
 

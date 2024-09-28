@@ -132,8 +132,9 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let progress_thread = (!args.quiet).then(|| {
         let s2 = backup.statistics.clone();
         let ws = walk_stats.clone();
+        let b2 = cached_backend.clone();
         let t = Term::stdout();
-        ProgressThread::spawn(move |i| print_progress(i, &t, &s2, &ws))
+        ProgressThread::spawn(move |i| print_progress(i, &t, &s2, &ws, &b2.bytes_uploaded))
     });
 
     // Finish the WIP resume business.
@@ -231,13 +232,15 @@ fn print_progress(
     term: &Term,
     bstats: &backup::BackupStats,
     wstats: &WalkStatistics,
+    up: &AtomicU64,
 ) -> Result<()> {
     if i > 0 {
         term.clear_last_lines(3)?;
     }
 
     let rb = wstats.reused_bytes.load(Ordering::Relaxed);
-    print_backup_lines(i, bstats, rb);
+    let ub = up.load(Ordering::Relaxed);
+    print_backup_lines(i, bstats, rb, ub);
 
     let cf: Utf8PathBuf = wstats.current_file.lock().unwrap().clone();
     let cf = truncate_path(&cf, term);

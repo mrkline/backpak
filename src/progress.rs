@@ -147,13 +147,18 @@ pub fn spinner(i: usize) -> char {
 ///
 /// Spinner | Packed | Reused | Compressed | Uploaded,
 /// Index
-pub fn print_backup_lines(i: usize, bstats: &backup::BackupStats, reused_bytes: u64) {
+pub fn print_backup_lines(
+    i: usize,
+    bstats: &backup::BackupStats,
+    reused_bytes: u64,
+    uploaded_bytes: u64,
+) {
     let spin = spinner(i);
     let cb = nice_size(bstats.chunk_bytes.load(Ordering::Relaxed));
     let tb = nice_size(bstats.tree_bytes.load(Ordering::Relaxed));
     let rb = nice_size(reused_bytes);
     let cz = nice_size(bstats.compressed_bytes.load(Ordering::Relaxed));
-    let ub = nice_size(bstats.uploaded_bytes.load(Ordering::Relaxed));
+    let ub = nice_size(uploaded_bytes);
     println!("{spin} P {cb} + {tb} | R {rb} | Z {cz} | U {ub}");
 
     let idxd = bstats.indexed_packs.load(Ordering::Relaxed);
