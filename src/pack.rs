@@ -34,8 +34,8 @@ use crate::backend;
 use crate::blob::{self, Blob};
 use crate::file_util::{self, nice_size};
 use crate::hashing::{HashingReader, ObjectId};
+use crate::progress::AtomicCountWrite;
 use crate::tree;
-use crate::ui::progress::AtomicCountWrite;
 
 pub const MAGIC_BYTES: &[u8] = b"MKBAKPAK1";
 

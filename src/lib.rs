@@ -17,6 +17,7 @@ pub mod index;
 pub mod ls;
 pub mod pack;
 pub mod prettify;
+pub mod progress;
 pub mod read;
 pub mod repack;
 pub mod snapshot;
