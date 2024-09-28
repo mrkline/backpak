@@ -13,6 +13,9 @@ use camino::Utf8Path;
 use console::Term;
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::backup;
+use crate::file_util::nice_size;
+
 // Used for printing progress as we go
 pub struct AtomicCountRead<'a, R> {
     inner: R,
@@ -137,6 +140,24 @@ pub fn spinner(i: usize) -> char {
         3 => '\\',
         _ => unsafe { std::hint::unreachable_unchecked() },
     }
+}
+
+/// Two of em:
+///
+/// Spinner | Packed | Reused | Compressed | Uploaded,
+/// Index
+pub fn print_backup_lines(i: usize, bstats: &backup::BackupStats, reused_bytes: u64) {
+    let spin = spinner(i);
+    let cb = nice_size(bstats.chunk_bytes.load(Ordering::Relaxed));
+    let tb = nice_size(bstats.tree_bytes.load(Ordering::Relaxed));
+    let rb = nice_size(reused_bytes);
+    let cz = nice_size(bstats.compressed_bytes.load(Ordering::Relaxed));
+    let ub = nice_size(bstats.uploaded_bytes.load(Ordering::Relaxed));
+    println!("{spin} P {cb} + {tb} | R {rb} | Z {cz} | U {ub}");
+
+    let idxd = bstats.indexed_packs.load(Ordering::Relaxed);
+    let ispin = if idxd % 2 != 0 { 'i' } else { 'I' };
+    println!("{ispin} {idxd} packs indexed");
 }
 
 pub fn truncate_path(p: &Utf8Path, term: &Term) -> impl std::fmt::Display {
