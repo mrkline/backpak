@@ -7,14 +7,13 @@ use console::Term;
 
 use crate::backend;
 use crate::backup;
-use crate::file_util::nice_size;
 use crate::filter;
 use crate::index;
 use crate::read;
 use crate::repack;
 use crate::snapshot;
 use crate::tree;
-use crate::ui::progress::{spinner, truncate_path, ProgressThread};
+use crate::ui::progress::{truncate_path, print_backup_lines, ProgressThread};
 
 /// Copy snapshots from one repository to another.
 #[derive(Debug, Parser)]
@@ -163,17 +162,9 @@ fn print_progress(
     if i > 0 {
         term.clear_last_lines(4)?;
     }
-    let spin = spinner(i);
-    let cb = nice_size(bstats.chunk_bytes.load(Ordering::Relaxed));
-    let tb = nice_size(bstats.tree_bytes.load(Ordering::Relaxed));
-    let rb = nice_size(wstats.reused_bytes.load(Ordering::Relaxed));
-    let cz = nice_size(bstats.compressed_bytes.load(Ordering::Relaxed));
-    let ub = nice_size(bstats.uploaded_bytes.load(Ordering::Relaxed));
-    println!("{spin} P {cb} + {tb} | R {rb} | Z {cz} | U {ub}");
 
-    let idxd = bstats.indexed_packs.load(Ordering::Relaxed);
-    let ispin = if idxd % 2 != 0 { 'i' } else { 'I' };
-    println!("{ispin} {idxd} packs indexed");
+    let rb = wstats.reused_bytes.load(Ordering::Relaxed);
+    print_backup_lines(i, bstats, rb);
 
     let cs = wstats.current_snapshot.lock().unwrap().clone();
     println!("snap: {cs}");
