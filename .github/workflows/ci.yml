@@ -13,7 +13,7 @@ jobs:
   format_and_docs:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
           packages: libsqlite3-dev
@@ -26,7 +26,7 @@ jobs:
   build_and_test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - uses: awalsh128/cache-apt-pkgs-action@latest
       with:
           packages: libsqlite3-dev
