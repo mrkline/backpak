@@ -35,6 +35,10 @@ use crate::tree;
 pub struct Args {
     #[clap(short = 'n', long)]
     dry_run: bool,
+
+    /// Don't print progress to stdout
+    #[clap(short, long)]
+    quiet: bool,
 }
 
 pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
@@ -167,6 +171,10 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let mut backup =
         backup::spawn_backup_threads(bmode, backend_config, cached_backend.clone(), new_index);
 
+    let walk_stats = Arc::new(repack::WalkStatistics::default());
+    let progress_thread = (!args.quiet)
+        .then(|| repack::ui::ProgressThread::spawn(backup.statistics.clone(), walk_stats.clone()));
+
     // Finish the WIP resume business.
     if !args.dry_run {
         backup::upload_cwd_packfiles(&mut backup.upload_tx, &packs_to_upload)?;
@@ -179,7 +187,6 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // We don't skip over anything as we prune; that'd leave us in a nasty state.
     let filter = |_p: &Utf8Path| true;
 
-    let wstats = Arc::new(repack::WalkStatistics::default());
     repack::walk_snapshots(
         repack::Op::Prune,
         &snapshots_and_forests,
@@ -187,7 +194,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         &mut reader,
         &mut packed_blobs,
         &mut backup,
-        &wstats,
+        &walk_stats,
     )?;
 
     // NB: Before deleting the old indexes, we make sure the new one's been written.
@@ -198,6 +205,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     //     will upload their own index only after all packs are uploaded,
     //     making sure indexes never refer to missing packs. (I hope...)
     backup.join()?;
+    progress_thread.map(|h| h.join()).transpose()?;
 
     if !args.dry_run {
         // Remove old indexes _before_ removing packs such that we don't have

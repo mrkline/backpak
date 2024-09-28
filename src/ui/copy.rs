@@ -1,15 +1,13 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 
 use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
-use console::Term;
 
 use crate::backend;
 use crate::backup;
 use crate::filter;
 use crate::index;
-use crate::progress::{print_backup_lines, truncate_path, ProgressThread};
 use crate::read;
 use crate::repack;
 use crate::snapshot;
@@ -113,12 +111,8 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     );
 
     let walk_stats = Arc::new(repack::WalkStatistics::default());
-    let progress_thread = (!args.quiet).then(|| {
-        let s2 = backup.statistics.clone();
-        let ws = walk_stats.clone();
-        let t = Term::stdout();
-        ProgressThread::spawn(move |i| print_progress(i, &t, &s2, &ws))
-    });
+    let progress_thread = (!args.quiet)
+        .then(|| repack::ui::ProgressThread::spawn(backup.statistics.clone(), walk_stats.clone()));
 
     // Finish the WIP resume business.
     if !args.dry_run {
@@ -141,7 +135,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Important: make sure all blobs and the index are written BEFORE
     // we upload the snapshots.
     // It's meaningless unless everything else is there first!
-    let _stats = backup.join()?;
+    backup.join()?;
     progress_thread.map(|h| h.join()).transpose()?;
 
     if !args.dry_run {
@@ -150,27 +144,5 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-fn print_progress(
-    i: usize,
-    term: &Term,
-    bstats: &backup::BackupStats,
-    wstats: &repack::WalkStatistics,
-) -> Result<()> {
-    if i > 0 {
-        term.clear_last_lines(4)?;
-    }
-
-    let rb = wstats.reused_bytes.load(Ordering::Relaxed);
-    print_backup_lines(i, bstats, rb);
-
-    let cs = wstats.current_snapshot.lock().unwrap().clone();
-    println!("snap: {cs}");
-
-    let cf: Utf8PathBuf = wstats.current_file.lock().unwrap().clone();
-    let cf = truncate_path(&cf, term);
-    println!("{cf}");
     Ok(())
 }
