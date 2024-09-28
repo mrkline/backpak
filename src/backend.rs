@@ -219,7 +219,7 @@ impl CachedBackend {
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
                 debug!("Uploading {name} ({})", nice_size(len));
-                let mut counter = crate::ui::progress::AtomicCountRead::new(fh, bytes_uploaded);
+                let mut counter = crate::progress::AtomicCountRead::new(fh, bytes_uploaded);
                 backend.write(len, &mut counter, &destination(name))?;
                 // Insert it into the cache.
                 cache.insert_file(name, counter.into_inner())?;

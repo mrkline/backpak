@@ -22,9 +22,9 @@ use crate::filter;
 use crate::fs_tree;
 use crate::hashing::{HashingWriter, ObjectId};
 use crate::index;
+use crate::progress::{print_backup_lines, truncate_path, ProgressThread};
 use crate::snapshot::{self, Snapshot};
 use crate::tree;
-use crate::ui::progress::{truncate_path, print_backup_lines, ProgressThread};
 
 /// Create a snapshot of the given files and directories.
 #[derive(Debug, Parser)]

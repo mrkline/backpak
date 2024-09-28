@@ -9,11 +9,11 @@ use crate::backend;
 use crate::backup;
 use crate::filter;
 use crate::index;
+use crate::progress::{print_backup_lines, truncate_path, ProgressThread};
 use crate::read;
 use crate::repack;
 use crate::snapshot;
 use crate::tree;
-use crate::ui::progress::{truncate_path, print_backup_lines, ProgressThread};
 
 /// Copy snapshots from one repository to another.
 #[derive(Debug, Parser)]
