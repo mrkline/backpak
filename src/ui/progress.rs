@@ -90,6 +90,7 @@ impl ProgressThread {
 
     pub fn join(self) -> Result<()> {
         self.done_flag.store(true, Ordering::SeqCst);
+        self.handle.thread().unpark();
         self.handle.join().unwrap()
     }
 }
