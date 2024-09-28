@@ -166,6 +166,18 @@ pub fn print_backup_lines(
     println!("{ispin} {idxd} packs indexed");
 }
 
+pub fn print_download_line(downloaded_bytes: u64) {
+    let db = nice_size(downloaded_bytes);
+    // Flip every 500K.
+    // Better symbols? Trying to commit to ASCII art only.
+    let dspin = if downloaded_bytes % 1000000 > 500000 {
+        'L'
+    } else {
+        'D'
+    };
+    println!("{dspin} {db} downloaded");
+}
+
 pub fn truncate_path(p: &Utf8Path, term: &Term) -> impl std::fmt::Display {
     // Arbitrary truncation; do something smarter?
     let w = term.size_checked().unwrap_or((0, 80)).1 as usize; // (h, w) wut

@@ -16,7 +16,7 @@ use crate::{
     counters::{bump, Op},
     file_util::{move_opened, nice_size},
     hashing::ObjectId,
-    pack,
+    pack, progress,
 };
 
 pub mod backblaze;
@@ -184,6 +184,13 @@ impl CachedBackend {
                 bump(Op::BackendRead);
                 let from = backend.path_of(&destination(name));
                 let fd = File::open(&from).with_context(|| format!("Couldn't open {from}"))?;
+
+                // Sorta - wrapping the file in AtomicCountRead would give us weird stuff
+                // when seeking (or add a shitton of bookeeping to avoid said weird stuff).
+                // Just add the file length on read.
+                let len = fd.metadata()?.len();
+                self.bytes_downloaded.fetch_add(len, Ordering::Relaxed); // sorta
+
                 Ok(Box::new(fd))
             }
             CachedBackendKind::Cached {
@@ -203,7 +210,14 @@ impl CachedBackend {
                 } else {
                     debug!("Downloading {name}");
                     bump(Op::BackendRead);
-                    let mut inserted = cache.insert(name, backend.read(&destination(name))?)?;
+                    // NB: See backend::filter - we need this to drop _inside_
+                    // cache.insert() lest its hokey "waiting on a process inside drop()"
+                    // breaks things.
+                    let counter = progress::AtomicCountRead::new(
+                        backend.read(&destination(name))?,
+                        &self.bytes_downloaded,
+                    );
+                    let mut inserted = cache.insert(name, counter)?;
                     cache.prune()?;
                     inserted.seek(io::SeekFrom::Start(0))?;
                     Ok(Box::new(inserted))
@@ -235,7 +249,7 @@ impl CachedBackend {
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
                 debug!("Uploading {name} ({})", nice_size(len));
-                let mut counter = crate::progress::AtomicCountRead::new(fh, &self.bytes_uploaded);
+                let mut counter = progress::AtomicCountRead::new(fh, &self.bytes_uploaded);
                 backend.write(len, &mut counter, &destination(name))?;
                 // Insert it into the cache.
                 cache.insert_file(name, counter.into_inner())?;
