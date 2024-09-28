@@ -22,7 +22,7 @@ use crate::filter;
 use crate::fs_tree;
 use crate::hashing::{HashingWriter, ObjectId};
 use crate::index;
-use crate::progress::{print_backup_lines, truncate_path, ProgressThread};
+use crate::progress::{print_backup_lines, print_download_line, truncate_path, ProgressThread};
 use crate::snapshot::{self, Snapshot};
 use crate::tree;
 
@@ -134,7 +134,9 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         let ws = walk_stats.clone();
         let b2 = cached_backend.clone();
         let t = Term::stdout();
-        ProgressThread::spawn(move |i| print_progress(i, &t, &s2, &ws, &b2.bytes_uploaded))
+        ProgressThread::spawn(move |i| {
+            print_progress(i, &t, &s2, &ws, &b2.bytes_uploaded, &b2.bytes_downloaded)
+        })
     });
 
     // Finish the WIP resume business.
@@ -233,14 +235,18 @@ fn print_progress(
     bstats: &backup::BackupStats,
     wstats: &WalkStatistics,
     up: &AtomicU64,
+    down: &AtomicU64,
 ) -> Result<()> {
     if i > 0 {
-        term.clear_last_lines(3)?;
+        term.clear_last_lines(4)?;
     }
 
     let rb = wstats.reused_bytes.load(Ordering::Relaxed);
     let ub = up.load(Ordering::Relaxed);
     print_backup_lines(i, bstats, rb, ub);
+
+    let db = down.load(Ordering::Relaxed);
+    print_download_line(db);
 
     let cf: Utf8PathBuf = wstats.current_file.lock().unwrap().clone();
     let cf = truncate_path(&cf, term);

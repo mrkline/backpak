@@ -4,8 +4,7 @@ use console::Term;
 use crate::{
     backend::CachedBackend,
     backup,
-    file_util::nice_size,
-    progress::{self, print_backup_lines, truncate_path},
+    progress::{self, print_backup_lines, print_download_line, truncate_path},
 };
 
 use super::*;
@@ -49,11 +48,10 @@ fn print_progress(
     let ub = up.load(Ordering::Relaxed);
     print_backup_lines(i, bstats, rb, ub);
 
-    let db = nice_size(down.load(Ordering::Relaxed));
-    println!("Downloaded: {db}");
+    print_download_line(down.load(Ordering::Relaxed));
 
     let cs = wstats.current_snapshot.lock().unwrap().clone();
-    println!("snap: {cs}");
+    println!("Snapshot: {cs}");
 
     let cf: Utf8PathBuf = wstats.current_file.lock().unwrap().clone();
     let cf = truncate_path(&cf, term);
