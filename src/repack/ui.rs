@@ -2,7 +2,9 @@ use anyhow::Result;
 use console::Term;
 
 use crate::{
+    backend::CachedBackend,
     backup,
+    file_util::nice_size,
     progress::{self, print_backup_lines, truncate_path},
 };
 
@@ -13,9 +15,16 @@ pub struct ProgressThread {
 }
 
 impl ProgressThread {
-    pub fn spawn(bs: Arc<backup::BackupStats>, ws: Arc<WalkStatistics>) -> Self {
+    pub fn spawn(
+        src: Arc<CachedBackend>,
+        dest: Arc<CachedBackend>,
+        bs: Arc<backup::BackupStats>,
+        ws: Arc<WalkStatistics>,
+    ) -> Self {
         let t = Term::stdout();
-        let inner = progress::ProgressThread::spawn(move |i| print_progress(i, &t, &bs, &ws));
+        let inner = progress::ProgressThread::spawn(move |i| {
+            print_progress(i, &t, &bs, &ws, &src.bytes_downloaded, &dest.bytes_uploaded)
+        });
         Self { inner }
     }
 
@@ -29,13 +38,19 @@ fn print_progress(
     term: &Term,
     bstats: &backup::BackupStats,
     wstats: &WalkStatistics,
+    down: &AtomicU64,
+    up: &AtomicU64,
 ) -> Result<()> {
     if i > 0 {
-        term.clear_last_lines(4)?;
+        term.clear_last_lines(5)?;
     }
 
     let rb = wstats.reused_bytes.load(Ordering::Relaxed);
-    print_backup_lines(i, bstats, rb);
+    let ub = up.load(Ordering::Relaxed);
+    print_backup_lines(i, bstats, rb, ub);
+
+    let db = nice_size(down.load(Ordering::Relaxed));
+    println!("Downloaded: {db}");
 
     let cs = wstats.current_snapshot.lock().unwrap().clone();
     println!("snap: {cs}");

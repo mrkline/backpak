@@ -172,8 +172,14 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         backup::spawn_backup_threads(bmode, backend_config, cached_backend.clone(), new_index);
 
     let walk_stats = Arc::new(repack::WalkStatistics::default());
-    let progress_thread = (!args.quiet)
-        .then(|| repack::ui::ProgressThread::spawn(backup.statistics.clone(), walk_stats.clone()));
+    let progress_thread = (!args.quiet).then(|| {
+        repack::ui::ProgressThread::spawn(
+            cached_backend.clone(),
+            cached_backend.clone(),
+            backup.statistics.clone(),
+            walk_stats.clone(),
+        )
+    });
 
     // Finish the WIP resume business.
     if !args.dry_run {

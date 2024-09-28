@@ -66,13 +66,12 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
             Ok(())
         })?;
 
-    let uploaded_bytes = AtomicU64::new(0); // TODO: Progress CLI!
     let umode = if args.dry_run {
         upload::Mode::DryRun
     } else {
         upload::Mode::LiveFire
     };
-    upload::upload(umode, &cached_backend, upload_rx, &uploaded_bytes)?;
+    upload::upload(umode, &cached_backend, upload_rx)?;
 
     // NB: Before deleting the old indexes, we make sure the new one's been written.
     //     This ensures there's no point in time when we don't have a valid index

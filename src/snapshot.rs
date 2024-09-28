@@ -119,8 +119,7 @@ pub fn upload(snapshot: &Snapshot, backend: &backend::CachedBackend) -> Result<O
     // Snapshots are very small compared to packs/indexes;
     // don't bother including them in the "total bytes uploaded" accounting.
     // (Plus, the progress we show with the atomic are done by the time we upload the snapshot(s)).
-    let unused_bytes_uploaded = AtomicU64::new(0);
-    backend.write(&snapshot_name, persisted, &unused_bytes_uploaded)?;
+    backend.write(&snapshot_name, persisted)?;
     Ok(id)
 }
 

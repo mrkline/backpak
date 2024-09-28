@@ -53,6 +53,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     // Build the usual suspects.
     let (_, src_cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
+    let src_cached_backend = Arc::new(src_cached_backend);
     let src_index = index::build_master_index(&src_cached_backend)?;
     let src_blob_map = index::blob_to_pack_map(&src_index)?;
 
@@ -111,8 +112,14 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     );
 
     let walk_stats = Arc::new(repack::WalkStatistics::default());
-    let progress_thread = (!args.quiet)
-        .then(|| repack::ui::ProgressThread::spawn(backup.statistics.clone(), walk_stats.clone()));
+    let progress_thread = (!args.quiet).then(|| {
+        repack::ui::ProgressThread::spawn(
+            src_cached_backend.clone(),
+            dst_cached_backend.clone(),
+            backup.statistics.clone(),
+            walk_stats.clone(),
+        )
+    });
 
     // Finish the WIP resume business.
     if !args.dry_run {
