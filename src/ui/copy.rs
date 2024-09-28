@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::thread;
 
 use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -53,7 +53,6 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     // Build the usual suspects.
     let (_, src_cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
-    let src_cached_backend = Arc::new(src_cached_backend);
     let src_index = index::build_master_index(&src_cached_backend)?;
     let src_blob_map = index::blob_to_pack_map(&src_index)?;
 
@@ -102,48 +101,54 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     } else {
         backup::Mode::LiveFire
     };
-    let dst_backend_config = Arc::new(dst_backend_config);
-    let dst_cached_backend = Arc::new(dst_cached_backend);
-    let mut backup = backup::spawn_backup_threads(
-        bmode,
-        dst_backend_config,
-        dst_cached_backend.clone(),
-        wip_index,
-    );
+    let back_stats = backup::BackupStatistics::default();
+    let walk_stats = repack::WalkStatistics::default();
+    let new_snapshots = thread::scope(|s| -> Result<_> {
+        let mut backup = backup::spawn_backup_threads(
+            s,
+            bmode,
+            &dst_backend_config,
+            &dst_cached_backend,
+            wip_index,
+            &back_stats,
+        );
 
-    let walk_stats = Arc::new(repack::WalkStatistics::default());
-    let progress_thread = (!args.quiet).then(|| {
-        repack::ui::ProgressThread::spawn(
-            src_cached_backend.clone(),
-            dst_cached_backend.clone(),
-            backup.statistics.clone(),
-            walk_stats.clone(),
-        )
-    });
+        let progress_thread = (!args.quiet).then(|| {
+            repack::ui::ProgressThread::spawn(
+                s,
+                &back_stats,
+                &walk_stats,
+                &src_cached_backend.bytes_downloaded,
+                &dst_cached_backend.bytes_uploaded,
+            )
+        });
 
-    // Finish the WIP resume business.
-    if !args.dry_run {
-        backup::upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
-    }
-    drop(cwd_packfiles);
+        // Finish the WIP resume business.
+        if !args.dry_run {
+            backup::upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
+        }
+        drop(cwd_packfiles);
 
-    let filter = filter::skip_matching_paths(&args.skips)?;
+        let filter = filter::skip_matching_paths(&args.skips)?;
 
-    let new_snapshots = repack::walk_snapshots(
-        repack::Op::Copy,
-        &src_snapshots_and_forests,
-        filter,
-        &mut reader,
-        &mut packed_blobs,
-        &mut backup,
-        &walk_stats,
-    )?;
+        let new_snapshots = repack::walk_snapshots(
+            repack::Op::Copy,
+            &src_snapshots_and_forests,
+            filter,
+            &mut reader,
+            &mut packed_blobs,
+            &mut backup,
+            &walk_stats,
+        )?;
 
-    // Important: make sure all blobs and the index are written BEFORE
-    // we upload the snapshots.
-    // It's meaningless unless everything else is there first!
-    backup.join()?;
-    progress_thread.map(|h| h.join()).transpose()?;
+        // Important: make sure all blobs and the index are written BEFORE
+        // we upload the snapshots.
+        // It's meaningless unless everything else is there first!
+        backup.join()?;
+        progress_thread.map(|h| h.join()).transpose()?;
+
+        Ok(new_snapshots)
+    })?;
 
     if !args.dry_run {
         for snap in &new_snapshots {

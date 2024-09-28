@@ -2,7 +2,7 @@
 //! either loose ones in `backpak prune` or to another repo in `backpak copy`
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Arc, Mutex,
+    Mutex,
 };
 
 use anyhow::{anyhow, Context, Result};

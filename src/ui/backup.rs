@@ -3,8 +3,9 @@ use std::collections::BTreeSet;
 use std::io;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Arc, Mutex,
+    Mutex,
 };
+use std::thread;
 
 use anyhow::{bail, ensure, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -124,55 +125,62 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     } else {
         backup::Mode::LiveFire
     };
-    let backend_config = Arc::new(backend_config);
-    let cached_backend = Arc::new(cached_backend);
-    let mut backup = spawn_backup_threads(bmode, backend_config, cached_backend.clone(), wip_index);
+    let back_stats = BackupStatistics::default();
+    let walk_stats = WalkStatistics::default();
+    let root = thread::scope(|s| -> Result<_> {
+        let mut backup = spawn_backup_threads(
+            s,
+            bmode,
+            &backend_config,
+            &cached_backend,
+            wip_index,
+            &back_stats,
+        );
 
-    let walk_stats = Arc::new(WalkStatistics::default());
-    let progress_thread = (!args.quiet).then(|| {
-        let s2 = backup.statistics.clone();
-        let ws = walk_stats.clone();
-        let b2 = cached_backend.clone();
-        let t = Term::stdout();
-        ProgressThread::spawn(move |i| {
-            print_progress(i, &t, &s2, &ws, &b2.bytes_uploaded, &b2.bytes_downloaded)
-        })
-    });
+        let progress_thread = (!args.quiet).then(|| {
+            let up = &cached_backend.bytes_uploaded;
+            let down = &cached_backend.bytes_downloaded;
+            ProgressThread::spawn(s, |i| {
+                print_progress(i, &Term::stdout(), &back_stats, &walk_stats, up, down)
+            })
+        });
 
-    // Finish the WIP resume business.
-    if !args.dry_run {
-        upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
-    }
-    drop(cwd_packfiles);
+        // Finish the WIP resume business.
+        if !args.dry_run {
+            upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
+        }
+        drop(cwd_packfiles);
 
-    info!(
-        "Backing up {}",
-        paths
-            .iter()
-            .map(|p| p.to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+        info!(
+            "Backing up {}",
+            paths
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
 
-    let root = backup_tree(
-        symlink_behavior,
-        &paths,
-        &args.skips,
-        parent.map(|p| &p.tree),
-        &parent_forest,
-        &mut packed_blobs,
-        &mut backup,
-        &walk_stats,
-    )?;
-    drop(parent_forest);
-    drop(packed_blobs);
+        let root = backup_tree(
+            symlink_behavior,
+            &paths,
+            &args.skips,
+            parent.map(|p| &p.tree),
+            &parent_forest,
+            &mut packed_blobs,
+            &mut backup,
+            &walk_stats,
+        )?;
+        drop(parent_forest);
+        drop(packed_blobs);
 
-    // Important: make sure all blobs and the index is written BEFORE
-    // we upload the snapshot.
-    // It's meaningless unless everything else is there first!
-    let stats = backup.join()?;
+        // Important: make sure all blobs and the index is written BEFORE
+        // we upload the snapshot.
+        // It's meaningless unless everything else is there first!
+        backup.join()?;
 
-    progress_thread.map(|h| h.join()).transpose()?;
+        progress_thread.map(|h| h.join()).transpose()?;
+        Ok(root)
+    })?;
 
     debug!("Root tree packed as {}", root);
 
@@ -180,8 +188,8 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         "{} reused",
         nice_size(walk_stats.reused_bytes.load(Ordering::Relaxed))
     );
-    let chunk_bytes = stats.chunk_bytes.load(Ordering::Relaxed);
-    let tree_bytes = stats.tree_bytes.load(Ordering::Relaxed);
+    let chunk_bytes = back_stats.chunk_bytes.load(Ordering::Relaxed);
+    let tree_bytes = back_stats.tree_bytes.load(Ordering::Relaxed);
 
     let total_bytes = nice_size(chunk_bytes + tree_bytes);
     let chunk_bytes = nice_size(chunk_bytes);
@@ -232,7 +240,7 @@ struct WalkStatistics {
 fn print_progress(
     i: usize,
     term: &Term,
-    bstats: &backup::BackupStats,
+    bstats: &backup::BackupStatistics,
     wstats: &WalkStatistics,
     up: &AtomicU64,
     down: &AtomicU64,
