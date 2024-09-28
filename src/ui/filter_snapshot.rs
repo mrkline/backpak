@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::thread;
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use camino::Utf8Path;
@@ -72,28 +72,34 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     } else {
         backup::Mode::LiveFire
     };
-    let backend_config = Arc::new(backend_config);
-    let cached_backend = Arc::new(cached_backend);
-    let mut backup = backup::spawn_backup_threads(
-        bmode,
-        backend_config,
-        cached_backend.clone(),
-        Index::default(),
-    );
 
-    let mut filter = filter::skip_matching_paths(&args.skips)?;
+    let back_stats = backup::BackupStatistics::default();
+    let mut new_snapshot = thread::scope(|s| -> Result<_> {
+        let mut backup = backup::spawn_backup_threads(
+            s,
+            bmode,
+            &backend_config,
+            &cached_backend,
+            Index::default(),
+            &back_stats,
+        );
 
-    let mut new_snapshot = walk_snapshot(
-        &snapshot_and_forest,
-        &mut filter,
-        &mut packed_blobs,
-        &mut backup,
-    )?;
+        let mut filter = filter::skip_matching_paths(&args.skips)?;
 
-    // Important: make sure all new trees and the index are written BEFORE
-    // we upload the new snapshot.
-    // It's meaningless unless everything else is there first!
-    let _stats = backup.join()?;
+        let new_snapshot = walk_snapshot(
+            &snapshot_and_forest,
+            &mut filter,
+            &mut packed_blobs,
+            &mut backup,
+        )?;
+
+        // Important: make sure all new trees and the index are written BEFORE
+        // we upload the new snapshot.
+        // It's meaningless unless everything else is there first!
+        backup.join()?;
+
+        Ok(new_snapshot)
+    })?;
 
     if new_snapshot == *target {
         info!("Nothing filtered; no new snapshot");

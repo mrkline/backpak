@@ -4,7 +4,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
-    thread::{self, park_timeout, JoinHandle},
+    thread::{self, park_timeout, Scope, ScopedJoinHandle},
     time::{Duration, Instant},
 };
 
@@ -71,19 +71,22 @@ impl<W: Write> Write for AtomicCountWrite<'_, W> {
     }
 }
 
-pub struct ProgressThread {
-    handle: JoinHandle<Result<()>>,
+pub struct ProgressThread<'scope> {
+    handle: ScopedJoinHandle<'scope, Result<()>>,
     done_flag: Arc<AtomicBool>,
 }
 
-impl ProgressThread {
-    pub fn spawn<F: FnMut(usize) -> Result<()> + Send + 'static>(f: F) -> ProgressThread {
+impl<'scope> ProgressThread<'scope> {
+    pub fn spawn<'env, F>(s: &'scope Scope<'scope, 'env>, f: F) -> Self
+    where
+        F: FnMut(usize) -> Result<()> + Send + 'scope,
+    {
         let rate = Duration::from_millis(100);
         let done_flag = Arc::new(AtomicBool::new(false));
         let df = done_flag.clone();
         let handle = thread::Builder::new()
             .name(String::from("progress-cli"))
-            .spawn(move || periodically(rate, &df, f))
+            .spawn_scoped(s, move || periodically(rate, &df, f))
             .unwrap();
         Self { handle, done_flag }
     }
@@ -149,7 +152,7 @@ pub fn spinner(i: usize) -> char {
 /// Index
 pub fn print_backup_lines(
     i: usize,
-    bstats: &backup::BackupStats,
+    bstats: &backup::BackupStatistics,
     reused_bytes: u64,
     uploaded_bytes: u64,
 ) {

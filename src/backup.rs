@@ -51,7 +51,6 @@ use std::str::FromStr;
 use std::sync::{
     atomic::AtomicU64,
     mpsc::{sync_channel, Receiver, SyncSender},
-    Arc,
 };
 use std::thread;
 
@@ -72,26 +71,26 @@ pub enum Mode {
     LiveFire,
 }
 
-pub struct Backup {
+pub struct Backup<'scope, 'env> {
     pub chunk_tx: SyncSender<Blob>,
     pub tree_tx: SyncSender<Blob>,
     pub upload_tx: SyncSender<(String, File)>,
-    pub statistics: Arc<BackupStats>,
-    threads: thread::JoinHandle<Result<()>>,
+    pub statistics: &'env BackupStatistics,
+    threads: thread::ScopedJoinHandle<'scope, Result<()>>,
 }
 
 #[derive(Debug, Default)]
-pub struct BackupStats {
+pub struct BackupStatistics {
     pub chunk_bytes: AtomicU64,
     pub tree_bytes: AtomicU64,
     pub compressed_bytes: AtomicU64,
     pub indexed_packs: AtomicU64,
 }
 
-impl Backup {
+impl<'scope, 'env> Backup<'scope, 'env> {
     /// Convenience function to join the threads
     /// assuming the channels haven't been moved out.
-    pub fn join(self) -> Result<Arc<BackupStats>> {
+    pub fn join(self) -> Result<()> {
         drop(self.chunk_tx);
         drop(self.tree_tx);
         drop(self.upload_tx);
@@ -107,16 +106,18 @@ impl Backup {
         }
         .with_context(|| format!("Couldn't remove {}", index::WIP_NAME))?;
 
-        Ok(self.statistics)
+        Ok(())
     }
 }
 
-pub fn spawn_backup_threads(
+pub fn spawn_backup_threads<'scope, 'env>(
+    s: &'scope thread::Scope<'scope, 'env>,
     mode: Mode,
-    backend_config: Arc<backend::Config>,
-    cached_backend: Arc<backend::CachedBackend>,
+    backend_config: &'env backend::Config,
+    cached_backend: &'env backend::CachedBackend,
     starting_index: index::Index,
-) -> Backup {
+    statistics: &'env BackupStatistics,
+) -> Backup<'scope, 'env> {
     // Channels are all handoffs holding no elements - this simplifies reasoning about:
     // - When data is flowing through the system
     // - When some tasks are waiting on others
@@ -129,12 +130,10 @@ pub fn spawn_backup_threads(
     let (tree_tx, tree_rx) = sync_channel(0);
     let (upload_tx, upload_rx) = sync_channel(0);
     let upload_tx2 = upload_tx.clone();
-    let statistics = Arc::new(BackupStats::default());
-    let stats2 = statistics.clone();
 
     let threads = thread::Builder::new()
         .name(String::from("backup master"))
-        .spawn(move || {
+        .spawn_scoped(s, move || {
             backup_master_thread(
                 mode,
                 chunk_rx,
@@ -143,7 +142,7 @@ pub fn spawn_backup_threads(
                 upload_rx,
                 backend_config,
                 cached_backend,
-                stats2,
+                statistics,
                 starting_index,
             )
         })
@@ -159,15 +158,15 @@ pub fn spawn_backup_threads(
 }
 
 #[expect(clippy::too_many_arguments)] // We know, sit down.
-fn backup_master_thread(
+fn backup_master_thread<'env>(
     mode: Mode,
     chunk_rx: Receiver<Blob>,
     tree_rx: Receiver<Blob>,
     upload_tx: SyncSender<(String, File)>,
     upload_rx: Receiver<(String, File)>,
-    backend_config: Arc<backend::Config>,
-    cached_backend: Arc<backend::CachedBackend>,
-    statistics: Arc<BackupStats>,
+    backend_config: &'env backend::Config,
+    cached_backend: &'env backend::CachedBackend,
+    statistics: &'env BackupStatistics,
     starting_index: index::Index,
 ) -> Result<()> {
     // ALL THE CONCURRENCY

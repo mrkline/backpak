@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::thread;
 
 use anyhow::Result;
 use camino::Utf8Path;
@@ -166,52 +166,61 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     } else {
         backup::Mode::LiveFire
     };
-    let backend_config = Arc::new(backend_config);
-    let cached_backend = Arc::new(cached_backend);
-    let mut backup =
-        backup::spawn_backup_threads(bmode, backend_config, cached_backend.clone(), new_index);
+    let back_stats = backup::BackupStatistics::default();
+    let walk_stats = repack::WalkStatistics::default();
+    thread::scope(|s| -> Result<()> {
+        let mut backup = backup::spawn_backup_threads(
+            s,
+            bmode,
+            &backend_config,
+            &cached_backend,
+            new_index,
+            &back_stats,
+        );
 
-    let walk_stats = Arc::new(repack::WalkStatistics::default());
-    let progress_thread = (!args.quiet).then(|| {
-        repack::ui::ProgressThread::spawn(
-            cached_backend.clone(),
-            cached_backend.clone(),
-            backup.statistics.clone(),
-            walk_stats.clone(),
-        )
-    });
+        let progress_thread = (!args.quiet).then(|| {
+            repack::ui::ProgressThread::spawn(
+                s,
+                &back_stats,
+                &walk_stats,
+                &cached_backend.bytes_downloaded,
+                &cached_backend.bytes_uploaded,
+            )
+        });
 
-    // Finish the WIP resume business.
-    if !args.dry_run {
-        backup::upload_cwd_packfiles(&mut backup.upload_tx, &packs_to_upload)?;
-    }
-    drop(packs_to_upload);
+        // Finish the WIP resume business.
+        if !args.dry_run {
+            backup::upload_cwd_packfiles(&mut backup.upload_tx, &packs_to_upload)?;
+        }
+        drop(packs_to_upload);
 
-    // Get a reader to load the chunks we're repacking.
-    let mut reader = read::ChunkReader::new(&cached_backend, &index, &blob_map);
+        // Get a reader to load the chunks we're repacking.
+        let mut reader = read::ChunkReader::new(&cached_backend, &index, &blob_map);
 
-    // We don't skip over anything as we prune; that'd leave us in a nasty state.
-    let filter = |_p: &Utf8Path| true;
+        // We don't skip over anything as we prune; that'd leave us in a nasty state.
+        let filter = |_p: &Utf8Path| true;
 
-    repack::walk_snapshots(
-        repack::Op::Prune,
-        &snapshots_and_forests,
-        filter,
-        &mut reader,
-        &mut packed_blobs,
-        &mut backup,
-        &walk_stats,
-    )?;
+        repack::walk_snapshots(
+            repack::Op::Prune,
+            &snapshots_and_forests,
+            filter,
+            &mut reader,
+            &mut packed_blobs,
+            &mut backup,
+            &walk_stats,
+        )?;
 
-    // NB: Before deleting the old indexes, we make sure the new one's been written.
-    //     This ensures there's no point in time when we don't have a valid index
-    //     of reachable blobs in packs. rebuild-index plays the same game.
-    //
-    //     Any concurrent writers (writing a backup at the same time)
-    //     will upload their own index only after all packs are uploaded,
-    //     making sure indexes never refer to missing packs. (I hope...)
-    backup.join()?;
-    progress_thread.map(|h| h.join()).transpose()?;
+        // NB: Before deleting the old indexes, we make sure the new one's been written.
+        //     This ensures there's no point in time when we don't have a valid index
+        //     of reachable blobs in packs. rebuild-index plays the same game.
+        //
+        //     Any concurrent writers (writing a backup at the same time)
+        //     will upload their own index only after all packs are uploaded,
+        //     making sure indexes never refer to missing packs. (I hope...)
+        backup.join()?;
+        progress_thread.map(|h| h.join()).transpose()?;
+        Ok(())
+    })?;
 
     if !args.dry_run {
         // Remove old indexes _before_ removing packs such that we don't have
