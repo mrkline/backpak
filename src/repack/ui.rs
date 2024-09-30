@@ -52,11 +52,11 @@ fn print_progress(
 
     print_download_line(down.load(Ordering::Relaxed));
 
-    let cs = wstats.current_snapshot.lock().unwrap().clone();
+    let cs = wstats.current_snapshot.borrow();
     println!("Snapshot: {cs}");
 
-    let cf: Utf8PathBuf = wstats.current_file.lock().unwrap().clone();
-    let cf = truncate_path(&cf, term);
+    let cf = wstats.current_file.borrow();
+    let cf = truncate_path(&*cf, term);
     println!("{cf}");
     Ok(())
 }

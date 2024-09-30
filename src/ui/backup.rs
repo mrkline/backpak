@@ -1,10 +1,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::io;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Mutex,
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 
 use anyhow::{bail, ensure, Context, Result};
@@ -24,6 +21,7 @@ use crate::fs_tree;
 use crate::hashing::{HashingWriter, ObjectId};
 use crate::index;
 use crate::progress::{print_backup_lines, print_download_line, truncate_path, ProgressThread};
+use crate::rcu::Rcu;
 use crate::snapshot::{self, Snapshot};
 use crate::tree;
 
@@ -233,7 +231,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 /// Spit out by our fs walk below
 #[derive(Default)]
 struct WalkStatistics {
-    current_file: Mutex<Utf8PathBuf>,
+    current_file: Rcu<Utf8PathBuf>,
     reused_bytes: AtomicU64,
 }
 
@@ -256,7 +254,7 @@ fn print_progress(
     let db = down.load(Ordering::Relaxed);
     print_download_line(db);
 
-    let cf: Utf8PathBuf = wstats.current_file.lock().unwrap().clone();
+    let cf = wstats.current_file.borrow();
     let cf = truncate_path(&cf, term);
     println!("{cf}");
     Ok(())
@@ -347,7 +345,7 @@ fn backup_tree(
                      previous_node: Option<&tree::Node>,
                      entry: DirectoryEntry<ObjectId>|
      -> Result<()> {
-        *walk_stats.current_file.lock().unwrap() = path.to_owned();
+        walk_stats.current_file.update(path.to_owned());
         let subnode = match entry {
             DirectoryEntry::Directory(subtree) => {
                 /*

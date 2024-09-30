@@ -2,7 +2,6 @@
 //! either loose ones in `backpak prune` or to another repo in `backpak copy`
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Mutex,
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -13,6 +12,7 @@ use tracing::*;
 use crate::{
     backup, blob,
     hashing::ObjectId,
+    rcu::Rcu,
     read,
     snapshot::{self, Snapshot},
     tree,
@@ -59,8 +59,8 @@ pub enum Op {
 
 #[derive(Default)]
 pub struct WalkStatistics {
-    pub current_snapshot: Mutex<String>,
-    pub current_file: Mutex<Utf8PathBuf>,
+    pub current_snapshot: Rcu<String>,
+    pub current_file: Rcu<Utf8PathBuf>,
     pub reused_bytes: AtomicU64,
 }
 
@@ -112,11 +112,11 @@ where
         Op::Prune => "Repacking loose blobs from snapshot",
     };
     info!("{action} {}", snapshot_and_forest.id);
-    *stats.current_snapshot.lock().unwrap() = format!(
+    stats.current_snapshot.update(format!(
         "{} ({})",
         snapshot_and_forest.id,
         snapshot::strftime(&snapshot_and_forest.snapshot.time)
-    );
+    ));
 
     let new_root = walk_tree(
         op,
@@ -173,7 +173,7 @@ where
             continue;
         }
 
-        *stats.current_file.lock().unwrap() = node_path.clone();
+        stats.current_file.update(node_path.clone());
 
         let new_node: tree::Node = match &node.contents {
             tree::NodeContents::File { chunks } => {
