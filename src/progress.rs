@@ -195,6 +195,6 @@ pub fn truncate_path(p: &Utf8Path, term: &Term) -> impl std::fmt::Display {
             format!("{}...{}", front.join(""), back)
         }
     } else {
-        format!("{}", p.as_str())
+        p.to_string()
     }
 }
