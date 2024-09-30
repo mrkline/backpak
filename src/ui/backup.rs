@@ -358,34 +358,29 @@ fn backup_tree(
                 */
                 info!("{:>9} {}{}", "finished", path, std::path::MAIN_SEPARATOR);
 
-                let t = tree::Node {
+                tree::Node {
                     metadata,
                     contents: tree::NodeContents::Directory { subtree },
-                };
-                t
+                }
             }
             DirectoryEntry::Symlink { target } => {
                 assert_eq!(symlink_behavior, tree::Symlink::Read);
                 info!("{:>9} {}", "symlink", path);
 
-                let t = tree::Node {
+                tree::Node {
                     metadata,
                     contents: tree::NodeContents::Symlink { target },
-                };
-                t
+                }
             }
             DirectoryEntry::UnchangedFile => {
                 info!("{:>9} {}", "unchanged", path);
 
                 let rb = metadata.size().expect("files have sizes");
-                walk_stats
-                    .reused_bytes
-                    .fetch_add(rb as u64, Ordering::Relaxed);
-                let t = tree::Node {
+                walk_stats.reused_bytes.fetch_add(rb, Ordering::Relaxed);
+                tree::Node {
                     metadata,
                     contents: previous_node.unwrap().contents.clone(),
-                };
-                t
+                }
             }
             DirectoryEntry::ChangedFile => {
                 let chunks = chunk::chunk_file(path)?;
@@ -419,11 +414,10 @@ fn backup_tree(
                 }
                 trace!("{path} was {total_chunks} chunks");
 
-                let t = tree::Node {
+                tree::Node {
                     metadata,
                     contents: tree::NodeContents::File { chunks: chunk_ids },
-                };
-                t
+                }
             }
         };
         ensure!(

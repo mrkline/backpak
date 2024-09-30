@@ -238,7 +238,7 @@ fn backup_master_thread<'env>(
         };
         let uploader = thread::Builder::new()
             .name(String::from("uploader"))
-            .spawn_scoped(s, move || upload::upload(umode, &cached_backend, upload_rx))
+            .spawn_scoped(s, move || upload::upload(umode, cached_backend, upload_rx))
             .unwrap();
 
         let mut errors: Vec<anyhow::Error> = Vec::new();

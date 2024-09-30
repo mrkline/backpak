@@ -1,8 +1,6 @@
 //! Shared utilities to repack blobs,
 //! either loose ones in `backpak prune` or to another repo in `backpak copy`
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{anyhow, Context, Result};
 use camino::{Utf8Path, Utf8PathBuf};

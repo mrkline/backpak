@@ -22,9 +22,8 @@ impl<'scope> ProgressThread<'scope> {
         down: &'env AtomicU64,
         up: &'env AtomicU64,
     ) -> Self {
-        let t = Term::stdout();
-        let inner = progress::ProgressThread::spawn(s, move |i| {
-            print_progress(i, &t, &bs, &ws, &down, &up)
+        let inner = progress::ProgressThread::spawn(s, |i| {
+            print_progress(i, &Term::stdout(), bs, ws, down, up)
         });
         Self { inner }
     }
@@ -56,7 +55,7 @@ fn print_progress(
     println!("Snapshot: {cs}");
 
     let cf = wstats.current_file.borrow();
-    let cf = truncate_path(&*cf, term);
+    let cf = truncate_path(&cf, term);
     println!("{cf}");
     Ok(())
 }
