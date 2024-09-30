@@ -25,6 +25,8 @@ ciborium = "0.2.1"
 clap = { version = "4.0", features = ["derive"] }
 # Minimalist TUI nonsense
 console = "0.15"
+# Mutexes are lame.
+crossbeam-epoch = "0.9"
 # Base-32 encoding
 data-encoding = "2.3"
 # Stats map
