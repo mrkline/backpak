@@ -112,7 +112,7 @@ where
     info!("{action} {}", snapshot_and_forest.id);
     stats.current_snapshot.update(format!(
         "{} ({})",
-        snapshot_and_forest.id,
+        snapshot_and_forest.id.short_name(),
         snapshot::strftime(&snapshot_and_forest.snapshot.time)
     ));
 
