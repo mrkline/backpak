@@ -1,8 +1,3 @@
-## Cache got an empty file if GPG failed on download
-
-Investigate.
-Self healing cache - chuck reads out of it that fail?
-
 ## Colorized progress
 
 ## auto-quiet if not a tty?
