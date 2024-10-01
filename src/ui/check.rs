@@ -1,7 +1,9 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::thread;
 
 use anyhow::{bail, Result};
 use clap::Parser;
+use console::Term;
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use tracing::*;
@@ -10,6 +12,7 @@ use crate::backend;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
+use crate::progress::{print_download_line, spinner, ProgressThread};
 use crate::snapshot;
 use crate::tree;
 
@@ -27,6 +30,14 @@ pub struct Args {
     read_packs: bool,
 }
 
+#[derive(Default)]
+pub struct ReadStatus {
+    packs_total: u32,
+    packs_read: AtomicU32,
+    blobs_total: u64,
+    blobs_read: AtomicU64,
+}
+
 pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let mut trouble = false;
 
@@ -36,23 +47,41 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
 
     let index = index::build_master_index(&cached_backend)?;
 
-    info!("Checking all packs listed in indexes");
+    info!("Downloading pack list");
     let all_packs = cached_backend.list_packs()?;
-    let borked_packs = AtomicUsize::new(0);
+    let borked_packs = AtomicU32::new(0);
     if args.read_packs {
-        // Actually read the packs; do this in parallel as much as the backend allows
-        index.packs.par_iter().for_each(|(pack_id, manifest)| {
-            match check_pack(&cached_backend, pack_id, manifest) {
-                Ok(()) => debug!("Pack {pack_id} verified"),
-                Err(e) => {
-                    error!("Pack {pack_id}: {e:?}");
-                    borked_packs.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        });
+        let stats = ReadStatus {
+            packs_total: index.packs.len() as u32,
+            blobs_total: index
+                .packs
+                .values()
+                .map(|manifest| manifest.len() as u64)
+                .sum(),
+            ..Default::default()
+        };
+        thread::scope(|s| -> Result<()> {
+            let progress = ProgressThread::spawn(s, |i| {
+                print_progress(i, &Term::stdout(), &stats, &cached_backend.bytes_downloaded)
+            });
+            // Actually read the packs; do this in parallel as much as the backend allows
+            index.packs.par_iter().for_each(|(pack_id, manifest)| {
+                match check_pack(&cached_backend, pack_id, manifest, &stats.blobs_read) {
+                    Ok(()) => debug!("Pack {pack_id} verified"),
+                    Err(e) => {
+                        error!("Pack {pack_id}: {e:?}");
+                        borked_packs.fetch_add(1, Ordering::Relaxed);
+                    }
+                };
+                stats.packs_read.fetch_add(1, Ordering::Relaxed);
+            });
+            progress.join()?;
+            Ok(())
+        })?;
     } else {
         // If we don't have to read the packs, just list them all
         // and make sure we find the indexed ones in that list.
+        info!("Checking that all indexed packs are present");
         for pack_id in index.packs.keys() {
             match backend::probe_pack(&all_packs, pack_id) {
                 Ok(()) => debug!("Pack {} found", pack_id),
@@ -112,9 +141,10 @@ fn check_pack(
     cached_backend: &backend::CachedBackend,
     pack_id: &ObjectId,
     manifest: &[pack::PackManifestEntry],
+    blobs_read: &AtomicU64,
 ) -> Result<()> {
     let mut pack = cached_backend.read_pack(pack_id)?;
-    pack::verify(&mut pack, manifest)?;
+    pack::verify(&mut pack, manifest, blobs_read)?;
     Ok(())
 }
 
@@ -169,4 +199,22 @@ fn map_chunks_to_snapshots(
     }
 
     Ok(chunks_to_snapshots)
+}
+
+fn print_progress(i: usize, term: &Term, stats: &ReadStatus, down: &AtomicU64) -> Result<()> {
+    if i > 0 {
+        term.clear_last_lines(2)?;
+    }
+
+    let s = spinner(i);
+    let p = stats.packs_read.load(Ordering::Relaxed);
+    let tp = stats.packs_total;
+    let b = stats.blobs_read.load(Ordering::Relaxed);
+    let tb = stats.blobs_total;
+    let perc = b as f64 / tb as f64 * 100.0;
+    println!("{s} {p}/{tp} packs | {b}/{tb} blobs ({perc:.0}%)");
+
+    let db = down.load(Ordering::Relaxed);
+    print_download_line(db);
+    Ok(())
 }
