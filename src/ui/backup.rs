@@ -223,7 +223,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     };
 
     if !args.quiet {
-        println!("Snaphsot {snap_id} done");
+        println!("Snaphsot {} done", snap_id.short_name());
     }
     Ok(())
 }
