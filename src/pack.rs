@@ -304,6 +304,7 @@ impl<'a> PackfileWriter<'a> {
 pub fn verify<R: Read + Seek>(
     packfile: &mut R,
     manifest_from_index: &[PackManifestEntry],
+    blobs_read: &AtomicU64,
 ) -> Result<()> {
     check_magic(packfile)?;
 
@@ -321,6 +322,7 @@ pub fn verify<R: Read + Seek>(
             hash,
             entry.id
         );
+        blobs_read.fetch_add(1, Ordering::Relaxed);
     }
 
     // Attempting to read the manifest from CBOR
