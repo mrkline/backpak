@@ -328,7 +328,7 @@ fn backup_tree(
     let mut filter = move |path: &Utf8Path| {
         let res = mf(path);
         if !res {
-            info!("{:>9} {}", "skip", path);
+            debug!("{:>9} {}", "skip", path);
         }
         Ok(res)
     };
@@ -353,7 +353,7 @@ fn backup_tree(
                     subtree
                 );
                 */
-                info!("{:>9} {}{}", "finished", path, std::path::MAIN_SEPARATOR);
+                debug!("{:>9} {}{}", "finished", path, std::path::MAIN_SEPARATOR);
 
                 tree::Node {
                     metadata,
@@ -362,7 +362,7 @@ fn backup_tree(
             }
             DirectoryEntry::Symlink { target } => {
                 assert_eq!(symlink_behavior, tree::Symlink::Read);
-                info!("{:>9} {}", "symlink", path);
+                debug!("{:>9} {}", "symlink", path);
 
                 tree::Node {
                     metadata,
@@ -370,7 +370,7 @@ fn backup_tree(
                 }
             }
             DirectoryEntry::UnchangedFile => {
-                info!("{:>9} {}", "unchanged", path);
+                debug!("{:>9} {}", "unchanged", path);
 
                 let rb = metadata.size().expect("files have sizes");
                 walk_stats.reused_bytes.fetch_add(rb, Ordering::Relaxed);
@@ -391,7 +391,7 @@ fn backup_tree(
                     if packed_blobs.borrow_mut().insert(chunk.id) {
                         // The first time we get a new chunk, print "backup"
                         if !new_chunks {
-                            info!("{:>9} {path}", "backup");
+                            debug!("{:>9} {path}", "backup");
                         }
                         new_chunks = true;
                         backup
@@ -407,7 +407,7 @@ fn backup_tree(
                 }
                 // We made it through the whole file without finding new data!
                 if !new_chunks {
-                    info!("{:>9} {path}", "deduped");
+                    debug!("{:>9} {path}", "deduped");
                 }
                 trace!("{path} was {total_chunks} chunks");
 

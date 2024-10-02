@@ -217,6 +217,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     })?;
 
     if !args.dry_run {
+        info!("Prune complete, removing old indexes");
         // Remove old indexes _before_ removing packs such that we don't have
         // indexes referring to missing packs.
         for old_index in &superseded {
@@ -225,6 +226,8 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         for old_pack in packs_to_prune.keys() {
             cached_backend.remove_pack(old_pack)?;
         }
+    } else {
+        info!("Prune complete");
     }
 
     Ok(())

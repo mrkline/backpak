@@ -97,8 +97,11 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-/// Set up simplelog to spit messages to stderr.
+/// Set up simplelog to spit messages to stderr based on -v,
+/// and unadorned INFO messages and up to stdout as part of the progress
 fn init_logger(args: &Args) {
+    use tracing_subscriber::prelude::*;
+
     let level = match args.verbose {
         0 => Level::WARN,
         1 => Level::INFO,
@@ -114,22 +117,37 @@ fn init_logger(args: &Args) {
         Color::Never => false,
     };
 
-    let builder = tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_max_level(level)
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr.with_max_level(level))
         .with_ansi(ansis);
 
-    let builder = if level == Level::TRACE {
-        builder.with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+    let stderr_layer = if level == Level::TRACE {
+        stderr_layer.with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
     } else {
-        builder.with_target(false)
+        stderr_layer.with_target(false)
     };
 
-    if args.timestamps {
-        builder
+    let stderr_layer = if args.timestamps {
+        stderr_layer
             .with_timer(tracing_subscriber::fmt::time::SystemTime)
-            .init();
+            .boxed()
     } else {
-        builder.without_time().init();
-    }
+        stderr_layer.without_time().boxed()
+    };
+
+    let stdout_layer = tracing_subscriber::fmt::layer()
+        .with_writer(
+            std::io::stdout
+                .with_max_level(Level::INFO)
+                .with_min_level(Level::INFO),
+        )
+        .without_time()
+        .with_level(false)
+        .with_target(false)
+        .with_ansi(ansis); // Not used for anything at the moment
+
+    tracing_subscriber::registry()
+        .with(stdout_layer)
+        .with(stderr_layer)
+        .init();
 }
