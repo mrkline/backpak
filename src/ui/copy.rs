@@ -113,15 +113,13 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             &back_stats,
         );
 
-        let progress_thread = (!args.quiet).then(|| {
-            repack::ui::ProgressThread::spawn(
-                s,
-                &back_stats,
-                &walk_stats,
-                &src_cached_backend.bytes_downloaded,
-                &dst_cached_backend.bytes_uploaded,
-            )
-        });
+        let progress_thread = repack::ui::ProgressThread::spawn(
+            s,
+            &back_stats,
+            &walk_stats,
+            &src_cached_backend.bytes_downloaded,
+            &dst_cached_backend.bytes_uploaded,
+        );
 
         // Finish the WIP resume business.
         if !args.dry_run {
@@ -145,7 +143,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         // we upload the snapshots.
         // It's meaningless unless everything else is there first!
         backup.join()?;
-        progress_thread.map(|h| h.join()).transpose()?;
+        progress_thread.join()?;
 
         Ok(new_snapshots)
     })?;

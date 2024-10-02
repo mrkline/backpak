@@ -35,10 +35,6 @@ use crate::tree;
 pub struct Args {
     #[clap(short = 'n', long)]
     dry_run: bool,
-
-    /// Don't print progress to stdout
-    #[clap(short, long)]
-    quiet: bool,
 }
 
 pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
@@ -178,15 +174,13 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             &back_stats,
         );
 
-        let progress_thread = (!args.quiet).then(|| {
-            repack::ui::ProgressThread::spawn(
-                s,
-                &back_stats,
-                &walk_stats,
-                &cached_backend.bytes_downloaded,
-                &cached_backend.bytes_uploaded,
-            )
-        });
+        let progress_thread = repack::ui::ProgressThread::spawn(
+            s,
+            &back_stats,
+            &walk_stats,
+            &cached_backend.bytes_downloaded,
+            &cached_backend.bytes_uploaded,
+        );
 
         // Finish the WIP resume business.
         if !args.dry_run {
@@ -218,7 +212,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         //     will upload their own index only after all packs are uploaded,
         //     making sure indexes never refer to missing packs. (I hope...)
         backup.join()?;
-        progress_thread.map(|h| h.join()).transpose()?;
+        progress_thread.join()?;
         Ok(())
     })?;
 

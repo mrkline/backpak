@@ -47,10 +47,6 @@ pub struct Args {
     #[clap(short = 'n', long)]
     dry_run: bool,
 
-    /// Don't print progress to stdout
-    #[clap(short, long)]
-    quiet: bool,
-
     /// The paths to back up
     ///
     /// These paths are canonicalized into absolute ones.
@@ -135,12 +131,15 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             &back_stats,
         );
 
-        let progress_thread = (!args.quiet).then(|| {
-            let up = &cached_backend.bytes_uploaded;
-            let down = &cached_backend.bytes_downloaded;
-            ProgressThread::spawn(s, |i| {
-                print_progress(i, &Term::stdout(), &back_stats, &walk_stats, up, down)
-            })
+        let progress_thread = ProgressThread::spawn(s, |i| {
+            print_progress(
+                i,
+                &Term::stdout(),
+                &back_stats,
+                &walk_stats,
+                &cached_backend.bytes_uploaded,
+                &cached_backend.bytes_downloaded,
+            )
         });
 
         // Finish the WIP resume business.
@@ -176,7 +175,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         // It's meaningless unless everything else is there first!
         backup.join()?;
 
-        progress_thread.map(|h| h.join()).transpose()?;
+        progress_thread.join()?;
         Ok(root)
     })?;
 
@@ -222,9 +221,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         id
     };
 
-    if !args.quiet {
-        println!("Snaphsot {} done", snap_id.short_name());
-    }
+    println!("Snaphsot {} done", snap_id.short_name());
     Ok(())
 }
 
