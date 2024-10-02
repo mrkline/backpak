@@ -137,7 +137,7 @@ where
         // More some day?
     ) -> bool,
 {
-    info!("filtering snapshot {}", snapshot_and_forest.id);
+    debug!("filtering snapshot {}", snapshot_and_forest.id);
     let new_root = walk_tree(
         filter,
         Utf8Path::new(""),
@@ -182,7 +182,7 @@ where
         let mut node_path = tree_path.to_owned();
         node_path.push(path);
         if !filter(&node_path) {
-            info!("  {:>8} {node_path}", "skipped");
+            debug!("  {:>8} {node_path}", "skipped");
             continue;
         }
 
@@ -196,19 +196,19 @@ where
                         "Missing chunk {chunk} from {node_path}"
                     );
                 }
-                info!("  {:>8} {node_path}", "kept");
+                debug!("  {:>8} {node_path}", "kept");
                 // We're not changing any files, the node stays the same.
                 node.clone()
             }
             tree::NodeContents::Symlink { .. } => {
-                info!("  {:>8} {node_path}", "kept"); // Keep consistent with above
-                                                      // Nothing to change or repack for symlinks.
+                debug!("  {:>8} {node_path}", "kept"); // Keep consistent with above
+                                                       // Nothing to change or repack for symlinks.
                 node.clone()
             }
             tree::NodeContents::Directory { subtree } => {
                 let new_tree =
                     walk_tree(filter, &node_path, subtree, forest, packed_blobs, backup)?;
-                info!(
+                debug!(
                     "  {:>8} {node_path}{}",
                     "finished",
                     std::path::MAIN_SEPARATOR

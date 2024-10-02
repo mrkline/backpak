@@ -109,7 +109,7 @@ where
         Op::Copy => "Copying snapshot",
         Op::Prune => "Repacking loose blobs from snapshot",
     };
-    info!("{action} {}", snapshot_and_forest.id);
+    debug!("{action} {}", snapshot_and_forest.id);
     stats.current_snapshot.update(format!(
         "{} ({})",
         snapshot_and_forest.id.short_name(),
@@ -167,7 +167,7 @@ where
         let mut node_path = tree_path.to_owned();
         node_path.push(path);
         if !filter(&node_path) {
-            info!("  {:>9} {node_path}", "skip");
+            debug!("  {:>9} {node_path}", "skip");
             continue;
         }
 
@@ -191,15 +191,15 @@ where
                     }
                 }
                 if chunks_repacked {
-                    info!("  {verb:>9} {node_path}");
+                    debug!("  {verb:>9} {node_path}");
                 } else {
-                    info!("  {:>9} {node_path}", "deduped"); // Sorta; "unneeded"? Bleh.
+                    debug!("  {:>9} {node_path}", "deduped"); // Sorta; "unneeded"? Bleh.
                 }
                 // We're not changing any files, the node stays the same.
                 node.clone()
             }
             tree::NodeContents::Symlink { .. } => {
-                info!("  {:>9} {node_path}", "deduped"); // Keep consistent with above
+                debug!("  {:>9} {node_path}", "deduped"); // Keep consistent with above
 
                 // Nothing to change or repack for symlinks.
                 node.clone()
@@ -216,7 +216,7 @@ where
                     backup,
                     stats,
                 )?;
-                info!(
+                debug!(
                     "  {:>9} {node_path}{}",
                     "finished",
                     std::path::MAIN_SEPARATOR

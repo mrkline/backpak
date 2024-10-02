@@ -133,6 +133,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
     if trouble {
         bail!("Check failed!");
     } else {
+        info!("Check complete");
         Ok(())
     }
 }

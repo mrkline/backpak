@@ -72,7 +72,7 @@ tempfile = "3.0"
 toml = "0.8"
 # It's the good logger now.
 tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", default-features = false, features = ["std", "ansi", "fmt"] }
+tracing-subscriber = { version = "0.3.18", default-features = false, features = ["std", "ansi", "fmt", "registry"] }
 unicode-segmentation = "1.12.0"
 # Thank you Yann.
 zstd = { version = "0.13", features = ["zstdmt"] }
