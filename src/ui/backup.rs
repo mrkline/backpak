@@ -293,12 +293,19 @@ fn parent_snapshot(
 fn check_paths(symlink_behavior: tree::Symlink, paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
     info!("Walking {paths:?} to see what we've got...");
     let mut no_op_filter = |_: &Utf8Path| Ok(true);
-    let mut no_op_visit =
-        |_nope: &mut (),
-         _path: &Utf8Path,
-         _metadata: tree::NodeMetadata,
-         _previous_node: Option<&tree::Node>,
-         _entry: fs_tree::DirectoryEntry<()>| { Ok(()) };
+    fn visit(
+        _nope: &mut (),
+        path: &Utf8Path,
+        _metadata: tree::NodeMetadata,
+        _previous_node: Option<&tree::Node>,
+        entry: fs_tree::DirectoryEntry<()>,
+    ) -> Result<()> {
+        if matches!(entry, fs_tree::DirectoryEntry::ChangedFile) {
+            // Can we read it?
+            std::fs::File::open(path).with_context(|| format!("Can't open {path}"))?;
+        }
+        Ok(())
+    }
     let mut no_op_finalize = |()| Ok(());
     fs_tree::walk_fs(
         symlink_behavior,
@@ -306,7 +313,7 @@ fn check_paths(symlink_behavior: tree::Symlink, paths: &BTreeSet<Utf8PathBuf>) -
         None,
         &tree::Forest::default(),
         &mut no_op_filter,
-        &mut no_op_visit,
+        &mut visit,
         &mut no_op_finalize,
     )
 }
