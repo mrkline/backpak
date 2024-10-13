@@ -79,7 +79,8 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Do a quick scan of the paths to make sure we can read them and get
     // metadata before we get backends and indexes
     // and threads and all manner of craziness going.
-    check_paths(symlink_behavior, &paths).context("Failed FS check prior to backup")?;
+    check_paths(symlink_behavior, &paths, &args.skips)
+        .context("Failed FS check prior to backup")?;
 
     let (backend_config, cached_backend) =
         backend::open(repository, backend::CacheBehavior::Normal)?;
@@ -290,9 +291,14 @@ fn parent_snapshot(
     parent.map(|(snap, _)| snap)
 }
 
-fn check_paths(symlink_behavior: tree::Symlink, paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
+fn check_paths(
+    symlink_behavior: tree::Symlink,
+    paths: &BTreeSet<Utf8PathBuf>,
+    skips: &[String],
+) -> Result<()> {
     info!("Walking {paths:?} to see what we've got...");
-    let mut no_op_filter = |_: &Utf8Path| Ok(true);
+    let mf = filter::skip_matching_paths(skips)?;
+    let mut filter = move |path: &Utf8Path| Ok(mf(path));
     fn visit(
         _nope: &mut (),
         path: &Utf8Path,
@@ -312,7 +318,7 @@ fn check_paths(symlink_behavior: tree::Symlink, paths: &BTreeSet<Utf8PathBuf>) -
         paths,
         None,
         &tree::Forest::default(),
-        &mut no_op_filter,
+        &mut filter,
         &mut visit,
         &mut no_op_finalize,
     )
