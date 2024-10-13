@@ -79,8 +79,16 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     // Do a quick scan of the paths to make sure we can read them and get
     // metadata before we get backends and indexes
     // and threads and all manner of craziness going.
-    check_paths(symlink_behavior, &paths, &args.skips)
-        .context("Failed FS check prior to backup")?;
+    let bytes_checked = AtomicU64::default();
+    thread::scope(|s| -> Result<_> {
+        let progress_thread =
+            ProgressThread::spawn(s, |i| print_path_check(i, &Term::stdout(), &bytes_checked));
+
+        let check_res = check_paths(symlink_behavior, &paths, &args.skips, &bytes_checked)
+            .context("Failed FS check prior to backup");
+        progress_thread.join()?;
+        check_res
+    })?;
 
     let (backend_config, cached_backend) =
         backend::open(repository, backend::CacheBehavior::Normal)?;
@@ -226,6 +234,16 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     Ok(())
 }
 
+fn print_path_check(i: usize, term: &Term, b: &AtomicU64) -> Result<()> {
+    if i > 0 {
+        term.clear_last_lines(1)?;
+    }
+    let spin = crate::progress::spinner(i);
+    let b = nice_size(b.load(Ordering::Relaxed));
+    println!("{spin} {b}");
+    Ok(())
+}
+
 /// Spit out by our fs walk below
 #[derive(Default)]
 struct WalkStatistics {
@@ -295,23 +313,29 @@ fn check_paths(
     symlink_behavior: tree::Symlink,
     paths: &BTreeSet<Utf8PathBuf>,
     skips: &[String],
+    bytes_checked: &AtomicU64,
 ) -> Result<()> {
     info!("Walking {paths:?} to see what we've got...");
     let mf = filter::skip_matching_paths(skips)?;
     let mut filter = move |path: &Utf8Path| mf(path);
-    fn visit(
-        _nope: &mut (),
-        path: &Utf8Path,
-        _metadata: tree::NodeMetadata,
-        _previous_node: Option<&tree::Node>,
-        entry: fs_tree::DirectoryEntry<()>,
-    ) -> Result<()> {
+    let mut visit = |_nope: &mut (),
+                     path: &Utf8Path,
+                     metadata: tree::NodeMetadata,
+                     _previous_node: Option<&tree::Node>,
+                     entry: fs_tree::DirectoryEntry<()>|
+     -> Result<()> {
         if matches!(entry, fs_tree::DirectoryEntry::ChangedFile) {
             // Can we read it?
             std::fs::File::open(path).with_context(|| format!("Can't open {path}"))?;
         }
+        match entry {
+            fs_tree::DirectoryEntry::UnchangedFile | fs_tree::DirectoryEntry::ChangedFile => {
+                bytes_checked.fetch_add(metadata.size().unwrap(), Ordering::Relaxed);
+            }
+            _ => (),
+        };
         Ok(())
-    }
+    };
     let mut no_op_finalize = |()| Ok(());
     fs_tree::walk_fs(
         symlink_behavior,
