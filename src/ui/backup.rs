@@ -298,7 +298,7 @@ fn check_paths(
 ) -> Result<()> {
     info!("Walking {paths:?} to see what we've got...");
     let mf = filter::skip_matching_paths(skips)?;
-    let mut filter = move |path: &Utf8Path| Ok(mf(path));
+    let mut filter = move |path: &Utf8Path| mf(path);
     fn visit(
         _nope: &mut (),
         path: &Utf8Path,
@@ -343,7 +343,7 @@ fn backup_tree(
         if !res {
             debug!("{:>9} {}", "skip", path);
         }
-        Ok(res)
+        res
     };
 
     // Both closures need to get at packed_blobs at some point...
