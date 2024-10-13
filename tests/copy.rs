@@ -57,13 +57,13 @@ fn copy_smoke() -> Result<()> {
         .arg("snapshots")
         .assert()
         .success();
-    let orig_snapshot = stdout(&orig_snapshot).trim();
+    let orig_snapshot = normalize(stdout(&orig_snapshot));
 
     let copied_snapshot = cli_run(working_path, copy_path)?
         .arg("snapshots")
         .assert()
         .success();
-    let copied_snapshot = stdout(&copied_snapshot).trim();
+    let copied_snapshot = normalize(stdout(&copied_snapshot));
     assert_eq!(orig_snapshot, copied_snapshot);
 
     // Files should match

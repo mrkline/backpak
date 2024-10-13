@@ -1,7 +1,3 @@
-## stdout output breaks ls and related tests
-
-Fix that
-
 ## Download concurrency flag
 
 Sometimes people are on different, slower Internet.
