@@ -11,6 +11,7 @@ use std::{
 use anyhow::Result;
 use camino::Utf8Path;
 use console::Term;
+use tracing::*;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::backup;
@@ -91,10 +92,16 @@ impl<'scope> ProgressThread<'scope> {
         Self { handle, done_flag }
     }
 
-    pub fn join(self) -> Result<()> {
+    pub fn join(self) {
         self.done_flag.store(true, Ordering::SeqCst);
         self.handle.thread().unpark();
-        self.handle.join().unwrap()
+        self.handle
+            .join()
+            .unwrap()
+            // Hard to imagine a scenario where printing fails
+            // but we can succesfully warn about it.
+            // But for what it's worth...
+            .unwrap_or_else(|e| warn!("Failed to print progress: {e:?}"))
     }
 }
 

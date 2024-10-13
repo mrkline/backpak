@@ -28,7 +28,7 @@ impl<'scope> ProgressThread<'scope> {
         Self { inner }
     }
 
-    pub fn join(self) -> Result<()> {
+    pub fn join(self) {
         self.inner.join()
     }
 }
