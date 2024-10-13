@@ -151,41 +151,45 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             )
         });
 
-        // Finish the WIP resume business.
-        if !args.dry_run {
-            upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
-        }
-        drop(cwd_packfiles);
+        let run_res = (|| {
+            // Finish the WIP resume business.
+            if !args.dry_run {
+                upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
+            }
+            drop(cwd_packfiles);
 
-        info!(
-            "Backing up {}",
-            paths
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+            info!(
+                "Backing up {}",
+                paths
+                    .iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
 
-        let root = backup_tree(
-            symlink_behavior,
-            &paths,
-            &args.skips,
-            parent.map(|p| &p.tree),
-            &parent_forest,
-            &mut packed_blobs,
-            &mut backup,
-            &walk_stats,
-        )?;
-        drop(parent_forest);
-        drop(packed_blobs);
+            let root = backup_tree(
+                symlink_behavior,
+                &paths,
+                &args.skips,
+                parent.map(|p| &p.tree),
+                &parent_forest,
+                &mut packed_blobs,
+                &mut backup,
+                &walk_stats,
+            )?;
+            drop(parent_forest);
+            drop(packed_blobs);
 
-        // Important: make sure all blobs and the index is written BEFORE
-        // we upload the snapshot.
-        // It's meaningless unless everything else is there first!
-        backup.join()?;
+            // Important: make sure all blobs and the index is written BEFORE
+            // we upload the snapshot.
+            // It's meaningless unless everything else is there first!
+            backup.join()?;
+
+            Ok(root)
+        })();
 
         progress_thread.join()?;
-        Ok(root)
+        run_res
     })?;
 
     debug!("Root tree packed as {}", root);

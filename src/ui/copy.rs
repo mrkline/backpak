@@ -121,31 +121,35 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             &dst_cached_backend.bytes_uploaded,
         );
 
-        // Finish the WIP resume business.
-        if !args.dry_run {
-            backup::upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
-        }
-        drop(cwd_packfiles);
+        let run_res = (|| {
+            // Finish the WIP resume business.
+            if !args.dry_run {
+                backup::upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
+            }
+            drop(cwd_packfiles);
 
-        let filter = filter::skip_matching_paths(&args.skips)?;
+            let filter = filter::skip_matching_paths(&args.skips)?;
 
-        let new_snapshots = repack::walk_snapshots(
-            repack::Op::Copy,
-            &src_snapshots_and_forests,
-            filter,
-            &mut reader,
-            &mut packed_blobs,
-            &mut backup,
-            &walk_stats,
-        )?;
+            let new_snapshots = repack::walk_snapshots(
+                repack::Op::Copy,
+                &src_snapshots_and_forests,
+                filter,
+                &mut reader,
+                &mut packed_blobs,
+                &mut backup,
+                &walk_stats,
+            )?;
 
-        // Important: make sure all blobs and the index are written BEFORE
-        // we upload the snapshots.
-        // It's meaningless unless everything else is there first!
-        backup.join()?;
+            // Important: make sure all blobs and the index are written BEFORE
+            // we upload the snapshots.
+            // It's meaningless unless everything else is there first!
+            backup.join()?;
+
+            Ok(new_snapshots)
+        })();
+
         progress_thread.join()?;
-
-        Ok(new_snapshots)
+        run_res
     })?;
 
     if !args.dry_run {
