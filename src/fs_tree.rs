@@ -88,7 +88,7 @@ where
     Filter: FnMut(
         &Utf8Path,
         // More some day?
-    ) -> Result<bool>,
+    ) -> bool,
     Visit: FnMut(
         &mut Intermediate,
         &Utf8Path,
@@ -104,7 +104,7 @@ where
     let previous_tree = previous_tree.and_then(|id| previous_forest.get(id));
 
     for path in paths {
-        if !filter(path)? {
+        if !filter(path) {
             continue;
         }
 
@@ -183,7 +183,7 @@ pub fn forest_from_fs(
     previous_tree: Option<&ObjectId>,
     previous_forest: &tree::Forest,
 ) -> Result<(ObjectId, tree::Forest)> {
-    let mut filter = |_: &Utf8Path| Ok(true);
+    let mut filter = |_: &Utf8Path| true;
     fn visit(
         (tree, forest): &mut (tree::Tree, tree::Forest),
         path: &Utf8Path,
