@@ -182,38 +182,41 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             &cached_backend.bytes_uploaded,
         );
 
-        // Finish the WIP resume business.
-        if !args.dry_run {
-            backup::upload_cwd_packfiles(&mut backup.upload_tx, &packs_to_upload)?;
-        }
-        drop(packs_to_upload);
+        let run_res = (|| {
+            // Finish the WIP resume business.
+            if !args.dry_run {
+                backup::upload_cwd_packfiles(&mut backup.upload_tx, &packs_to_upload)?;
+            }
+            drop(packs_to_upload);
 
-        // Get a reader to load the chunks we're repacking.
-        let mut reader = read::ChunkReader::new(&cached_backend, &index, &blob_map);
+            // Get a reader to load the chunks we're repacking.
+            let mut reader = read::ChunkReader::new(&cached_backend, &index, &blob_map);
 
-        // We don't skip over anything as we prune; that'd leave us in a nasty state.
-        let filter = |_p: &Utf8Path| true;
+            // We don't skip over anything as we prune; that'd leave us in a nasty state.
+            let filter = |_p: &Utf8Path| true;
 
-        repack::walk_snapshots(
-            repack::Op::Prune,
-            &snapshots_and_forests,
-            filter,
-            &mut reader,
-            &mut packed_blobs,
-            &mut backup,
-            &walk_stats,
-        )?;
+            repack::walk_snapshots(
+                repack::Op::Prune,
+                &snapshots_and_forests,
+                filter,
+                &mut reader,
+                &mut packed_blobs,
+                &mut backup,
+                &walk_stats,
+            )?;
 
-        // NB: Before deleting the old indexes, we make sure the new one's been written.
-        //     This ensures there's no point in time when we don't have a valid index
-        //     of reachable blobs in packs. rebuild-index plays the same game.
-        //
-        //     Any concurrent writers (writing a backup at the same time)
-        //     will upload their own index only after all packs are uploaded,
-        //     making sure indexes never refer to missing packs. (I hope...)
-        backup.join()?;
+            // NB: Before deleting the old indexes, we make sure the new one's been written.
+            //     This ensures there's no point in time when we don't have a valid index
+            //     of reachable blobs in packs. rebuild-index plays the same game.
+            //
+            //     Any concurrent writers (writing a backup at the same time)
+            //     will upload their own index only after all packs are uploaded,
+            //     making sure indexes never refer to missing packs. (I hope...)
+            backup.join()?;
+            Ok(())
+        })();
         progress_thread.join()?;
-        Ok(())
+        run_res
     })?;
 
     if !args.dry_run {
