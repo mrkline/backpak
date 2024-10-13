@@ -50,6 +50,8 @@ fn restore_src() -> Result<()> {
         let restore_output: Vec<_> = stdout(&restore_run)
             .trim()
             .lines()
+            // Strip Opening... Building a master index... snapshot <hash>...
+            .skip(3)
             // I don't care about atime. They change if you sneeze (and based on mount opts).
             .filter(|l| !l.starts_with("A "))
             .map(str::to_owned)
@@ -220,6 +222,8 @@ fn restore_multipath() -> Result<()> {
         let restore_output: Vec<_> = stdout(&restore_run)
             .trim()
             .lines()
+            // Strip Opening... Building a master index... snapshot <hash>...
+            .skip(3)
             // I don't care about atime. They change if you sneeze (and based on mount opts).
             .filter(|l| !l.starts_with("A "))
             .map(str::to_owned)

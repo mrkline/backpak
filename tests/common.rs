@@ -46,3 +46,8 @@ pub fn dir_entries<P: AsRef<Path>>(p: P) -> impl Iterator<Item = PathBuf> {
         .unwrap()
         .map(|e| e.expect("couldn't read dir").path())
 }
+
+pub fn normalize(o: &str) -> Vec<&str> {
+    // Strip Opening... Building a master index... snapshot <hash>...
+    o.trim().lines().skip(3).collect()
+}

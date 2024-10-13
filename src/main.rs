@@ -69,7 +69,11 @@ fn main() {
 
 fn run() -> Result<()> {
     let args = Args::parse();
-    init_logger(&args);
+    let logmode = match args.subcommand {
+        Command::Diff(_) | Command::Dump(_) | Command::Ls(_) => LogMode::Quiet,
+        _ => LogMode::InfoStdout,
+    };
+    init_logger(&args, logmode);
 
     if let Some(dir) = &args.working_directory {
         std::env::set_current_dir(dir).expect("Couldn't change working directory");
@@ -97,9 +101,16 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+enum LogMode {
+    /// Print INTO to stdout (for noisy commands like backup, check, etc.)
+    InfoStdout,
+    /// Don't print INFO to stdout (for commands like ls, diff, etc.)
+    Quiet,
+}
+
 /// Set up simplelog to spit messages to stderr based on -v,
 /// and unadorned INFO messages and up to stdout as part of the progress
-fn init_logger(args: &Args) {
+fn init_logger(args: &Args, m: LogMode) {
     use tracing_subscriber::prelude::*;
 
     let level = match args.verbose {
@@ -146,8 +157,10 @@ fn init_logger(args: &Args) {
         .with_target(false)
         .with_ansi(ansis); // Not used for anything at the moment
 
-    tracing_subscriber::registry()
-        .with(stdout_layer)
-        .with(stderr_layer)
-        .init();
+    let reg = tracing_subscriber::registry().with(stderr_layer);
+
+    match m {
+        LogMode::Quiet => reg.init(),
+        LogMode::InfoStdout => reg.with(stdout_layer).init(),
+    }
 }
