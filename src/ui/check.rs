@@ -75,7 +75,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
                 };
                 stats.packs_read.fetch_add(1, Ordering::Relaxed);
             });
-            progress.join()?;
+            progress.join();
             Ok(())
         })?;
     } else {

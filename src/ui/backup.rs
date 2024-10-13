@@ -86,7 +86,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
         let check_res = check_paths(symlink_behavior, &paths, &args.skips, &bytes_checked)
             .context("Failed FS check prior to backup");
-        progress_thread.join()?;
+        progress_thread.join();
         check_res
     })?;
 
@@ -188,7 +188,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             Ok(root)
         })();
 
-        progress_thread.join()?;
+        progress_thread.join();
         run_res
     })?;
 

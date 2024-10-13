@@ -215,7 +215,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             backup.join()?;
             Ok(())
         })();
-        progress_thread.join()?;
+        progress_thread.join();
         run_res
     })?;
 

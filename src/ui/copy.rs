@@ -148,7 +148,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             Ok(new_snapshots)
         })();
 
-        progress_thread.join()?;
+        progress_thread.join();
         run_res
     })?;
 
