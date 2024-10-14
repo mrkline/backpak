@@ -1,23 +1,10 @@
+## Add check flag to delete, not warn, unreachable packs
+
+Mention that they can get there from interrupted backups too.
+
 ## Download concurrency flag
 
 Sometimes people are on different, slower Internet.
-
-## MULTI-LAYER LOGGING
-
-Spin up several layers - one to log to stderr with the given verbosity,
-one to print INFO to stdout, stripped of the INFO prefix.
-Options example:
-https://docs.rs/tracing-subscriber/0.3.18/tracing_subscriber/layer/trait.Layer.html#method.boxed
-
-This and the couple below would be better served by a global --quiet flag/isatty checks.
-
-## Colorized progress
-
-## auto-quiet if not a tty?
-
-## filter-snapshot
-
-Make a new snapshot with previous contents of another in the same repo?
 
 ## Guard against colliding with another snapshot in the same working dir
 
