@@ -70,7 +70,7 @@ fn main() {
 fn run() -> Result<()> {
     let args = Args::parse();
     let logmode = match args.subcommand {
-        Command::Diff(_) | Command::Dump(_) | Command::Ls(_) => LogMode::Quiet,
+        Command::Cat(_) | Command::Diff(_) | Command::Dump(_) | Command::Ls(_) => LogMode::Quiet,
         _ => LogMode::InfoStdout,
     };
     init_logger(&args, logmode);
