@@ -428,12 +428,7 @@ fn backup_tree(
                 let mut total_chunks = 0usize;
                 for chunk in chunks {
                     chunk_ids.push(chunk.id);
-
                     if packed_blobs.borrow_mut().insert(chunk.id) {
-                        // The first time we get a new chunk, print "backup"
-                        if !new_chunks {
-                            debug!("{:>9} {path}", "backup");
-                        }
                         new_chunks = true;
                         backup
                             .chunk_tx
@@ -447,10 +442,12 @@ fn backup_tree(
                     total_chunks += 1;
                 }
                 // We made it through the whole file without finding new data!
+                let maybe_plural = if total_chunks == 1 { "chunk" } else { "chunks" };
                 if !new_chunks {
-                    debug!("{:>9} {path}", "deduped");
+                    debug!("{:>9} {path} ({} {maybe_plural})", "deduped", total_chunks);
+                } else {
+                    debug!("{:>9} {path} ({} {maybe_plural})", "backup", total_chunks);
                 }
-                trace!("{path} was {total_chunks} chunks");
 
                 tree::Node {
                     metadata,
