@@ -16,13 +16,6 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     let mut reachable_blobs = FxHashSet::default();
     let reachable_blob_size;
 
-    // TODO: To display raw sizes; it would be really nice for these functions
-    // (snapshot::load_chrono, index::build_master_index, etc.)
-    // to return either a hash map of sizes or a total size.
-    // That's annoying because we'd have to update all the call sites.
-    // But equally dumb would be to backend::list/read files multiple times
-    // because we didn't do the accounting first time around.
-    // (This is true even if we change backend list to get sizes too.)
     let (snapshots, snapshot_size) =
         snapshot::load_chronologically_with_total_size(&cached_backend)?;
     if snapshots.is_empty() {
