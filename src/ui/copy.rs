@@ -56,18 +56,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let src_index = index::build_master_index(&src_cached_backend)?;
     let src_blob_map = index::blob_to_pack_map(&src_index)?;
 
-    let mut src_snapshots = snapshot::load_chronologically(&src_cached_backend)?;
-    if !target_snapshots.is_empty() {
-        let mut desired_snaps = Vec::with_capacity(target_snapshots.len());
-        for desired_snap in target_snapshots {
-            let (s, i) = snapshot::find(&src_snapshots, desired_snap)?;
-            desired_snaps.push((s.clone(), *i));
-        }
-        // Take whatever the user asked for and make it chronological with no duplicates.
-        desired_snaps.sort_by_key(|(snap, _)| snap.time.timestamp());
-        desired_snaps.dedup_by(|(_, id1), (_, id2)| id1 == id2);
-        src_snapshots = desired_snaps;
-    }
+    let src_snapshots = snapshot::from_args_list(&src_cached_backend, &args.target.snapshots)?;
 
     let src_snapshots_and_forests = repack::load_forests(
         src_snapshots,

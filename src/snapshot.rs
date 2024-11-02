@@ -230,6 +230,27 @@ pub fn find<'a>(
     }
 }
 
+/// Find the listed snapshots and their IDs, and return them chronologically and deduplicated.
+pub fn from_args_list(
+    backend: &backend::CachedBackend,
+    args: &[String],
+) -> Result<Vec<(Snapshot, ObjectId)>> {
+    let chrono_snapshots = load_chronologically(&backend)?;
+    if !args.is_empty() {
+        let mut desired_snaps = Vec::with_capacity(args.len());
+        for desired_snap in args {
+            let (s, i) = find(&chrono_snapshots, desired_snap)?;
+            desired_snaps.push((s.clone(), *i));
+        }
+        // Take whatever the user asked for and make it chronological with no duplicates.
+        desired_snaps.sort_by_key(|(snap, _)| snap.time.timestamp());
+        desired_snaps.dedup_by(|(_, id1), (_, id2)| id1 == id2);
+        Ok(desired_snaps)
+    } else {
+        Ok(chrono_snapshots)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
