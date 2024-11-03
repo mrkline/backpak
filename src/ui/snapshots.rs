@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use rustc_hash::FxHashSet;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{backend, file_util::nice_size, hashing::ObjectId, index, snapshot, tree};
 
@@ -16,15 +17,27 @@ pub struct Args {
     /// (Takes slightly longer, has to read their trees)
     #[clap(short, long)]
     sizes: bool,
+
+    /// Print per-file statistics of size added to each snapshot
+    ///
+    /// Implies --sizes
+    #[clap(short, long)]
+    files: bool,
+
+    snapshots: Vec<String>,
 }
 
-pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
+pub fn run(repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
+    }
+    if args.files {
+        args.sizes = true;
     }
 
     let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
+    let snapshots_to_print = snapshot::from_args_list(&snapshots, &args.snapshots)?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
@@ -47,6 +60,7 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
                 .sizes
                 .then(|| {
                     tree::forest_sizes(
+                        &snapshot.tree,
                         &tree::forest_from_root(&snapshot.tree, &mut tree_cache)?,
                         &size_map,
                         &mut visited_blobs,
@@ -59,9 +73,9 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
                 sizes,
             })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
 
-    let it: Box<dyn Iterator<Item = Result<DecoratedSnapshot>>> = if !args.reverse {
+    let it: Box<dyn Iterator<Item = DecoratedSnapshot>> = if !args.reverse {
         Box::new(snaps.into_iter())
     } else {
         Box::new(snaps.into_iter().rev())
@@ -72,7 +86,10 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
             snapshot,
             id,
             sizes,
-        } = decorated?;
+        } = decorated;
+        if !snapshots_to_print.is_empty() && !snapshots_to_print.iter().any(|(_, sid)| *sid == id) {
+            continue;
+        }
         print!("snapshot {}", id);
         if snapshot.tags.is_empty() {
             println!();
@@ -82,13 +99,13 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
                 snapshot.tags.into_iter().collect::<Vec<String>>().join(" ")
             );
         }
-        if let Some(s) = sizes {
+        if let Some(s) = &sizes {
             let t = nice_size(s.tree_bytes + s.chunk_bytes);
             let m = nice_size(s.tree_bytes);
             let c = nice_size(s.chunk_bytes);
             let i = nice_size(s.introduced);
             let r = nice_size(s.reused);
-            println!("Sizes: {t} total ({c} files, {m} metadata / {i} new data, {r} reused)");
+            println!("Sizes: {t} total ({c} files, {m} metadata / {i} new, {r} reused)");
         }
         println!("Author: {}", snapshot.author);
 
@@ -96,8 +113,36 @@ pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
         let datestr = snapshot::strftime(&snapshot.time);
         println!("Date:   {datestr}");
 
+        if !snapshot.paths.is_empty() {
+            println!();
+        }
         for path in snapshot.paths {
             println!("  - {path}");
+        }
+
+        if args.files {
+            // List any files that introduce new contents
+            let mut fs = sizes
+                .unwrap()
+                .per_file
+                .into_iter()
+                .filter(|(_, s)| s.introduced > 0)
+                .collect::<Vec<_>>();
+
+            if !fs.is_empty() {
+                println!();
+                let max_path = fs
+                    .iter()
+                    .map(|(p, _)| p.as_str().graphemes(true).count())
+                    .max()
+                    .unwrap();
+                fs.sort_by_key(|(_, sizes)| sizes.introduced);
+                for (p, sizes) in fs.iter().rev() {
+                    let i = nice_size(sizes.introduced);
+                    let r = nice_size(sizes.reused);
+                    println!(" {p:max_path$} | {i} new, {r} reused");
+                }
+            }
         }
 
         println!();

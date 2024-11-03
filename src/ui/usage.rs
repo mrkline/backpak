@@ -32,6 +32,7 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
 
         for (snapshot, _snap_id) in &snapshots {
             totals += tree::forest_sizes(
+                &snapshot.tree,
                 &tree::forest_from_root(&snapshot.tree, &mut tree_cache)?,
                 &size_map,
                 &mut reachable_blobs,
