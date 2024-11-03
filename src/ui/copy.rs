@@ -56,7 +56,12 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let src_index = index::build_master_index(&src_cached_backend)?;
     let src_blob_map = index::blob_to_pack_map(&src_index)?;
 
-    let src_snapshots = snapshot::from_args_list(&src_cached_backend, &args.target.snapshots)?;
+    let src_snapshots = snapshot::load_chronologically(&src_cached_backend)?;
+    let src_snapshots = if args.target.all {
+        src_snapshots
+    } else {
+        snapshot::from_args_list(&src_snapshots, &args.target.snapshots)?
+    };
 
     let src_snapshots_and_forests = repack::load_forests(
         src_snapshots,

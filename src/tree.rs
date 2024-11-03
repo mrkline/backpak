@@ -476,20 +476,30 @@ fn chunks_in_node(node: &Node) -> &[ObjectId] {
 }
 
 #[derive(Default)]
+pub struct FileSize {
+    pub introduced: u64,
+    pub reused: u64,
+}
+
+#[derive(Default)]
 pub struct ForestSizes {
     pub tree_bytes: u64,
     pub chunk_bytes: u64,
     pub introduced: u64,
     pub reused: u64,
+    // &'a Utf8Path would be more ideal, but tying ourselves to the lifetime of the forest
+    // we get the path names from is a pretty big PITA.
+    pub per_file: Vec<(Utf8PathBuf, FileSize)>,
 }
 
-// Useful for totals in `usage`:
+// Useful for totals in `usage`. Does _not_ concatenate per-file vecs since that would get yuge.
 impl std::ops::AddAssign for ForestSizes {
     fn add_assign(&mut self, o: Self) {
         self.tree_bytes += o.tree_bytes;
         self.chunk_bytes += o.chunk_bytes;
         self.introduced += o.introduced;
         self.reused += o.reused;
+        self.per_file.clear();
     }
 }
 
@@ -498,13 +508,39 @@ impl std::ops::AddAssign for ForestSizes {
 /// This is useful for walking the repo snapshot by snapshot, showing when data is introduced,
 /// when it is reused, and how much of each kind.
 pub fn forest_sizes(
+    root: &ObjectId,
     forest: &Forest,
     size_map: &FxHashMap<ObjectId, u32>,
     visited_blobs: &mut FxHashSet<ObjectId>,
 ) -> Result<ForestSizes> {
     let mut s = ForestSizes::default();
+    tree_chunks_size(
+        &Utf8Path::new(""),
+        root,
+        forest,
+        size_map,
+        visited_blobs,
+        &mut s,
+    )?;
+    assert_eq!(s.tree_bytes + s.chunk_bytes, s.introduced + s.reused);
+    Ok(s)
+}
 
-    for (tree_id, tree) in forest {
+/// Get the size of chunks in the given tree
+fn tree_chunks_size(
+    prefix: &Utf8Path,
+    tree_id: &ObjectId,
+    forest: &Forest,
+    size_map: &FxHashMap<ObjectId, u32>,
+    visited_blobs: &mut FxHashSet<ObjectId>,
+    s: &mut ForestSizes,
+) -> Result<()> {
+    let tree: &Tree = forest
+        .get(tree_id)
+        .ok_or_else(|| anyhow!("Missing tree {tree_id}"))
+        .unwrap();
+
+    for (name, node) in tree {
         let tree_size = size_map
             .get(tree_id)
             .ok_or_else(|| anyhow!("Couldn't find tree {tree_id} to get size"))?;
@@ -517,22 +553,9 @@ pub fn forest_sizes(
             s.reused += ts;
         }
 
-        tree_chunks_size(tree, size_map, visited_blobs, &mut s)?;
-    }
-
-    assert_eq!(s.tree_bytes + s.chunk_bytes, s.introduced + s.reused);
-    Ok(s)
-}
-
-/// Get the size of chunks in the given tree
-fn tree_chunks_size(
-    tree: &Tree,
-    size_map: &FxHashMap<ObjectId, u32>,
-    visited_blobs: &mut FxHashSet<ObjectId>,
-    s: &mut ForestSizes,
-) -> Result<()> {
-    for node in tree.values() {
-        file_size(node, size_map, visited_blobs, s)?
+        let mut p = prefix.to_owned();
+        p.push(name);
+        node_size(p, node, forest, size_map, visited_blobs, s)?
     }
     Ok(())
 }
@@ -540,14 +563,17 @@ fn tree_chunks_size(
 /// Get the size of the node if it's a file.
 ///
 /// We've already accounted for tree sizes by summing the forest in [`forest_sizes`].
-fn file_size(
+fn node_size(
+    path: Utf8PathBuf,
     node: &Node,
+    forest: &Forest,
     size_map: &FxHashMap<ObjectId, u32>,
     visited_blobs: &mut FxHashSet<ObjectId>,
     s: &mut ForestSizes,
 ) -> Result<()> {
     match &node.contents {
         NodeContents::File { chunks, .. } => {
+            let mut fs = FileSize::default();
             for c in chunks.iter().map(|c| {
                 size_map
                     .get(c)
@@ -556,16 +582,22 @@ fn file_size(
             }) {
                 let (chunk_id, chunk_size) = c?;
                 let cs = chunk_size as u64;
-                s.chunk_bytes += cs;
                 if visited_blobs.insert(*chunk_id) {
-                    s.introduced += cs;
+                    fs.introduced += cs;
                 } else {
-                    s.reused += cs;
+                    fs.reused += cs;
                 }
             }
+            s.introduced += fs.introduced;
+            s.reused += fs.reused;
+            s.chunk_bytes += fs.introduced + fs.reused;
+            s.per_file.push((path, fs));
             Ok(())
         }
-        NodeContents::Directory { .. } | NodeContents::Symlink { .. } => Ok(()),
+        NodeContents::Directory { subtree } => {
+            tree_chunks_size(&path, subtree, forest, size_map, visited_blobs, s)
+        }
+        NodeContents::Symlink { .. } => Ok(()),
     }
 }
 
