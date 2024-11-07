@@ -36,28 +36,29 @@ More backends to follow.
 
 Once you have a repository, let's make a backup!
 
-Let's pass `-v` to print information as the backup runs.  
-(A `--progress` flag is on the top of the TODO list.)
 ```
-$ backpak -v -r ~/myrepo backup ~/src/backpak/src
- INFO Walking {"/home/me/src/backpak/src"} to see what we've got...
- INFO Opening repository /home/me/myrepo
- INFO Building a master index
- INFO Finding a parent snapshot
- INFO Backing up /home/me/src/backpak/src
- INFO    backup /home/me/src/backpak/src/backend/backblaze.rs
- INFO    backup /home/me/src/backpak/src/backend/cache.rs
-...
- INFO    backup /home/me/src/backpak/src/ui/snapshots.rs
- INFO    backup /home/me/src/backpak/src/ui/usage.rs
- INFO  finished /home/me/src/backpak/src/ui/
- INFO    backup /home/me/src/backpak/src/ui.rs
- INFO    backup /home/me/src/backpak/src/upload.rs
- INFO  finished /home/me/src/backpak/src/
- INFO 0 B reused
- INFO 276 KB new data (270 KB files, 6 KB metadata)
+$ backpak -r ~/myrepo backup ~/src/backpak/src
+Walking {"/home/me/src/backpak/src"} to see what we've got...
+/ 297 KB
+Opening repository srctest
+Building a master index
+Finding a parent snapshot
+Backing up /home/me/src/backpak/src
+/ P 0 B + 4 KB | R 300 KB | Z 2 KB | U 2 KB
+i 1 packs indexed
+D 18 KB downloaded
+/home/me/src/backpak/src
+300 KB reused
+4 KB new data (0 B files, 4 KB metadata)
+Snaphsot fik6kqtg done
 ```
-If interrupted, an incomplete `backup` will leave behind a `backpak-wip.index` and a handful
+We print updates as we go:
+- How much we **P**acked into this backup (files + metadata)
+- How much we **R**eused from previous backups
+- How much **Z**standard ensmallened the packed data
+- How much we **U**ploaded
+
+If interrupted, the incomplete `backup` will leave behind a `backpak-wip.index` and a handful
 of other files. This allows Backpak to resume where it left off.
 
 You can also:
@@ -73,9 +74,11 @@ Your new backup is saved as a _snapshot_. You can view a list of the repository'
 `snapshots`:
 ```
 $ backpak -r ~/myrepo snapshots
-snapshot ra8oc2tmpmrssils66gobh2d2p656qko7nn4d7cskceim
+...
+snapshot fik6kqtgi8sd4g5d8kc6ueggnfff7nnhf7ikhrlhppq7s
 Author: my-desktop
-Date:   Sun Sep 15 2024 23:31:16 US/Pacific
+Date:   Wed Nov 6 2024 22:22:30 US/Pacific
+
   - /home/me/src/backpak/src
 ```
 
@@ -102,8 +105,8 @@ src/upload.rs
 Or compare the snapshot to whatever's in the directory currently:
 ```
 $ backpak -r ~/myrepo diff ra8o
-   + src/some-new-
-   + src/some-other-new-thingthing
+   + src/some-new-thing
+   + src/some-other-new-thing
 ```
 
 ## Restoring data
@@ -116,8 +119,8 @@ by default, `restore` doesn't delete anything that wasn't in the snapshot.
 If you want to do that:
 ```
 $ backpak -r ~/myrepo restore --delete LAST
-- /home/mrkline/src/backpak/src/some-new-thing
-- /home/mrkline/src/backpak/src/some-other-new-thing
+- /home/me/src/backpak/src/some-new-thing
+- /home/me/src/backpak/src/some-other-new-thing
 ```
 Additional flags like `--times` and `--permissions` can restore metadata,
 and `--output` can restore the snapshot to a different directory than where it came from.

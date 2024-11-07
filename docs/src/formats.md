@@ -2,7 +2,7 @@
 
 ## Concepts
 
-Every Backpak repository starts by cutting files into content-defined chunks,
+Every backup starts by cutting files into content-defined chunks,
 roughly 1MB[^1] in size, using the
 [FastCDC algorithm](https://www.usenix.org/system/files/conference/atc16/atc16-paper-xia.pdf).
 Chunks are then ID'd by their [SHA-224](https://en.wikipedia.org/wiki/SHA-2) hash.
@@ -43,7 +43,7 @@ or a subdirectory, whose ID is the SHA-224 of its serialized tree.
 ```
 Note that we save basic metadata (owners, permissions, etc.)
 but omit things we can't easily restore, or which depend on particular filesystems
-(inode numbers, change times, etc.).
+(inode numbers, change times, extended attributes, etc.).
 Backpak focuses on saving your files in a space-efficient format, not trying to make
 an exact image of a POSIX filesystem a la `tar` or `rsync`.
 Special files like dev nodes and sockets are skipped for this same reason.
@@ -52,14 +52,13 @@ Special files like dev nodes and sockets are skipped for this same reason.
 
 ### Packs
 
-Saving each chunk and tree as an individual file would be comically inefficient.
-Instead, let's group them into larger files, which we'll call packs*.
-By default Backpak aims for 100 MB per pack,
-though compression shenanigans can cause it to overshoot[^1].
+Saving each chunk and tree as individual files would be comically inefficient.
+Instead, let's group them into larger files, which we'll call *packs*.
+We aim for 100 MB per pack, though compression shenanigans can cause it to overshoot[^1].
 
 Each pack contains:
 1. The magic bytes `MKBAKPAK`
-2. The file version number (currently always 1)
+2. The file version number (currently 1)
 3. A [Zstandard](https://github.com/facebook/zstd)-compressed stream of either chunks or trees
    (which we'll collectively call *blobs*)
 4. A manifest of what's in the pack, as `(blob type, length, ID)` tuples.
@@ -72,12 +71,12 @@ the SHA-224 of the manifest is the pack's ID.
 
 ### Indexes
 
-Having to read every pack each time just to see what's inside would be a huge slowdown,
+Reading each pack every time to rediscover its contents would be a huge slowdown,
 and for cloud-stored repositories, a huge bandwidth suck.
 As we make a backup, let's build an *index* of all the packs we've built.
 Each index contains:
 1. The magic bytes `MKBAKIDX`
-2. The file version number (currently always 1)
+2. The file version number (currently 1)
 3. A Zstandard-compressed map of each pack's ID to its manifest
 
 We can also use the index for resumable backups!
@@ -91,12 +90,12 @@ After packing all our blobs and writing the index,
 the last step of a backup is to upload a *snapshot*.
 Each contains:
 1. The magic bytes `MKBAKSNP`
-2. The file version number (currently always 1)
+2. The file version number (currently 1)
 3. A [CBOR](https://cbor.io/) file containing snapshot metadata (author, tags, and time),
    the absolute paths that the snapshot backed up,
    and the root tree of the backup.
 
-We don't bother with compressing snapshots sine they're so small.
+We don't bother with compressing snapshots since they're so small.
 
 ## Repository health
 
@@ -130,7 +129,7 @@ But expect it to take a while since it's reading every byte in the repo.
 -----
 
 [^1]: Smaller chunks means better deduplication, but more to keep track of.
-      1MB was chosen as a hopefully-reasonable compromise - each gigabyte of chunks
+      1MB was chosen as a hopefully-reasonable compromise—each gigabyte of chunks
       gives about 30 kilobytes of chunk IDs.
 
 [^2]: It's hard to know how large a compressed stream will be without flushing it,
