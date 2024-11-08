@@ -158,14 +158,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             }
             drop(cwd_packfiles);
 
-            info!(
-                "Backing up {}",
-                paths
-                    .iter()
-                    .map(|p| p.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+            info!("Running backup...");
 
             let root = backup_tree(
                 symlink_behavior,
@@ -194,17 +187,17 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
 
     debug!("Root tree packed as {}", root);
 
-    info!(
-        "{} reused",
-        nice_size(walk_stats.reused_bytes.load(Ordering::Relaxed))
-    );
-    let chunk_bytes = back_stats.chunk_bytes.load(Ordering::Relaxed);
-    let tree_bytes = back_stats.tree_bytes.load(Ordering::Relaxed);
-
-    let total_bytes = nice_size(chunk_bytes + tree_bytes);
-    let chunk_bytes = nice_size(chunk_bytes);
-    let tree_bytes = nice_size(tree_bytes);
-    info!("{total_bytes} new data ({chunk_bytes} files, {tree_bytes} metadata)");
+    // Print the same stats we shoed as progress to the debug log.
+    let chunk_bytes = nice_size(back_stats.chunk_bytes.load(Ordering::Relaxed));
+    let tree_bytes = nice_size(back_stats.tree_bytes.load(Ordering::Relaxed));
+    let np = nice_size(back_stats.indexed_packs.load(Ordering::Relaxed));
+    debug!("{chunk_bytes} new files, {tree_bytes} new metadata into {np} packs");
+    let rb = nice_size(walk_stats.reused_bytes.load(Ordering::Relaxed));
+    debug!("{rb} reused");
+    let zbytes = nice_size(back_stats.compressed_bytes.load(Ordering::Relaxed));
+    let ubytes = nice_size(cached_backend.bytes_uploaded.load(Ordering::Relaxed));
+    let dbytes = nice_size(cached_backend.bytes_downloaded.load(Ordering::Relaxed));
+    debug!("{zbytes} compressed, {ubytes} uploaded, {dbytes} downloaded");
 
     let author = match args.author {
         Some(a) => a,
@@ -234,7 +227,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         id
     };
 
-    println!("Snaphsot {} done", snap_id.short_name());
+    println!("\nSnaphsot {} done", snap_id.short_name());
     Ok(())
 }
 
