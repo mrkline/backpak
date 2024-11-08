@@ -7,8 +7,8 @@ roughly 1MB[^1] in size, using the
 [FastCDC algorithm](https://www.usenix.org/system/files/conference/atc16/atc16-paper-xia.pdf).
 Chunks are then ID'd by their [SHA-224](https://en.wikipedia.org/wiki/SHA-2) hash.
 
-Next, we need to organize lists of chunks back into files,
-and files back into directories. Let's represent each directory as a *tree*,
+Next, we need to organize lists of chunks back into their respective files,
+and files back into their directories. Let's represent each directory as a *tree*,
 where each node is a file made of chunks:
 ```
 "PXL_20240804_202813830.jpg": {
@@ -52,7 +52,7 @@ Special files like dev nodes and sockets are skipped for this same reason.
 
 ### Packs
 
-Saving each chunk and tree as individual files would be comically inefficient.
+Saving each chunk and tree individually would make the backup larger than its source material.
 Instead, let's group them into larger files, which we'll call *packs*.
 We aim for 100 MB per pack, though compression shenanigans can cause it to overshoot[^1].
 
@@ -62,7 +62,7 @@ Each pack contains:
 3. A [Zstandard](https://github.com/facebook/zstd)-compressed stream of either chunks or trees
    (which we'll collectively call *blobs*)
 4. A manifest of what's in the pack, as `(blob type, length, ID)` tuples.
-5. The manifest length as a 32-bit, big-endian integer.
+5. The manifest length, in bytes, as a 32-bit big-endian integer.
    This lets a reader quickly seek to the manifest.
 
 Since a pack's manifest uniquely identifies all the blobs inside
@@ -134,4 +134,4 @@ But expect it to take a while since it's reading every byte in the repo.
 
 [^2]: It's hard to know how large a compressed stream will be without flushing it,
       and flushing often can hurt the overall compression ratio.
-      Backpak tries not to do that, but this means it routinely overshoots packs' target size.
+      Backpak tries not to do that, but this means it often overshoots packs' target size.
