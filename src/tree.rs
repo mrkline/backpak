@@ -514,8 +514,8 @@ pub fn forest_sizes(
     visited_blobs: &mut FxHashSet<ObjectId>,
 ) -> Result<ForestSizes> {
     let mut s = ForestSizes::default();
-    tree_chunks_size(
-        &Utf8Path::new(""),
+    tree_size(
+        Utf8Path::new(""),
         root,
         forest,
         size_map,
@@ -526,8 +526,8 @@ pub fn forest_sizes(
     Ok(s)
 }
 
-/// Get the size of chunks in the given tree
-fn tree_chunks_size(
+/// Get the size of blobs in the given tree (including said tree)
+fn tree_size(
     prefix: &Utf8Path,
     tree_id: &ObjectId,
     forest: &Forest,
@@ -540,19 +540,18 @@ fn tree_chunks_size(
         .ok_or_else(|| anyhow!("Missing tree {tree_id}"))
         .unwrap();
 
+    let ts = size_map
+        .get(tree_id)
+        .ok_or_else(|| anyhow!("Couldn't find tree {tree_id} to get size"))?;
+    let ts = *ts as u64;
+    s.tree_bytes += ts;
+    if visited_blobs.insert(*tree_id) {
+        s.introduced += ts;
+    } else {
+        s.reused += ts;
+    }
+
     for (name, node) in tree {
-        let tree_size = size_map
-            .get(tree_id)
-            .ok_or_else(|| anyhow!("Couldn't find tree {tree_id} to get size"))?;
-
-        let ts = *tree_size as u64;
-        s.tree_bytes += ts;
-        if visited_blobs.insert(*tree_id) {
-            s.introduced += ts;
-        } else {
-            s.reused += ts;
-        }
-
         let mut p = prefix.to_owned();
         p.push(name);
         node_size(p, node, forest, size_map, visited_blobs, s)?
@@ -595,7 +594,7 @@ fn node_size(
             Ok(())
         }
         NodeContents::Directory { subtree } => {
-            tree_chunks_size(&path, subtree, forest, size_map, visited_blobs, s)
+            tree_size(&path, subtree, forest, size_map, visited_blobs, s)
         }
         NodeContents::Symlink { .. } => Ok(()),
     }
