@@ -11,12 +11,12 @@ Better packaging to follow.
 
 ## Creating a repository
 
-Backpak saves backups in a _repository_. Let's make one to back up to a local folder:
+Backpak saves backups in a _repository_. Let's make one in a local folder:
 ```
 backpak --repository ~/myrepo init filesystem
 ```
-If you want to back up to Backblaze B2,
-in which case the `-r/--repository` flag just sets the repo's config file:
+If you'd like to upload to Backblaze B2,
+in which case the `-r/--repository` flag just sets the repo's config file,
 ```
 $ backpak -r ~/myrepo.toml \
     init --gpg MY_FAVORITE_GPG_KEY \
@@ -25,7 +25,7 @@ $ backpak -r ~/myrepo.toml \
         --application-key "SOMEBASE64" \
         --bucket "matts-bakpak"
 ```
-By specifying `--gpg`, Backpak will perform a quick check that it can round-trip data with
+With the `--gpg` arg, Backpak will perform a quick check that it can round-trip data with
 the given key (using `gpg --encrypt --recipient <KEY>`), then encrypt all files in the repo
 with the same command. You can edit the repo [config file](./formats.md) to use a different,
 arbitrary command.
@@ -34,28 +34,27 @@ More backends to follow.
 
 ## Backing up
 
-Once you have a repository, let's make a backup!
+Let's make a backup!
 
 ```
 $ backpak -r ~/myrepo backup ~/src/backpak/src
-Walking {"/home/me/src/backpak/src"} to see what we've got...
+Walking {"/home/mrkline/src/backpak/src"} to see what we've got...
 / 297 KB
 Opening repository srctest
 Building a master index
 Finding a parent snapshot
-Backing up /home/me/src/backpak/src
-/ P 0 B + 4 KB | R 300 KB | Z 2 KB | U 2 KB
-i 1 packs indexed
-D 18 KB downloaded
-/home/me/src/backpak/src
-300 KB reused
-4 KB new data (0 B files, 4 KB metadata)
-Snaphsot fik6kqtg done
+Running backup...
+/ P 17 KB + 7 KB | R 281 KB | Z 8 KB | U 9 KB
+I 2 packs indexed
+D 20 KB downloaded
+/home/mrkline/src/backpak/src
+
+Snaphsot afe4ajdi done
 ```
 We print updates as we go:
 - How much we **P**acked into this backup (files + metadata)
 - How much we **R**eused from previous backups
-- How much **Z**standard ensmallened the packed data
+- How much **Z**standard ensmallened the data
 - How much we **U**ploaded
 
 If interrupted, the incomplete `backup` will leave behind a `backpak-wip.index` and a handful
@@ -68,16 +67,16 @@ You can also:
 - Skip over files and folders (matching regular expressions) with `--skip`.
 - Dereference symbolic links with `-L`.
 - See what you'd backup with `--dry-run`.
-  (Most commands that change the repo have this!)
+  (Most commands have this!)
 
 Your new backup is saved as a _snapshot_. You can view a list of the repository's snapshots with...
 `snapshots`:
 ```
 $ backpak -r ~/myrepo snapshots
 ...
-snapshot fik6kqtgi8sd4g5d8kc6ueggnfff7nnhf7ikhrlhppq7s
+snapshot afe4ajdifcgfkghmq2tivqlsjnptvri5inb8inn99k0k2
 Author: my-desktop
-Date:   Wed Nov 6 2024 22:22:30 US/Pacific
+Date:   Thu Nov 7 2024 22:55:36 US/Pacific
 
   - /home/me/src/backpak/src
 ```
