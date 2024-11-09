@@ -1,3 +1,5 @@
+## Should have a snapshots --stat vs snapshots --file-sizes
+
 ## Add check flag to delete, not warn, unreachable packs
 
 Mention that they can get there from interrupted backups too.
