@@ -95,7 +95,7 @@ impl ChunkCache {
 pub struct ChunkReader<'a> {
     cached_backend: &'a backend::CachedBackend,
     index: &'a index::Index,
-    blob_map: &'a index::BlobMap,
+    blob_map: &'a index::BlobMap<'a>,
     cache: ChunkCache,
     read_packs: FxHashSet<ObjectId>,
     biggest_pack_size: usize,
@@ -120,7 +120,7 @@ impl<'a> ChunkReader<'a> {
 
     /// Just get a blob's size from the index. Much cheaper than actually reading the blob.
     pub fn blob_size(&mut self, id: &ObjectId) -> Result<u32> {
-        let pack_id: ObjectId = *self
+        let pack_id: ObjectId = **self
             .blob_map
             .get(id)
             .ok_or_else(|| anyhow!("Chunk {id} not found in any pack"))?;
@@ -149,7 +149,7 @@ impl<'a> ChunkReader<'a> {
         counters::bump(counters::Op::ChunkCacheMiss);
 
         // Otherwise we're gonna have to fish it out of a pack.
-        let pack_id: ObjectId = *self
+        let pack_id: ObjectId = **self
             .blob_map
             .get(id)
             .ok_or_else(|| anyhow!("Chunk {id} not found in any pack"))?;

@@ -363,7 +363,7 @@ pub struct Cache<'a> {
     index: &'a index::Index,
 
     /// Finds the pack that contains a given blob
-    blob_to_pack_map: &'a index::BlobMap,
+    blob_to_pack_map: &'a index::BlobMap<'a>,
 
     /// Gets packs on-demand from the backend.
     pack_cache: &'a backend::CachedBackend,
@@ -510,7 +510,7 @@ impl std::ops::AddAssign for ForestSizes {
 pub fn forest_sizes(
     root: &ObjectId,
     forest: &Forest,
-    size_map: &FxHashMap<ObjectId, u32>,
+    size_map: &FxHashMap<&ObjectId, u32>,
     visited_blobs: &mut FxHashSet<ObjectId>,
 ) -> Result<ForestSizes> {
     let mut s = ForestSizes::default();
@@ -531,7 +531,7 @@ fn tree_size(
     prefix: &Utf8Path,
     tree_id: &ObjectId,
     forest: &Forest,
-    size_map: &FxHashMap<ObjectId, u32>,
+    size_map: &FxHashMap<&ObjectId, u32>,
     visited_blobs: &mut FxHashSet<ObjectId>,
     s: &mut ForestSizes,
 ) -> Result<()> {
@@ -566,7 +566,7 @@ fn node_size(
     path: Utf8PathBuf,
     node: &Node,
     forest: &Forest,
-    size_map: &FxHashMap<ObjectId, u32>,
+    size_map: &FxHashMap<&ObjectId, u32>,
     visited_blobs: &mut FxHashSet<ObjectId>,
     s: &mut ForestSizes,
 ) -> Result<()> {
