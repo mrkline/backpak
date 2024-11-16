@@ -6,7 +6,7 @@ use anyhow::Result;
 use camino::Utf8Path;
 
 use crate::hashing::ObjectId;
-use crate::tree::{Forest, Node, NodeType, Tree};
+use crate::tree::{self, Forest, Node, NodeType, Tree};
 
 pub trait Callbacks {
     /// A tree node with the given path was added
@@ -58,6 +58,16 @@ pub trait Callbacks {
         self.node_added(node_path, new_node, new_forest)?;
         Ok(())
     }
+}
+
+/// Provide an empty forest and a ID to the empty tree.
+/// Useful for comparisons to nothing (e.g., the first snapshot's diff)
+pub fn null_forest() -> (ObjectId, Forest) {
+    let empty_tree = Tree::new();
+    let (_, eid) = tree::serialize_and_hash(&empty_tree).unwrap();
+    let mut empty_forest = Forest::default();
+    empty_forest.insert(eid, std::sync::Arc::new(empty_tree));
+    (eid, empty_forest)
 }
 
 pub fn compare_trees(
