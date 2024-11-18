@@ -1,4 +1,6 @@
-## Should have a snapshots --stat vs snapshots --file-sizes
+## Merge snapshots --stat and --sizes/--file-sizes
+
+DecoratedSnapshot could also contain its forest, that wouldn't be so bad.
 
 ## Add check flag to delete, not warn, unreachable packs
 
