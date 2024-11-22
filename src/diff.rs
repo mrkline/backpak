@@ -1,6 +1,7 @@
 //! Diffs two trees and runs a set of callbacks for each difference.
 
 use std::collections::BTreeSet;
+use std::sync::LazyLock;
 
 use anyhow::Result;
 use camino::Utf8Path;
@@ -62,12 +63,15 @@ pub trait Callbacks {
 
 /// Provide an empty forest and a ID to the empty tree.
 /// Useful for comparisons to nothing (e.g., the first snapshot's diff)
-pub fn null_forest() -> (ObjectId, Forest) {
-    let empty_tree = Tree::new();
-    let (_, eid) = tree::serialize_and_hash(&empty_tree).unwrap();
-    let mut empty_forest = Forest::default();
-    empty_forest.insert(eid, std::sync::Arc::new(empty_tree));
-    (eid, empty_forest)
+pub fn null_forest() -> &'static (ObjectId, Forest) {
+    static NF: LazyLock<(ObjectId, Forest)> = LazyLock::new(|| {
+        let empty_tree = Tree::new();
+        let (_, eid) = tree::serialize_and_hash(&empty_tree).unwrap();
+        let mut empty_forest = Forest::default();
+        empty_forest.insert(eid, std::sync::Arc::new(empty_tree));
+        (eid, empty_forest)
+    });
+    &NF
 }
 
 pub fn compare_trees(

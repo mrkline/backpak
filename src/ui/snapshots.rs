@@ -1,4 +1,6 @@
-use anyhow::{bail, Result};
+use std::collections::hash_map::Entry;
+
+use anyhow::Result;
 use camino::Utf8Path;
 use clap::Parser;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -78,7 +80,7 @@ pub fn run(repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
             };
 
             for (snap, id) in it {
-                print_snapshot(&snap, &id, None, false);
+                print_snapshot(&snap, &id, &None);
             }
         }
         // Slightly harder: We need an index to look at the trees in each snapshot,
@@ -100,7 +102,7 @@ pub fn run(repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
             // (e.g., the tree cache) - that trees, once built, are cheap to hang onto.
             // Just make a map of all the ones we need.
             let mut indexed_forests: FxHashMap<isize, (ObjectId, Forest)> = FxHashMap::default();
-            indexed_forests.insert(-1, diff::null_forest()); // If we wanna --stat the first snap
+            indexed_forests.insert(-1, diff::null_forest().clone()); // If we wanna --stat the first snap
 
             let mut needed_indices = FxHashSet::default();
             for (i, (_snap, id)) in snapshots.iter().enumerate() {
@@ -113,17 +115,11 @@ pub fn run(repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
             for (i, (snap, _id)) in snapshots.iter().enumerate() {
                 let i = i as isize;
                 if needed_indices.contains(&i) {
-                    // Would be nice to use .entry().or_insert_with() but it's not fallable.
-                    if !indexed_forests.contains_key(&i) {
-                        assert!(indexed_forests
-                            .insert(
-                                i,
-                                (
-                                    snap.tree,
-                                    tree::forest_from_root(&snap.tree, &mut tree_cache)?,
-                                )
-                            )
-                            .is_none());
+                    if let Entry::Vacant(e) = indexed_forests.entry(i) {
+                        e.insert((
+                            snap.tree,
+                            tree::forest_from_root(&snap.tree, &mut tree_cache)?,
+                        ));
                     }
                 }
             }
@@ -142,10 +138,10 @@ pub fn run(repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
                     let (previous_root, previous_forest) = &indexed_forests[&(i - 1)];
                     let (current_root, current_forest) = &indexed_forests[&i];
                     assert_eq!(*current_root, snap.tree);
-                    print_snapshot(&snap, &id, None, false);
+                    print_snapshot(snap, id, &None);
                     tree_diff(
-                        (&previous_root, &previous_forest),
-                        (&current_root, &current_forest),
+                        (previous_root, previous_forest),
+                        (current_root, current_forest),
                         args.metadata,
                     )?;
                     println!();
@@ -155,19 +151,19 @@ pub fn run(repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
     }
     // Hard mode: walk everything.
     else {
-        if args.stat {
-            // Merge the above and the below?
-            bail!("--sizes and --stat are not supported together yet, sorry.")
-        }
-
         let index = index::build_master_index(&cached_backend)?;
         let blob_map = index::blob_to_pack_map(&index)?;
         let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
         let size_map = index::blob_to_size_map(&index)?;
 
         struct DecoratedSnapshot {
+            // Goofy to put indexes in here - maybe we should use some
+            // iterator with prev/next below,
+            // but indexing is always the right way even if we're --reversed
+            index: usize,
             snapshot: snapshot::Snapshot,
             id: ObjectId,
+            forest: tree::Forest,
             sizes: Option<ForestSizes>,
         }
 
@@ -177,57 +173,94 @@ pub fn run(repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
         // (We do *not* want the DoubleEndedIterator from .map()!)
         let snaps = snapshots
             .into_iter()
-            .map(|(snapshot, id)| {
+            .enumerate()
+            .map(|(index, (snapshot, id))| {
+                let forest = tree::forest_from_root(&snapshot.tree, &mut tree_cache)?;
                 let sizes = args
                     .sizes
                     .then(|| {
-                        tree::forest_sizes(
-                            &snapshot.tree,
-                            &tree::forest_from_root(&snapshot.tree, &mut tree_cache)?,
-                            &size_map,
-                            &mut visited_blobs,
-                        )
+                        tree::forest_sizes(&snapshot.tree, &forest, &size_map, &mut visited_blobs)
                     })
                     .transpose()?;
                 Ok(DecoratedSnapshot {
+                    index,
                     snapshot,
                     id,
+                    forest,
                     sizes,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let it: Box<dyn Iterator<Item = DecoratedSnapshot>> = if !args.reverse {
-            Box::new(snaps.into_iter())
+        let it: Box<dyn Iterator<Item = &DecoratedSnapshot>> = if !args.reverse {
+            Box::new(snaps.iter())
         } else {
-            Box::new(snaps.into_iter().rev())
+            Box::new(snaps.iter().rev())
         };
 
         let snapshots_to_print: FxHashSet<ObjectId> =
             snapshots_to_print.into_iter().map(|(_, sid)| sid).collect();
 
         for DecoratedSnapshot {
+            index,
             snapshot,
             id,
+            forest,
             sizes,
         } in it
         {
-            if !snapshots_to_print.contains(&id) {
+            if !snapshots_to_print.contains(id) {
                 continue;
             }
-            print_snapshot(&snapshot, &id, sizes, args.file_sizes);
+            print_snapshot(snapshot, id, sizes);
+            if args.stat {
+                let (previous_root, previous_forest) = if *index == 0 {
+                    let nf = diff::null_forest();
+                    (&nf.0, &nf.1)
+                } else {
+                    // The whole dumb reason we carted the index around with us.
+                    let prev = &snaps[*index - 1];
+                    assert_eq!(prev.index, *index - 1);
+                    (&prev.snapshot.tree, &prev.forest)
+                };
+                let (current_root, current_forest) = (&snapshot.tree, &forest);
+                tree_diff(
+                    (previous_root, previous_forest),
+                    (current_root, current_forest),
+                    args.metadata,
+                )?;
+                println!();
+            } else if args.file_sizes {
+                // List any files that introduce new contents
+                let mut fs = sizes
+                    .as_ref()
+                    .unwrap()
+                    .per_file
+                    .iter()
+                    .filter(|(_, s)| s.introduced > 0)
+                    .collect::<Vec<_>>();
+
+                if !fs.is_empty() {
+                    let max_path = fs
+                        .iter()
+                        .map(|(p, _)| p.as_str().graphemes(true).count())
+                        .max()
+                        .unwrap();
+                    fs.sort_by_key(|(_, sizes)| sizes.introduced);
+                    for (p, sizes) in fs.iter().rev() {
+                        let i = nice_size(sizes.introduced);
+                        let r = nice_size(sizes.reused);
+                        println!(" {p:max_path$} | {i} new, {r} reused");
+                    }
+                    println!();
+                }
+            }
         }
     }
     Ok(())
 }
 
-fn print_snapshot(
-    snapshot: &snapshot::Snapshot,
-    id: &ObjectId,
-    sizes: Option<ForestSizes>,
-    per_file: bool,
-) {
-    assert!(sizes.is_some() || !per_file);
+fn print_snapshot(snapshot: &snapshot::Snapshot, id: &ObjectId, sizes: &Option<ForestSizes>) {
     print!("snapshot {}", id);
     if snapshot.tags.is_empty() {
         println!();
@@ -242,7 +275,7 @@ fn print_snapshot(
                 .join(" ")
         );
     }
-    if let Some(s) = &sizes {
+    if let Some(s) = sizes {
         let t = nice_size(s.tree_bytes + s.chunk_bytes);
         let m = nice_size(s.tree_bytes);
         let c = nice_size(s.chunk_bytes);
@@ -262,32 +295,6 @@ fn print_snapshot(
     for path in &snapshot.paths {
         println!("  - {path}");
     }
-
-    if per_file {
-        // List any files that introduce new contents
-        let mut fs = sizes
-            .unwrap()
-            .per_file
-            .into_iter()
-            .filter(|(_, s)| s.introduced > 0)
-            .collect::<Vec<_>>();
-
-        if !fs.is_empty() {
-            println!();
-            let max_path = fs
-                .iter()
-                .map(|(p, _)| p.as_str().graphemes(true).count())
-                .max()
-                .unwrap();
-            fs.sort_by_key(|(_, sizes)| sizes.introduced);
-            for (p, sizes) in fs.iter().rev() {
-                let i = nice_size(sizes.introduced);
-                let r = nice_size(sizes.reused);
-                println!(" {p:max_path$} | {i} new, {r} reused");
-            }
-        }
-    }
-
     println!();
 }
 
@@ -298,12 +305,7 @@ fn tree_diff(
 ) -> Result<()> {
     let mut cb = PrintDiffs { metadata };
 
-    diff::compare_trees(
-        (&id1, &forest1),
-        (&id2, &forest2),
-        Utf8Path::new(""),
-        &mut cb,
-    )
+    diff::compare_trees((id1, forest1), (id2, forest2), Utf8Path::new(""), &mut cb)
 }
 
 // ui::diff::PrintDiffs but with extra space in the prefixes
