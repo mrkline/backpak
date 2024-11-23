@@ -475,7 +475,7 @@ fn chunks_in_node(node: &Node) -> &[ObjectId] {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct FileSize {
     pub introduced: u64,
     pub reused: u64,
