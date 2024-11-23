@@ -23,18 +23,15 @@ fn printer(prefix: &str, path: &Utf8Path, node: &Node) {
     match &node.contents {
         NodeContents::Directory { .. } => {
             if !has_trailing_slash(path) {
-                println!("{}", std::path::MAIN_SEPARATOR);
-            } else {
-                println!();
+                print!("{}", std::path::MAIN_SEPARATOR);
             }
         }
-        NodeContents::File { .. } => {
-            println!();
-        }
+        NodeContents::File { .. } => {}
         NodeContents::Symlink { target } => {
-            println!(" -> {target}");
+            print!(" -> {target}");
         }
     };
+    println!();
 }
 
 // I tried turning walk_node() and walk_tree() into something general we could use for all
