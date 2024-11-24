@@ -28,7 +28,7 @@ where each node is a file made of chunks:
   }
 ```
 
-or a subdirectory, whose ID is the SHA-224 of its serialized tree.
+A node can also be a subdirectory, whose ID is the SHA-224 of its serialized tree.
 ```
 "Camera": {
   "tree": "cti2sslfl8i9j3kvvfqkv2bust1pd1oiks0n2nhkg6ecu",
@@ -52,9 +52,9 @@ Special files like dev nodes and sockets are skipped for this same reason.
 
 ### Packs
 
-Saving each chunk and tree individually would make the backup larger than its source material.
+Saving each chunk and tree as a separate file would make the backup larger than its source material.
 Instead, let's group them into larger files, which we'll call *packs*.
-We aim for 100 MB per pack, though compression shenanigans can cause it to overshoot[^1].
+We aim for 100 MB per pack, though compression shenanigans can cause it to overshoot.[^1]
 
 Each pack contains:
 1. The magic bytes `MKBAKPAK`
@@ -80,7 +80,7 @@ Each index contains:
 3. A Zstandard-compressed map of each pack's ID to its manifest
 
 We can also use the index for resumable backups!
-As we finish each pack, we write a WIP index to disk.
+As we finish each pack, we write a work-in-progress index to disk.
 If the backup is interrupted and restarted, we read the WIP index and resume from
 wherever the last pack left off.
 
@@ -97,39 +97,10 @@ Each contains:
 
 We don't bother with compressing snapshots since they're so small.
 
-## Repository health
-
-If you'd like to know how much space a repository is using, try `usage`:
-```
-$ backpak -r photo-backup usage
-2 snapshots, from 2024-08-17T12:39:15 to 2024-08-17T12:57:30
-16.48 GB unique data
-16.48 GB reused (deduplicated)
-
-2 indexes reference 165 packs
-
-Backblaze usage after zstd compression and gpg:
-snapshots: 1 KB
-indexes:   448 KB
-packs:     16.29 GB
-total:     16.29 GB
-```
-
-Like any sane backup system, Backpak tries very hard to make sure data is always left in
-a consistent state — packs are always uploaded before the index that references them,
-which is uploaded before its snapshot, etc.
-But if you're the "trust but verify" type:
-```
-$ backpak -v -r photo-backup check
-```
-will read the indexes and check that every pack they mention is present.
-`check --read-packs` will go a step further and verify the contents of each pack!
-But expect it to take a while since it's reading every byte in the repo.
-
 -----
 
 [^1]: Smaller chunks means better deduplication, but more to keep track of.
-      1MB was chosen as a hopefully-reasonable compromise—each gigabyte of chunks
+      1MB was chosen as a hopefully-reasonable compromise — each gigabyte of chunks
       gives about 30 kilobytes of chunk IDs.
 
 [^2]: It's hard to know how large a compressed stream will be without flushing it,

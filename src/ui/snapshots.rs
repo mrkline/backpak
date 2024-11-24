@@ -23,11 +23,20 @@ pub struct Args {
 
     /// Print files added, removed, or changed by each snapshot.
     ///
+    /// + added/file/or/dir
+    /// - removed
+    /// C contents changed
+    /// O ownership changed
+    /// P permissions changed
+    /// T modify time changed
+    /// A access time changed
+    /// M other metadata changed
+    ///
     /// Essentially `backpak diff` for multiple snapshots.
     #[clap(long, verbatim_doc_comment)]
     stat: bool,
 
-    /// Include metadata changes in --stat.
+    /// Include metadata changes in --stat (times, permissions).
     #[clap(short, long)]
     metadata: bool,
 

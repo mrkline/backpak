@@ -2,7 +2,7 @@ workspace = { members = ["b2"] }
 [package]
 name = "backpak"
 description = "A content-addressed backup system with deduplication and compression"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Matt Kline <matt@bitbashing.io>"]
 edition = "2021"
 license = "Zlib"
@@ -14,7 +14,7 @@ categories = ["command-line-utilities", "compression", "filesystem"]
 anyhow = { version = "1.0", features = ["backtrace"] }
 atomic-wait = "1.1.0"
 #
-b2 = { path = "./b2" }
+b2 = { path = "./b2", version = "0.1" }
 # Pretty-printing byte counts
 byte-unit = { version = "5.0", features = ["serde"] }
 # Paths are UTF-8
