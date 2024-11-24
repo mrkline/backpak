@@ -1,7 +1,11 @@
 [package]
-name = "b2"
+name = "backpak-b2"
+description = "Backblaze B2 backend for backpak"
+repository = "https://github.com/mrkline/backpak"
 version = "0.1.0"
+authors = ["Matt Kline <matt@bitbashing.io>"]
 edition = "2021"
+license = "Zlib"
 
 [dependencies]
 data-encoding = "2.3"
