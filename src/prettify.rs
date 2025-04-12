@@ -20,7 +20,9 @@ static mut PRETTIFY: bool = false;
 /// of load-acquires for something that's set once at program start before
 /// threads get spun up.
 pub unsafe fn prettify_serialize() {
-    PRETTIFY = true;
+    unsafe {
+        PRETTIFY = true;
+    }
 }
 
 #[inline]
