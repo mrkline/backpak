@@ -1,6 +1,6 @@
 //! Cut files into content-based chunks.
 
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::thread;
 
 use anyhow::{Context, Result};

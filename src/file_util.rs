@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::sync::Arc;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use camino::Utf8Path;
 use tracing::*;
 

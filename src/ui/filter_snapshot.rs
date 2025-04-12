@@ -1,6 +1,6 @@
 use std::thread;
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use camino::Utf8Path;
 use clap::Parser;
 use rustc_hash::FxHashSet;
@@ -202,7 +202,7 @@ where
             }
             tree::NodeContents::Symlink { .. } => {
                 debug!("  {:>8} {node_path}", "kept"); // Keep consistent with above
-                                                       // Nothing to change or repack for symlinks.
+                // Nothing to change or repack for symlinks.
                 node.clone()
             }
             tree::NodeContents::Directory { subtree } => {

@@ -24,7 +24,7 @@ use std::sync::{
     mpsc::{Receiver, SyncSender},
 };
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use byte_unit::Byte;
 use serde_derive::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
@@ -474,9 +474,11 @@ pub fn append_to_forest<R: Read + Seek>(
             entry.id
         );
 
-        assert!(forest
-            .insert(entry.id, std::sync::Arc::new(to_add))
-            .is_none());
+        assert!(
+            forest
+                .insert(entry.id, std::sync::Arc::new(to_add))
+                .is_none()
+        );
     }
     Ok(())
 }

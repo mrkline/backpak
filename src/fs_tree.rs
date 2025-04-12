@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::io;
 use std::sync::Arc;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
 use tracing::*;
 

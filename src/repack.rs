@@ -2,7 +2,7 @@
 //! either loose ones in `backpak prune` or to another repo in `backpak copy`
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
 use rustc_hash::FxHashSet;
 use tracing::*;

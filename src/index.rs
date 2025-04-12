@@ -22,12 +22,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::sync::{
+    Mutex,
     atomic::{AtomicU64, Ordering},
     mpsc::{Receiver, SyncSender},
-    Mutex,
 };
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::{Deserialize, Serialize};

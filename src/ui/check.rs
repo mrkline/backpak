@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::thread;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Parser;
 use console::Term;
 use rayon::prelude::*;
@@ -12,7 +12,7 @@ use crate::backend;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
-use crate::progress::{print_download_line, spinner, ProgressThread};
+use crate::progress::{ProgressThread, print_download_line, spinner};
 use crate::snapshot;
 use crate::tree;
 
@@ -168,8 +168,14 @@ pub fn warn_on_unreachable_packs(index: &index::Index, all_packs: &[(String, u64
         }
     }
     if unlisted_packs > 0 {
-        warn!("{unlisted_packs} {} unreachable. Consider running `rebuild-index` if you aren't running `backup` right now.",
-            if unlisted_packs == 1 { "pack is" } else { "packs are" });
+        warn!(
+            "{unlisted_packs} {} unreachable. Consider running `rebuild-index` if you aren't running `backup` right now.",
+            if unlisted_packs == 1 {
+                "pack is"
+            } else {
+                "packs are"
+            }
+        );
     }
     Ok(total_pack_size)
 }

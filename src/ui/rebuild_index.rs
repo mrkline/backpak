@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::{atomic::AtomicU64, mpsc::sync_channel};
 use std::thread;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use clap::Parser;
 use rayon::prelude::*;
 use tracing::*;

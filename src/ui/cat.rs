@@ -1,7 +1,7 @@
 use std::io;
 use std::io::prelude::*;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use tracing::*;
 

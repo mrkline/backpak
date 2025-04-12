@@ -3,8 +3,8 @@ use super::*;
 use std::fs;
 
 use anyhow::Result;
-use backpak_b2 as b2;
 use b2::Session;
+use backpak_b2 as b2;
 use byte_unit::Byte;
 
 pub struct BackblazeBackend {

@@ -25,11 +25,13 @@ fn restore_src() -> Result<()> {
         .success();
 
     // Let's make a copy of src so we don't fudge the actual code
-    assert!(Command::new("cp")
-        .args(&["-r", "src"])
-        .arg(working_path)
-        .status()?
-        .success());
+    assert!(
+        Command::new("cp")
+            .args(&["-r", "src"])
+            .arg(working_path)
+            .status()?
+            .success()
+    );
 
     // And back it up
     cli_run(working_path, backup_path)?
@@ -194,11 +196,13 @@ fn restore_multipath() -> Result<()> {
         .success();
 
     // Back up multiple things! And try files as the top-level objects to boot!
-    assert!(Command::new("cp")
-        .args(&["README.md", "LICENSE.txt"])
-        .arg(working_path)
-        .status()?
-        .success());
+    assert!(
+        Command::new("cp")
+            .args(&["README.md", "LICENSE.txt"])
+            .arg(working_path)
+            .status()?
+            .success()
+    );
 
     cli_run(working_path, backup_path)?
         .arg("backup")

@@ -6,7 +6,7 @@ use std::{
     thread,
 };
 
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 
 /// A backend that filters another backend through a pair of shell commands,
 /// `filter` and `unfilter`.

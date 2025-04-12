@@ -3,7 +3,7 @@
 //! This is ultimately how we read backups back out for restore, repack, etc.
 use std::{cmp::Ordering, io::prelude::*, rc::Rc, time::Instant};
 
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, ensure};
 use mut_binary_heap::{BinaryHeap, FnComparator};
 use rustc_hash::FxHashSet;
 use tracing::*;

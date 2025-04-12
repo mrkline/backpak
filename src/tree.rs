@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::sync::Arc;
 
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
 use jiff::Timestamp;
 use rustc_hash::{FxHashMap, FxHashSet};

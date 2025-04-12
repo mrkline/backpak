@@ -4,9 +4,9 @@ use std::fmt;
 use std::io;
 use std::io::prelude::*;
 
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use data_encoding::BASE32_DNSSEC as BASE32HEX;
-use sha2::{digest::Output, Digest, Sha224};
+use sha2::{Digest, Sha224, digest::Output};
 
 type Sha224Digest = Output<Sha224>;
 

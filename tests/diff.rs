@@ -20,11 +20,13 @@ fn diff_src() -> Result<()> {
     let working_path = working_dir.path();
 
     // Let's make a copy of src so we don't fudge the actual code
-    assert!(Command::new("cp")
-        .args(&["-a", "src"])
-        .arg(working_path)
-        .status()?
-        .success());
+    assert!(
+        Command::new("cp")
+            .args(&["-a", "src"])
+            .arg(working_path)
+            .status()?
+            .success()
+    );
 
     cli_run(working_path, backup_path)?
         .args(["init", "filesystem"])

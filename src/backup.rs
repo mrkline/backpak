@@ -50,11 +50,11 @@ use std::fs::{self, File};
 use std::str::FromStr;
 use std::sync::{
     atomic::AtomicU64,
-    mpsc::{sync_channel, Receiver, SyncSender},
+    mpsc::{Receiver, SyncSender, sync_channel},
 };
 use std::thread;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use camino::Utf8Path;
 use rustc_hash::FxHashSet;
 use tracing::*;

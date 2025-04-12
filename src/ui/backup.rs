@@ -4,7 +4,7 @@ use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use console::Term;
@@ -20,7 +20,7 @@ use crate::filter;
 use crate::fs_tree;
 use crate::hashing::{HashingWriter, ObjectId};
 use crate::index;
-use crate::progress::{print_backup_lines, print_download_line, truncate_path, ProgressThread};
+use crate::progress::{ProgressThread, print_backup_lines, print_download_line, truncate_path};
 use crate::rcu::Rcu;
 use crate::snapshot::{self, Snapshot};
 use crate::tree;

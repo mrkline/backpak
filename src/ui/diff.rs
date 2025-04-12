@@ -10,7 +10,7 @@ use crate::hashing::ObjectId;
 use crate::index;
 use crate::ls;
 use crate::snapshot;
-use crate::tree::{self, meta_diff_char, Forest, Node, NodeType};
+use crate::tree::{self, Forest, Node, NodeType, meta_diff_char};
 
 /// Compare two snapshots, or compare a snapshot to its paths on the filesystem
 ///

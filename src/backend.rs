@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{self, prelude::*};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{anyhow, bail, ensure, Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use byte_unit::Byte;
 use camino::Utf8Path;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ use tracing::*;
 
 use crate::{
     config,
-    counters::{bump, Op},
+    counters::{Op, bump},
     file_util::{move_opened, nice_size},
     hashing::ObjectId,
     pack, progress,

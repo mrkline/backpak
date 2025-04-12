@@ -11,7 +11,7 @@ use crate::{
     file_util::nice_size,
     hashing::ObjectId,
     index, ls, snapshot,
-    tree::{self, meta_diff_char, FileSize, Forest, ForestSizes, Node, NodeContents, NodeType},
+    tree::{self, FileSize, Forest, ForestSizes, Node, NodeContents, NodeType, meta_diff_char},
 };
 
 /// List the snapshots in this repository from oldest to newest.

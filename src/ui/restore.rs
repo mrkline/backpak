@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use jiff::Timestamp;
@@ -256,9 +256,11 @@ fn load_fs_tree_and_mapping<'a>(
             snapshot_forest,
         )?;
         for path in &snapshot.paths {
-            assert!(path_map
-                .insert(path.file_name().unwrap(), path.clone())
-                .is_none());
+            assert!(
+                path_map
+                    .insert(path.file_name().unwrap(), path.clone())
+                    .is_none()
+            );
         }
 
         Ok(FsTreeAndMapping {

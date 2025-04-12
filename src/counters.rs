@@ -1,8 +1,8 @@
 //! Performance counters: Count how many times we do various important operations.
 
 use std::sync::{
-    atomic::{fence, AtomicUsize, Ordering},
     LazyLock,
+    atomic::{AtomicUsize, Ordering, fence},
 };
 
 use enum_map::{Enum, EnumMap};

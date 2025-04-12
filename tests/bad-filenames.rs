@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, fs, os::unix::ffi::OsStrExt};
 
-use anyhow::{ensure, Result};
+use anyhow::{Result, ensure};
 use tempfile::tempdir;
 
 mod common;

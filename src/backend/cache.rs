@@ -4,13 +4,13 @@ use std::{
     sync::Mutex,
 };
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use byte_unit::Byte;
 use camino::{Utf8Path, Utf8PathBuf};
 use rusqlite::Connection;
 
 use crate::config;
-use crate::counters::{bump, Op};
+use crate::counters::{Op, bump};
 use crate::file_util;
 
 /// Local cache for any and all backends.

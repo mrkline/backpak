@@ -22,11 +22,11 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
     LazyLock,
+    atomic::{AtomicU64, Ordering},
 };
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use camino::Utf8PathBuf;
 use jiff::Zoned;
 use rayon::prelude::*;

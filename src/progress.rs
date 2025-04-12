@@ -1,10 +1,10 @@
 use std::{
     io::{self, Read, Write},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    thread::{self, park_timeout, Scope, ScopedJoinHandle},
+    thread::{self, Scope, ScopedJoinHandle, park_timeout},
     time::{Duration, Instant},
 };
 

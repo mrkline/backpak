@@ -1,7 +1,7 @@
 use std::io;
 use std::io::prelude::*;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use clap::Parser;
 use tracing::*;

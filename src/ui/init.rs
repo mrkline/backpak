@@ -3,7 +3,7 @@ use std::{
     process::{self, Stdio},
 };
 
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{Context, Result, bail, ensure};
 use byte_unit::Byte;
 use clap::{Parser, Subcommand};
 
