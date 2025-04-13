@@ -77,12 +77,12 @@ where
     let as_str = String::deserialize(d)?;
     as_str
         .parse()
-        .or_else(|_e| Zoned::strptime("%FT%H:%M:%S%.f%:V", &as_str))
+        .or_else(|_e| Zoned::strptime("%FT%H:%M:%S%.f%:Q", &as_str))
         .map_err(serde::de::Error::custom)
 }
 
 pub fn strftime(z: &Zoned) -> impl std::fmt::Display {
-    z.strftime("%a %b %-e %-Y %H:%M:%S %:V")
+    z.strftime("%a %b %-e %-Y %H:%M:%S %:Q")
 }
 
 const MAGIC_BYTES: &[u8] = b"MKBAKSNP1";

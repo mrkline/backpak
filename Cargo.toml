@@ -40,7 +40,7 @@ home = "0.5"
 # Default author - the hostname
 hostname = "0.4"
 # Time time
-jiff = { version = "0.1.13", features = ["serde"] }
+jiff = { version = "0.2", features = ["serde"] }
 # Memmap1 is unmaintained
 memmap2 = "0.9"
 mut-binary-heap = "0.1.0"
@@ -60,7 +60,7 @@ rusqlite = "0.32.0"
 # We don't need DDOS-resistant hashes
 rustc-hash = "2.0"
 # Syscalls for setting file times
-rustix = { version = "0.38", default-features = false, features = [ "fs" ] }
+rustix = { version = "1.0", default-features = false, features = [ "fs" ] }
 # Praise be unto thee
 serde = "1.0"
 serde_bytes = "0.11"

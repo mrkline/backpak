@@ -8,10 +8,8 @@ use std::io::{prelude::*, Cursor};
 pub enum Error {
     #[error("B2 I/O failure: {0}")]
     Io(#[from] std::io::Error),
-    #[error("B2 HTTP transport error: {0}")]
-    Http(Box<ureq::Transport>),
-    #[error("B2 HTTP {code}: {reason}")]
-    BadReply { code: u16, reason: String },
+    #[error("B2 HTTP error: {0}")]
+    Http(Box<ureq::Error>),
     #[error("B2 {why}: {response}")]
     UnexpectedResponse { why: String, response: String },
     #[error("B2: Couldn't find {what}")]
@@ -20,13 +18,7 @@ pub enum Error {
 
 impl From<ureq::Error> for Error {
     fn from(e: ureq::Error) -> Self {
-        match e {
-            ureq::Error::Status(code, resp) => {
-                let reason = resp.into_string().unwrap_or_else(|e| e.to_string());
-                Self::BadReply { code, reason }
-            }
-            ureq::Error::Transport(t) => Self::Http(Box::new(t)),
-        }
+        Self::Http(Box::new(e))
     }
 }
 
@@ -52,7 +44,7 @@ pub struct Session {
 // Once we authenticate in Session::new,
 // we shouldn't have any redirects as the API gives us URLs to use.
 fn noredir() -> ureq::Agent {
-    ureq::builder().redirects(0).build()
+    ureq::Agent::new_with_config(ureq::Agent::config_builder().max_redirects(0).build())
 }
 
 impl Session {
@@ -62,9 +54,10 @@ impl Session {
         let creds = String::from(key_id) + ":" + application_key;
         let auth = String::from("Basic") + &BASE64_STANDARD.encode(creds);
         let v: json::Value = ureq::get("https://api.backblazeb2.com/b2api/v3/b2_authorize_account")
-            .set("Authorization", &auth)
+            .header("Authorization", &auth)
             .call()?
-            .into_json()?;
+            .body_mut()
+            .read_json()?;
 
         let bad = |s| unexpected(s, &v);
 
@@ -108,11 +101,12 @@ impl Session {
         }
 
         let br: json::Value = ureq::get(&(url.clone() + "/b2api/v2/b2_list_buckets"))
-            .set("Authorization", &token)
+            .header("Authorization", &token)
             .query("accountId", &id)
             .query("bucketName", &bucket)
             .call()?
-            .into_json()?;
+            .body_mut()
+            .read_json()?;
 
         let bucket_id = match br["buckets"].as_array() {
             Some(bs) => {
@@ -131,10 +125,11 @@ impl Session {
         };
 
         let ur: json::Value = ureq::get(&(url.clone() + "/b2api/v2/b2_get_upload_url"))
-            .set("Authorization", &token)
+            .header("Authorization", &token)
             .query("bucketId", &bucket_id)
             .call()?
-            .into_json()?;
+            .body_mut()
+            .read_json()?;
 
         let upload_url = ur["uploadUrl"]
             .as_str()
@@ -162,7 +157,7 @@ impl Session {
         loop {
             let mut req = noredir()
                 .get(&(self.url.clone() + "/b2api/v2/b2_list_file_names"))
-                .set("Authorization", &self.token)
+                .header("Authorization", &self.token)
                 .query("bucketId", &self.bucket_id)
                 .query("maxFileCount", "10000");
             if let Some(p) = prefix {
@@ -172,7 +167,7 @@ impl Session {
                 req = req.query("startFileName", sn);
             }
 
-            let lfn = req.call()?.into_json()?;
+            let lfn = req.call()?.body_mut().read_json()?;
 
             let bad = |s| unexpected(s, &lfn);
 
@@ -204,10 +199,10 @@ impl Session {
     pub fn get(&self, name: &str) -> Result<impl Read> {
         let r = noredir()
             .get(&(self.url.clone() + "/file/" + &self.bucket_name + "/" + name))
-            .set("Authorization", &self.token)
+            .header("Authorization", &self.token)
             .call()?;
 
-        Ok(r.into_reader())
+        Ok(r.into_body().into_reader())
     }
 
     pub fn put(&self, name: &str, len: u64, contents: &mut dyn Read) -> Result<()> {
@@ -256,16 +251,16 @@ impl Session {
             }
         }
 
-        let hr = HashAppendingReader::new(contents);
+        let mut hr = HashAppendingReader::new(contents);
 
         noredir()
             .post(&self.upload_url)
-            .set("Authorization", &self.upload_token)
-            .set("Content-Length", &(len + 40).to_string()) // SHA1 is 40 hex digits long.
-            .set("X-Bz-File-Name", name) // No need to URL-encode, our names are boring
-            .set("Content-Type", "b2/x-auto") // Go ahead and guess
-            .set("X-Bz-Content-Sha1", "hex_digits_at_end")
-            .send(hr)?;
+            .header("Authorization", &self.upload_token)
+            .header("Content-Length", &(len + 40).to_string()) // SHA1 is 40 hex digits long.
+            .header("X-Bz-File-Name", name) // No need to URL-encode, our names are boring
+            .header("Content-Type", "b2/x-auto") // Go ahead and guess
+            .header("X-Bz-Content-Sha1", "hex_digits_at_end")
+            .send(ureq::SendBody::from_reader(&mut hr))?;
 
         Ok(())
     }
@@ -273,11 +268,11 @@ impl Session {
     pub fn delete(&self, name: &str) -> Result<()> {
         let req = noredir()
             .get(&(self.url.clone() + "/b2api/v2/b2_list_file_versions"))
-            .set("Authorization", &self.token)
+            .header("Authorization", &self.token)
             .query("bucketId", &self.bucket_id)
             .query("prefix", name);
 
-        let lfv = req.call()?.into_json()?;
+        let lfv = req.call()?.body_mut().read_json()?;
         let where_name = || unexpected(&format!("couldn't find {name}"), &lfv);
 
         let versions = lfv["files"].as_array().ok_or_else(where_name)?;
@@ -296,7 +291,7 @@ impl Session {
             .ok_or_else(|| unexpected(&format!("couldn't find ID for {name}"), &lfv))?;
 
         ureq::post(&(self.url.clone() + "/b2api/v2/b2_delete_file_version"))
-            .set("Authorization", &self.token)
+            .header("Authorization", &self.token)
             .send_json(json::json!({
                 "fileName": name,
                 "fileId": id
