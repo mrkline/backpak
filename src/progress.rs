@@ -188,18 +188,21 @@ pub fn print_download_line(downloaded_bytes: u64) {
     println!("{dspin} {db} downloaded");
 }
 
-pub fn truncate_path(p: &Utf8Path, term: &Term) -> impl std::fmt::Display {
+pub fn truncate_path(p: &Utf8Path, term: &Term) -> String {
     // Arbitrary truncation; do something smarter?
-    let w = term.size_checked().unwrap_or((0, 80)).1 as usize; // (h, w) wut
+    let w = term.size().1 as usize; // (h, w) wut
     let syms: Vec<_> = p.as_str().graphemes(true).collect();
     if syms.len() > w {
-        let back = p.file_name().unwrap();
+        // If the filename itself is more than the line length (minus "..."),
+        // trim just the filename and print it.
+        let back: Vec<_> = p.file_name().unwrap().graphemes(true).collect();
         if back.len() >= (w - 3) {
-            format!("...{back}")
-        } else {
-            let backsyms = back.graphemes(true).count();
-            let front = &syms[0..(w - backsyms - 3)];
-            format!("{}...{}", front.join(""), back)
+            format!("...{}", back[back.len() - w + 3..].concat())
+        }
+        // Otherwise try to get both the front and back of the file path.
+        else {
+            let front = &syms[..(w - back.len() - 3)];
+            format!("{}...{}", front.concat(), back.concat())
         }
     } else {
         p.to_string()
