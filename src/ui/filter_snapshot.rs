@@ -112,7 +112,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
                     .to_string_lossy()
                     .to_string(),
             };
-            new_snapshot.time = jiff::Zoned::now().round(jiff::Unit::Second)?;
+            new_snapshot.time = jiff::Zoned::now();
             new_snapshot.tags = args.tags.into_iter().collect();
         }
 

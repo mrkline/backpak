@@ -207,7 +207,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             .to_string(),
     };
 
-    let time = jiff::Zoned::now().round(jiff::Unit::Second)?;
+    let time = jiff::Zoned::now();
 
     let snapshot = Snapshot {
         time,
