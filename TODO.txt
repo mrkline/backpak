@@ -1,6 +1,9 @@
-## Merge snapshots --stat and --sizes/--file-sizes
+## Snapshots v2: nano timestamp + zone?
 
-DecoratedSnapshot could also contain its forest, that wouldn't be so bad.
+We don't want to round timestamps - learned that the hard way.
+But then it's kinda dumb to have a big long string when we have CBOR.
+
+## Clean up --stat and --sizes/--file-sizes combinations?
 
 ## Add check flag to delete, not warn, unreachable packs
 
@@ -23,17 +26,3 @@ Probably not worth it...
 
 Trouble is that breaks the nice abstraction that a filtered backend is just another backend.
 It also has to be *behind* the cache, which is always unfiltered...
-
-## Axe multiple versions of B2 if their SHAs match?
-
-Also figure out how we're doing that in the first place.
-(Failed uploads!? Seems it made it even though the upload 408'd because of the above.)
-
-## backup accounting
-
-Kinda weird to track new bytes in the backup threads and reused bytes in the main thread.
-There's a reason for it - we don't know how many bytes trees are - but...
-
-## Usage sizes
-
-Have backend list give sizes so we can show the whole size of the repo?
