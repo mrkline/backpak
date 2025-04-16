@@ -3,11 +3,15 @@ use anyhow::Result;
 use rustc_hash::FxHashSet;
 use tracing::warn;
 
-use crate::{backend, file_util::nice_size, index, snapshot, tree};
+use crate::{backend, config::Configuration, file_util::nice_size, index, snapshot, tree};
 
-pub fn run(repository: &camino::Utf8Path) -> Result<()> {
+pub fn run(config: &Configuration, repository: &camino::Utf8Path) -> Result<()> {
     // Build the usual suspects.
-    let (config, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
+    let (backend_config, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
     let (index, index_sizes) = index::build_master_index_with_sizes(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);
@@ -72,11 +76,11 @@ pub fn run(repository: &camino::Utf8Path) -> Result<()> {
     let pack_size = super::check::warn_on_unreachable_packs(&index, &all_packs)?;
     let index_size = index_sizes.iter().sum();
 
-    let backend_kind = match config.kind {
+    let backend_kind = match backend_config.kind {
         backend::Kind::Filesystem { .. } => "Filesystem",
         backend::Kind::Backblaze { .. } => "Backblaze",
     };
-    let filter_str = if let Some((f, _)) = &config.filter {
+    let filter_str = if let Some((f, _)) = &backend_config.filter {
         let fname = f.split_whitespace().next().expect("empty filter");
         " and ".to_owned() + fname
     } else {

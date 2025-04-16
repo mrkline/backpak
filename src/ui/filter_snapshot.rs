@@ -7,7 +7,9 @@ use rustc_hash::FxHashSet;
 use tracing::*;
 
 use crate::{
-    backend, backup, blob, filter,
+    backend, backup, blob,
+    config::Configuration,
+    filter,
     hashing::ObjectId,
     index::{self, Index},
     repack, snapshot, tree,
@@ -40,14 +42,17 @@ pub struct Args {
     target_snapshot: String,
 }
 
-pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
+pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
     if args.keep_metadata && (args.author.is_some() || !args.tags.is_empty()) {
         bail!("Give either --keep-metadata or new metadata with --author, --tags (see --help)")
     }
 
     // Build the usual suspects.
-    let (backend_config, cached_backend) =
-        backend::open(repository, backend::CacheBehavior::Normal)?;
+    let (backend_config, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
 

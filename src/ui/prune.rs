@@ -10,6 +10,7 @@ use tracing::*;
 
 use crate::backend;
 use crate::backup;
+use crate::config::Configuration;
 use crate::file_util::nice_size;
 use crate::hashing::ObjectId;
 use crate::index;
@@ -37,10 +38,13 @@ pub struct Args {
     dry_run: bool,
 }
 
-pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
+pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
     // Build the usual suspects.
-    let (backend_config, cached_backend) =
-        backend::open(repository, backend::CacheBehavior::Normal)?;
+    let (backend_config, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
 

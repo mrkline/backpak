@@ -6,6 +6,7 @@ use clap::Parser;
 
 use crate::backend;
 use crate::backup;
+use crate::config::Configuration;
 use crate::filter;
 use crate::index;
 use crate::read;
@@ -45,14 +46,18 @@ pub struct Target {
     snapshots: Vec<String>,
 }
 
-pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
+pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
     let target_snapshots = &args.target.snapshots;
 
     // Trust but verify
     assert!(args.target.all ^ !target_snapshots.is_empty());
 
     // Build the usual suspects.
-    let (_, src_cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
+    let (_, src_cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
     let src_index = index::build_master_index(&src_cached_backend)?;
     let src_blob_map = index::blob_to_pack_map(&src_index)?;
 
@@ -73,7 +78,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
     let mut reader = read::ChunkReader::new(&src_cached_backend, &src_index, &src_blob_map);
 
     let (dst_backend_config, dst_cached_backend) =
-        backend::open(&args.to, backend::CacheBehavior::Normal)?;
+        backend::open(&args.to, config.cache_size, backend::CacheBehavior::Normal)?;
     let dst_index = index::build_master_index(&dst_cached_backend)?;
 
     // Track all the blobs already in the destination.

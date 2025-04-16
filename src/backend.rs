@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use tracing::*;
 
 use crate::{
-    config,
     counters::{Op, bump},
     file_util::{move_opened, nice_size},
     hashing::ObjectId,
@@ -63,13 +62,13 @@ struct ConfigFile {
 
 /// Normalized version of [`ConfigFile`] where `filter` and `unfilter` must both be Some or None.
 #[derive(Debug)]
-pub struct Config {
+pub struct Configuration {
     pub pack_size: Byte,
     pub kind: Kind,
     pub filter: Option<(String, String)>,
 }
 
-pub fn read_config(p: &Utf8Path) -> Result<Config> {
+pub fn read_config(p: &Utf8Path) -> Result<Configuration> {
     let s = std::fs::read_to_string(p).with_context(|| format!("Couldn't read config from {p}"))?;
     let cf: ConfigFile =
         toml::from_str(&s).with_context(|| format!("Couldn't parse config in {p}"))?;
@@ -78,14 +77,14 @@ pub fn read_config(p: &Utf8Path) -> Result<Config> {
         (None, None) => None,
         _ => bail!("{p} config should set `filter` and `unfilter` or neither."),
     };
-    Ok(Config {
+    Ok(Configuration {
         pack_size: cf.pack_size,
         kind: cf.kind,
         filter,
     })
 }
 
-pub fn write_config<W: Write>(mut w: W, c: Config) -> Result<()> {
+pub fn write_config<W: Write>(mut w: W, c: Configuration) -> Result<()> {
     let (filter, unfilter) = match c.filter {
         Some((f, u)) => (Some(f), Some(u)),
         None => (None, None),
@@ -370,7 +369,11 @@ pub fn in_memory() -> CachedBackend {
 }
 
 /// Factory function to open the appropriate type of backend from the repository path
-pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, CachedBackend)> {
+pub fn open(
+    repository: &Utf8Path,
+    cache_size: Byte,
+    behavior: CacheBehavior,
+) -> Result<(Configuration, CachedBackend)> {
     info!("Opening repository {repository}");
     let stat =
         std::fs::metadata(repository).with_context(|| format!("Couldn't stat {repository}"))?;
@@ -382,7 +385,7 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
     } else {
         bail!("{repository} is not a file or directory")
     }?;
-    debug!("Read config: {c:?}");
+    debug!("Read repository config: {c:?}");
     // Don't bother checking unfilter; we ensure both are set if one is above.
     let cached_backend = match &c.kind {
         Kind::Filesystem { force_cache: false } if c.filter.is_none() => {
@@ -406,10 +409,8 @@ pub fn open(repository: &Utf8Path, behavior: CacheBehavior) -> Result<(Config, C
                     *concurrent_connections,
                 )),
             };
-            // If we ever configure more, move this somewhere central (main()?)
-            let conf = config::load()?;
 
-            let cache = cache::setup(&conf)?;
+            let cache = cache::setup(cache_size)?;
 
             if let Some((filter, unfilter)) = &c.filter {
                 backend = Box::new(filter::BackendFilter {

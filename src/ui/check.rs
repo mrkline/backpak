@@ -9,6 +9,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use tracing::*;
 
 use crate::backend;
+use crate::config::Configuration;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
@@ -38,12 +39,16 @@ pub struct ReadStatus {
     blobs_read: AtomicU64,
 }
 
-pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
+pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let mut trouble = false;
 
     // NB: We always want to read when checking the backend!
     // Just because it's in-cache doesn't mean it's backed up.
-    let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::AlwaysRead)?;
+    let (_cfg, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::AlwaysRead,
+    )?;
 
     let index = index::build_master_index(&cached_backend)?;
 

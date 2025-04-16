@@ -45,7 +45,7 @@ pub fn initialize(
     create_dir(&repository.join("indexes"))?;
     create_dir(&repository.join("snapshots"))?;
 
-    let c = super::Config {
+    let c = super::Configuration {
         pack_size,
         kind: super::Kind::Filesystem { force_cache },
         filter,

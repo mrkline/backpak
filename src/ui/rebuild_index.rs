@@ -8,6 +8,7 @@ use rayon::prelude::*;
 use tracing::*;
 
 use crate::backend;
+use crate::config::Configuration;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
@@ -21,8 +22,12 @@ pub struct Args {
     dry_run: bool,
 }
 
-pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
-    let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
+pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) -> Result<()> {
+    let (_cfg, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
 
     let superseded = cached_backend
         .list_indexes()?

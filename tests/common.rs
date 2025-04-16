@@ -10,6 +10,7 @@ pub fn cli_run(working_dir: &Path, backup_path: &Path) -> Result<assert_cmd::Com
     let bin_name = env!("CARGO_PKG_NAME");
     let mut cmd = Command::cargo_bin(bin_name)?;
     cmd.arg("-C").arg(working_dir);
+    cmd.arg("--config").arg(""); // NB: Ignore test machine state
     cmd.arg("--repository").arg(backup_path);
     cmd.arg("-vvv");
     Ok(cmd)

@@ -3,6 +3,7 @@ use camino::Utf8PathBuf;
 use clap::{ArgAction, Parser, Subcommand};
 use tracing::*;
 
+use backpak::config;
 use backpak::counters;
 use backpak::ui::*;
 
@@ -14,6 +15,12 @@ struct Args {
 
     #[clap(short, long, value_enum, default_value = "auto")]
     color: Color,
+
+    /// Specify a different config file than the default
+    /// `~/.config/backpak.toml`,
+    /// or pass "" to force the default config.
+    #[clap(long, verbatim_doc_comment)]
+    config: Option<Utf8PathBuf>,
 
     /// Prepend ISO-8601 timestamps to all trace messages (from --verbose).
     /// Useful for benchmarking.
@@ -74,6 +81,7 @@ fn run() -> Result<()> {
         _ => LogMode::InfoStdout,
     };
     init_logger(&args, logmode);
+    let conf = config::load(args.config)?;
 
     if let Some(dir) = &args.working_directory {
         std::env::set_current_dir(dir).expect("Couldn't change working directory");
@@ -81,20 +89,20 @@ fn run() -> Result<()> {
 
     match args.subcommand {
         Command::Init(i) => init::run(&args.repository, i),
-        Command::Backup(b) => backup::run(&args.repository, b),
-        Command::Cat(c) => cat::run(&args.repository, c),
-        Command::Check(c) => check::run(&args.repository, c),
-        Command::Copy(c) => copy::run(&args.repository, c),
-        Command::Diff(d) => diff::run(&args.repository, d),
-        Command::Dump(d) => dump::run(&args.repository, d),
-        Command::FilterSnapshot(f) => filter_snapshot::run(&args.repository, f),
-        Command::Forget(f) => forget::run(&args.repository, f),
-        Command::Ls(l) => ls::run(&args.repository, l),
-        Command::Prune(p) => prune::run(&args.repository, p),
-        Command::Restore(r) => restore::run(&args.repository, r),
-        Command::Snapshots(s) => snapshots::run(&args.repository, s),
-        Command::RebuildIndex(r) => rebuild_index::run(&args.repository, r),
-        Command::Usage => usage::run(&args.repository),
+        Command::Backup(b) => backup::run(conf, &args.repository, b),
+        Command::Cat(c) => cat::run(&conf, &args.repository, c),
+        Command::Check(c) => check::run(&conf, &args.repository, c),
+        Command::Copy(c) => copy::run(&conf, &args.repository, c),
+        Command::Diff(d) => diff::run(&conf, &args.repository, d),
+        Command::Dump(d) => dump::run(&conf, &args.repository, d),
+        Command::FilterSnapshot(f) => filter_snapshot::run(&conf, &args.repository, f),
+        Command::Forget(f) => forget::run(&conf, &args.repository, f),
+        Command::Ls(l) => ls::run(&conf, &args.repository, l),
+        Command::Prune(p) => prune::run(&conf, &args.repository, p),
+        Command::Restore(r) => restore::run(&conf, &args.repository, r),
+        Command::Snapshots(s) => snapshots::run(&conf, &args.repository, s),
+        Command::RebuildIndex(r) => rebuild_index::run(&conf, &args.repository, r),
+        Command::Usage => usage::run(&conf, &args.repository),
     }?;
 
     counters::log_counts();

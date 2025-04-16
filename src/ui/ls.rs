@@ -4,6 +4,7 @@ use clap::Parser;
 use tracing::*;
 
 use crate::backend;
+use crate::config::Configuration;
 use crate::index;
 use crate::ls;
 use crate::snapshot;
@@ -15,8 +16,12 @@ pub struct Args {
     snapshot: String,
 }
 
-pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
-    let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
+pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
+    let (_cfg, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
     let (snapshot, id) = snapshot::find(&snapshots, &args.snapshot)?;
     let index = index::build_master_index(&cached_backend)?;

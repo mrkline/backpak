@@ -20,7 +20,7 @@ pub fn initialize(
     bucket: String,
     concurrent_connections: u32,
 ) -> Result<()> {
-    let c = super::Config {
+    let c = super::Configuration {
         pack_size,
         kind: super::Kind::Backblaze {
             key_id,

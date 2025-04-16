@@ -7,7 +7,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    backend, diff,
+    backend,
+    config::Configuration,
+    diff,
     file_util::nice_size,
     hashing::ObjectId,
     index, ls, snapshot,
@@ -57,7 +59,7 @@ pub struct Args {
     snapshots: Vec<String>,
 }
 
-pub fn run(repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
+pub fn run(config: &Configuration, repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
@@ -65,7 +67,11 @@ pub fn run(repository: &camino::Utf8Path, mut args: Args) -> Result<()> {
         args.sizes = true;
     }
 
-    let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
+    let (_cfg, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
     let snapshots_to_print = {
         let sal = snapshot::from_args_list(&snapshots, &args.snapshots)?;

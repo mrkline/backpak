@@ -4,6 +4,7 @@ use clap::Parser;
 use tracing::*;
 
 use crate::backend;
+use crate::config::Configuration;
 use crate::diff;
 use crate::fs_tree;
 use crate::hashing::ObjectId;
@@ -44,8 +45,12 @@ pub struct Args {
     // Should we provide options for remapping to an arbitrary directory, like `restore`?
 }
 
-pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
-    let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
+pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
+    let (_cfg, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
     let mut tree_cache = tree::Cache::new(&index, &blob_map, &cached_backend);

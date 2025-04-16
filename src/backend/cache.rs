@@ -9,7 +9,6 @@ use byte_unit::Byte;
 use camino::{Utf8Path, Utf8PathBuf};
 use rusqlite::Connection;
 
-use crate::config;
 use crate::counters::{Op, bump};
 use crate::file_util;
 
@@ -198,14 +197,14 @@ fn now_nanos() -> i64 {
     jiff::Timestamp::now().as_nanosecond() as i64
 }
 
-pub fn setup(conf: &config::Configuration) -> Result<Cache> {
+pub fn setup(cache_size: Byte) -> Result<Cache> {
     let mut cachedir: Utf8PathBuf = home::home_dir()
         .ok_or_else(|| anyhow!("Can't find home directory"))?
         .try_into()
         .context("Home directory isn't UTF-8")?;
     cachedir.extend([".cache", "backpak"]);
     fs::create_dir_all(&cachedir).with_context(|| format!("Couldn't create {cachedir}"))?;
-    Cache::new(&cachedir, conf.cache_size)
+    Cache::new(&cachedir, cache_size)
 }
 
 #[cfg(test)]

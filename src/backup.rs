@@ -113,7 +113,7 @@ impl<'scope, 'env> Backup<'scope, 'env> {
 pub fn spawn_backup_threads<'scope, 'env>(
     s: &'scope thread::Scope<'scope, 'env>,
     mode: Mode,
-    backend_config: &'env backend::Config,
+    backend_config: &'env backend::Configuration,
     cached_backend: &'env backend::CachedBackend,
     starting_index: index::Index,
     statistics: &'env BackupStatistics,
@@ -164,7 +164,7 @@ fn backup_master_thread<'env>(
     tree_rx: Receiver<Blob>,
     upload_tx: SyncSender<(String, File)>,
     upload_rx: Receiver<(String, File)>,
-    backend_config: &'env backend::Config,
+    backend_config: &'env backend::Configuration,
     cached_backend: &'env backend::CachedBackend,
     statistics: &'env BackupStatistics,
     starting_index: index::Index,

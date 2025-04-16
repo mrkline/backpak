@@ -15,6 +15,7 @@ use crate::backend;
 use crate::backup::{self, *};
 use crate::blob::{self, Blob};
 use crate::chunk;
+use crate::config::Configuration;
 use crate::file_util::nice_size;
 use crate::filter;
 use crate::fs_tree;
@@ -56,7 +57,7 @@ pub struct Args {
     paths: Vec<Utf8PathBuf>,
 }
 
-pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
+pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
     // Let's canonicalize our paths (and make sure they're real!)
     // before we spin up a bunch of supporting infrastructure.
     let paths: BTreeSet<Utf8PathBuf> = args
@@ -76,6 +77,24 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         tree::Symlink::Read
     };
 
+    let skips = {
+        if config.skips.is_empty() {
+            args.skips
+        } else {
+            let mut s = config.skips;
+            s.extend(args.skips);
+            s.sort();
+            s.dedup();
+            // Dumb, but makes it less ambiguous as to what escapes are for the regex
+            // and which are for str's Display instance
+            debug!("Config merged with args for skip list:");
+            for a in &s {
+                debug!("skip {a}");
+            }
+            s
+        }
+    };
+
     // Do a quick scan of the paths to make sure we can read them and get
     // metadata before we get backends and indexes
     // and threads and all manner of craziness going.
@@ -84,14 +103,17 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
         let progress_thread =
             ProgressThread::spawn(s, |i| print_path_check(i, &Term::stdout(), &bytes_checked));
 
-        let check_res = check_paths(symlink_behavior, &paths, &args.skips, &bytes_checked)
+        let check_res = check_paths(symlink_behavior, &paths, &skips, &bytes_checked)
             .context("Failed FS check prior to backup");
         progress_thread.join();
         check_res
     })?;
 
-    let (backend_config, cached_backend) =
-        backend::open(repository, backend::CacheBehavior::Normal)?;
+    let (backend_config, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
 
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
@@ -163,7 +185,7 @@ pub fn run(repository: &Utf8Path, args: Args) -> Result<()> {
             let root = backup_tree(
                 symlink_behavior,
                 &paths,
-                &args.skips,
+                &skips,
                 parent.map(|p| &p.tree),
                 &parent_forest,
                 &mut packed_blobs,

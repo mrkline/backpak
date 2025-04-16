@@ -7,6 +7,7 @@ use tracing::*;
 
 use crate::backend;
 use crate::blob;
+use crate::config::Configuration;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
@@ -52,12 +53,16 @@ pub enum Subcommand {
     Snapshot { id_prefix: String },
 }
 
-pub fn run(repository: &camino::Utf8Path, args: Args) -> Result<()> {
+pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
 
-    let (_cfg, cached_backend) = backend::open(repository, backend::CacheBehavior::Normal)?;
+    let (_cfg, cached_backend) = backend::open(
+        repository,
+        config.cache_size,
+        backend::CacheBehavior::Normal,
+    )?;
 
     match args.subcommand {
         Subcommand::Blob { id } => {
