@@ -18,7 +18,7 @@ pub struct Args {
     dry_run: bool,
 
     /// The ID of a snapshot to forget or
-    /// "duplicates" to forget duplicate snapshots
+    /// "DUPLICATES" to forget duplicate snapshots
     #[clap(required = true, name = "SNAPSHOTS", verbatim_doc_comment)]
     to_forget: Vec<String>,
 }
@@ -37,7 +37,7 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) ->
     )?;
 
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
-    let success = if args.to_forget == ["duplicates"] {
+    let success = if args.to_forget == ["DUPLICATES"] {
         forget_duplicate_snapshots(&cached_backend, &snapshots, args.dry_run)?
     } else {
         forget_snapshot_list(&cached_backend, &snapshots, &args)

@@ -3,10 +3,18 @@
 use std::fmt;
 use std::io;
 use std::io::prelude::*;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result, ensure};
-use data_encoding::BASE32_DNSSEC as BASE32HEX;
+use data_encoding::{Encoding, Specification};
 use sha2::{Digest, Sha224, digest::Output};
+
+static BASE32: LazyLock<Encoding> = LazyLock::new(|| {
+    // BASE32_DNSSEC but with no translation from uppercase.
+    let mut spec = Specification::new();
+    spec.symbols.push_str("0123456789abcdefghijklmnopqrstuv");
+    spec.encoding().unwrap()
+});
 
 type Sha224Digest = Output<Sha224>;
 
@@ -39,13 +47,13 @@ impl ObjectId {
 
 impl fmt::Debug for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{ digest: {} }}", BASE32HEX.encode(&self.digest))
+        write!(f, "{{ digest: {} }}", BASE32.encode(&self.digest))
     }
 }
 
 impl fmt::Display for ObjectId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", BASE32HEX.encode(&self.digest))
+        write!(f, "{}", BASE32.encode(&self.digest))
     }
 }
 
@@ -53,7 +61,7 @@ impl std::str::FromStr for ObjectId {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let bytes = BASE32HEX
+        let bytes = BASE32
             .decode(s.as_bytes())
             .with_context(|| format!("Couldn't decode {s} as base32"))?;
 
@@ -83,7 +91,7 @@ impl serde::Serialize for ObjectId {
         // So hang your head in shame and use a global variable.
         // (Obvious but worth saying: set it at the start and don't mess with it after.)
         if crate::prettify::should_prettify() {
-            serializer.serialize_str(&BASE32HEX.encode(self.digest.as_slice()))
+            serializer.serialize_str(&BASE32.encode(self.digest.as_slice()))
         } else {
             serializer.serialize_bytes(self.digest.as_slice())
         }
@@ -184,6 +192,19 @@ mod test {
         let mut w = HashingWriter::new(io::sink());
         w.write_all(DEVELOPERS)?;
         assert_eq!(w.finalize().0.digest.as_slice(), EXPECTED);
+        Ok(())
+    }
+
+    #[test]
+    fn nocap() -> Result<()> {
+        use std::str::FromStr;
+
+        let fine = "blfqkdj95s6h1vbauaarc9v6j5291mv5l7893i0bl626q";
+        let _ = ObjectId::from_str(fine)?;
+
+        let cap = "BLFQKDJ95S6H1VBAUAARC9V6J5291MV5L7893I0BL626Q";
+        let no = ObjectId::from_str(cap);
+        assert!(no.is_err());
         Ok(())
     }
 }
