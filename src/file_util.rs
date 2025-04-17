@@ -12,8 +12,7 @@ use crate::counters;
 
 /// Checks for the given magic bytes at the start of the file
 pub fn check_magic<R: Read>(r: &mut R, expected: &[u8]) -> Result<()> {
-    assert_eq!(expected.len(), 9); // Magic + version
-    let mut magic: [u8; 9] = [0; 9];
+    let mut magic: Vec<u8> = expected.to_owned();
     r.read_exact(&mut magic)?;
     ensure!(
         magic == expected,

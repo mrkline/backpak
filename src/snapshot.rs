@@ -28,7 +28,7 @@ use std::sync::{
 
 use anyhow::{Context, Result, bail, ensure};
 use camino::Utf8PathBuf;
-use jiff::Zoned;
+use jiff::{Timestamp, Zoned, tz::TimeZone};
 use rayon::prelude::*;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
@@ -85,14 +85,54 @@ pub fn strftime(z: &Zoned) -> impl std::fmt::Display {
     z.strftime("%a %b %-e %-Y %H:%M:%S %:Q")
 }
 
-const MAGIC_BYTES: &[u8] = b"MKBAKSNP1";
+/// Try 2 of the disk format - use an int of nanoseconds for the time.
+/// Parsed to `Snapshot` once deserialized
+#[derive(Serialize, Deserialize)]
+struct SnapshotV2 {
+    /// Time since the Unix epoch in nanoseconds.
+    #[serde(with = "jiff::fmt::serde::timestamp::nanosecond::required")]
+    pub time: Timestamp,
+    /// Time zone string, or offset if we don't have it by name.
+    #[serde(with = "jiff::fmt::serde::tz::required")]
+    pub tz: TimeZone,
+
+    // Same as above
+    author: String,
+    tags: BTreeSet<String>,
+    paths: BTreeSet<Utf8PathBuf>,
+    tree: ObjectId,
+}
+
+fn diskfmt(s: &Snapshot) -> SnapshotV2 {
+    SnapshotV2 {
+        time: s.time.timestamp(),
+        tz: s.time.time_zone().clone(),
+        author: s.author.clone(),
+        tags: s.tags.clone(),
+        paths: s.paths.clone(),
+        tree: s.tree.clone(),
+    }
+}
+
+fn undiskfmt(s2: SnapshotV2) -> Snapshot {
+    Snapshot {
+        time: s2.time.to_zoned(s2.tz),
+        author: s2.author,
+        tags: s2.tags,
+        paths: s2.paths,
+        tree: s2.tree,
+    }
+}
+
+const MAGIC_BYTES: &[u8] = b"MKBAKSNP";
 
 fn to_file(fh: &mut fs::File, snapshot: &Snapshot) -> Result<ObjectId> {
     fh.write_all(MAGIC_BYTES)?;
+    fh.write_all(&[b'2'])?;
 
     let mut hasher = HashingWriter::new(fh);
 
-    ciborium::into_writer(snapshot, &mut hasher)?;
+    ciborium::into_writer(&diskfmt(snapshot), &mut hasher)?;
 
     let (id, fh) = hasher.finalize();
     fh.sync_all()?;
@@ -127,9 +167,18 @@ pub fn upload(snapshot: &Snapshot, backend: &backend::CachedBackend) -> Result<O
 /// also returning its calculated ID.
 fn from_reader<R: Read>(r: &mut R) -> Result<(Snapshot, ObjectId)> {
     check_magic(r, MAGIC_BYTES).context("Wrong magic bytes for snapshot file")?;
+    let mut version = [0; 1];
+    r.read_exact(&mut version)?;
     let mut hasher = HashingReader::new(r);
-    let snapshot =
-        ciborium::from_reader(&mut hasher).context("CBOR decoding of snapshot file failed")?;
+    let failmsg = "CBOR decoding of snapshot file failed";
+    let snapshot = match version[0] {
+        b'1' => ciborium::from_reader(&mut hasher).context(failmsg)?,
+        b'2' => {
+            let s2 = ciborium::from_reader(&mut hasher).context(failmsg)?;
+            undiskfmt(s2)
+        }
+        wut => bail!("Unknown snapshot file version {}", wut as char),
+    };
     let (id, _) = hasher.finalize();
     Ok((snapshot, id))
 }
