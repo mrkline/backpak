@@ -98,7 +98,11 @@ struct SnapshotV2 {
 
     // Same as above
     author: String,
+
+    #[serde(skip_serializing_if = "BTreeSet::is_empty")]
+    #[serde(default)]
     tags: BTreeSet<String>,
+
     paths: BTreeSet<Utf8PathBuf>,
     tree: ObjectId,
 }
