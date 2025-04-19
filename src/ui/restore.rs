@@ -91,7 +91,9 @@ pub struct Args {
     restore_from: String,
 }
 
-pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
+pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
+    let output = args.output.clone().or(config.restore.output);
+
     let (_cfg, cached_backend) = backend::open(
         repository,
         config.cache_size,
@@ -107,7 +109,7 @@ pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<
         &mut tree::Cache::new(&index, &blob_map, &cached_backend),
     )?;
 
-    let tree_and_mapping = load_fs_tree_and_mapping(id, snapshot, &snapshot_forest, &args.output)?;
+    let tree_and_mapping = load_fs_tree_and_mapping(id, snapshot, &snapshot_forest, &output)?;
 
     let metadata = args.times || args.permissions;
 
