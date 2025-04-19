@@ -69,3 +69,21 @@ pub fn load(p: Option<Utf8PathBuf>) -> Result<Configuration> {
     let conf = toml::from_str(&s).with_context(|| format!("Couldn't parse {confpath}"))?;
     Ok(conf)
 }
+
+pub fn merge_skips(config: Vec<String>, args: Vec<String>) -> Vec<String> {
+    if config.is_empty() {
+        args
+    } else {
+        let mut s = config;
+        s.extend(args);
+        s.sort();
+        s.dedup();
+        // Dumb, but makes it less ambiguous as to what escapes are for the regex
+        // and which are for str's Display instance
+        debug!("Config merged with args for skip list:");
+        for a in &s {
+            debug!("skip {a}");
+        }
+        s
+    }
+}

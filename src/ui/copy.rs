@@ -6,7 +6,7 @@ use clap::Parser;
 
 use crate::backend;
 use crate::backup;
-use crate::config::Configuration;
+use crate::config::{self, Configuration};
 use crate::filter;
 use crate::index;
 use crate::read;
@@ -46,11 +46,13 @@ pub struct Target {
     snapshots: Vec<String>,
 }
 
-pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
+pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
     let target_snapshots = &args.target.snapshots;
 
     // Trust but verify
     assert!(args.target.all ^ !target_snapshots.is_empty());
+
+    let skips = config::merge_skips(config.skips, args.skips);
 
     // Build the usual suspects.
     let (_, src_cached_backend) = backend::open(
@@ -127,7 +129,7 @@ pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<
             }
             drop(cwd_packfiles);
 
-            let filter = filter::skip_matching_paths(&args.skips)?;
+            let filter = filter::skip_matching_paths(&skips)?;
 
             let new_snapshots = repack::walk_snapshots(
                 repack::Op::Copy,

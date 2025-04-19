@@ -8,7 +8,7 @@ use tracing::*;
 
 use crate::{
     backend, backup, blob,
-    config::Configuration,
+    config::{self, Configuration},
     filter,
     hashing::ObjectId,
     index::{self, Index},
@@ -42,10 +42,12 @@ pub struct Args {
     target_snapshot: String,
 }
 
-pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
+pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
     if args.keep_metadata && (args.author.is_some() || !args.tags.is_empty()) {
         bail!("Give either --keep-metadata or new metadata with --author, --tags (see --help)")
     }
+
+    let skips = config::merge_skips(config.skips, args.skips);
 
     // Build the usual suspects.
     let (backend_config, cached_backend) = backend::open(
@@ -89,7 +91,7 @@ pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<
             &back_stats,
         );
 
-        let mut filter = filter::skip_matching_paths(&args.skips)?;
+        let mut filter = filter::skip_matching_paths(&skips)?;
 
         let new_snapshot = walk_snapshot(
             &snapshot_and_forest,

@@ -15,7 +15,7 @@ use crate::backend;
 use crate::backup::{self, *};
 use crate::blob::{self, Blob};
 use crate::chunk;
-use crate::config::Configuration;
+use crate::config::{self, Configuration};
 use crate::file_util::nice_size;
 use crate::filter;
 use crate::fs_tree;
@@ -77,23 +77,7 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
         tree::Symlink::Read
     };
 
-    let skips = {
-        if config.skips.is_empty() {
-            args.skips
-        } else {
-            let mut s = config.skips;
-            s.extend(args.skips);
-            s.sort();
-            s.dedup();
-            // Dumb, but makes it less ambiguous as to what escapes are for the regex
-            // and which are for str's Display instance
-            debug!("Config merged with args for skip list:");
-            for a in &s {
-                debug!("skip {a}");
-            }
-            s
-        }
-    };
+    let skips = config::merge_skips(config.skips, args.skips);
 
     // Do a quick scan of the paths to make sure we can read them and get
     // metadata before we get backends and indexes
