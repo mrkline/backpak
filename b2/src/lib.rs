@@ -87,7 +87,7 @@ impl Session {
             })
             .collect::<Result<Vec<&str>>>()?;
 
-        if !capes.iter().any(|c| *c == "listKeys") {
+        if !capes.iter().any(|c| *c == "listFiles") {
             return Err(bad("credentials can not list files"));
         }
         if !capes.iter().any(|c| *c == "readFiles") {
