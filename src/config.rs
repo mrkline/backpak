@@ -66,8 +66,31 @@ pub fn load(p: Option<Utf8PathBuf>) -> Result<Configuration> {
         found => found,
     }
     .with_context(|| format!("Couldn't open {confpath}"))?;
-    let conf = toml::from_str(&s).with_context(|| format!("Couldn't parse {confpath}"))?;
+    let mut conf: Configuration =
+        toml::from_str(&s).with_context(|| format!("Couldn't parse {confpath}"))?;
+    let local_conf = load_cwd()?;
+    // We have <> at home.
+    if let Some(lc) = local_conf {
+        if lc.cache_size != cache::DEFAULT_SIZE {
+            // Too noisy? I dunno, it's strange.
+            warn!("Ignoring cache_size in .backpak - set it globally in ~/.config/backpak.toml");
+        }
+        // Don't concatenate ignores - you might want to *not* skip certain things
+        // the global config would have you skip.
+        conf.skips = lc.skips;
+        conf.restore.output = lc.restore.output.or(conf.restore.output);
+    };
     Ok(conf)
+}
+
+fn load_cwd() -> Result<Option<Configuration>> {
+    let s = match fs::read_to_string(".backpak") {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        found => found,
+    }
+    .with_context(|| format!("Couldn't open .backpak"))?;
+    let conf = toml::from_str(&s).with_context(|| format!("Couldn't parse .bakpak"))?;
+    Ok(Some(conf))
 }
 
 pub fn merge_skips(config: Vec<String>, args: Vec<String>) -> Vec<String> {
