@@ -2,7 +2,7 @@ workspace = { members = ["b2"] }
 [package]
 name = "backpak"
 description = "A content-addressed backup system with deduplication and compression"
-version = "0.2.0"
+version = "0.3.0"
 repository = "https://github.com/mrkline/backpak"
 homepage = "https://backpak.store"
 authors = ["Matt Kline <matt@bitbashing.io>"]
