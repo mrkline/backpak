@@ -105,6 +105,7 @@ where
 
     for path in paths {
         if !filter(path) {
+            trace!("filtered out {path}");
             continue;
         }
 
