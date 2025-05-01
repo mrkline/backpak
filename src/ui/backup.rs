@@ -33,6 +33,10 @@ pub struct Args {
     #[clap(short = 'L', long)]
     dereference: bool,
 
+    /// Do not dereference symbolic links, just save their targets. (default)
+    #[clap(short = 'P', long, conflicts_with = "dereference")]
+    no_dereference: bool,
+
     /// The author of the snapshot (otherwise the hostname is used)
     #[clap(short, long, name = "name")]
     author: Option<String>,
@@ -71,7 +75,14 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
 
     reject_matching_directories(&paths)?;
 
-    let symlink_behavior = if args.dereference {
+    // Flags always override config files.
+    let mut deref = config.backup.dereference;
+    if args.dereference {
+        deref = true;
+    } else if args.no_dereference {
+        deref = false;
+    }
+    let symlink_behavior = if deref {
         tree::Symlink::Dereference
     } else {
         tree::Symlink::Read

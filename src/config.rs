@@ -15,6 +15,12 @@ fn defcachesize() -> Byte {
 }
 
 #[derive(Debug, Default, Deserialize)]
+pub struct BackupConfiguration {
+    #[serde(default)]
+    pub dereference: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
 pub struct RestoreConfiguration {
     pub output: Option<Utf8PathBuf>,
 }
@@ -28,6 +34,9 @@ pub struct Configuration {
     pub skips: Vec<String>,
 
     #[serde(default)]
+    pub backup: BackupConfiguration,
+
+    #[serde(default)]
     pub restore: RestoreConfiguration,
 }
 
@@ -36,6 +45,7 @@ impl Default for Configuration {
         Self {
             cache_size: cache::DEFAULT_SIZE,
             skips: vec![],
+            backup: Default::default(),
             restore: Default::default(),
         }
     }
