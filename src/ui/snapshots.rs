@@ -36,6 +36,7 @@ pub struct Args {
     ///
     /// Essentially `backpak diff` for multiple snapshots.
     #[clap(long, verbatim_doc_comment)]
+    #[allow(clippy::doc_lazy_continuation)] // It's a verbatim doc comment, shut up Clippy.
     stat: bool,
 
     /// Include metadata changes in --stat (times, permissions).

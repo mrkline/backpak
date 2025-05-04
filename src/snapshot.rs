@@ -114,7 +114,7 @@ fn diskfmt(s: &Snapshot) -> SnapshotV2 {
         author: s.author.clone(),
         tags: s.tags.clone(),
         paths: s.paths.clone(),
-        tree: s.tree.clone(),
+        tree: s.tree,
     }
 }
 
@@ -132,7 +132,7 @@ const MAGIC_BYTES: &[u8] = b"MKBAKSNP";
 
 fn to_file(fh: &mut fs::File, snapshot: &Snapshot) -> Result<ObjectId> {
     fh.write_all(MAGIC_BYTES)?;
-    fh.write_all(&[b'2'])?;
+    fh.write_all(b"2")?;
 
     let mut hasher = HashingWriter::new(fh);
 

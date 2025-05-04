@@ -87,7 +87,7 @@ pub struct BackupStatistics {
     pub indexed_packs: AtomicU64,
 }
 
-impl<'scope, 'env> Backup<'scope, 'env> {
+impl Backup<'_, '_> {
     /// Convenience function to join the threads
     /// assuming the channels haven't been moved out.
     pub fn join(self) -> Result<()> {

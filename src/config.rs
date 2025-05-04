@@ -98,8 +98,8 @@ fn load_cwd() -> Result<Option<Configuration>> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         found => found,
     }
-    .with_context(|| format!("Couldn't open .backpak"))?;
-    let conf = toml::from_str(&s).with_context(|| format!("Couldn't parse .bakpak"))?;
+    .with_context(|| "Couldn't open .backpak".to_string())?;
+    let conf = toml::from_str(&s).with_context(|| "Couldn't parse .bakpak".to_string())?;
     Ok(Some(conf))
 }
 
