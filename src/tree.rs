@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::{Context, Result, anyhow, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -339,6 +339,9 @@ pub fn serialize_and_hash(tree: &Tree) -> Result<(Vec<u8>, ObjectId)> {
     Ok((tree_cbor, id))
 }
 
+pub static EMPTY_ID: LazyLock<ObjectId> =
+    LazyLock::new(|| serialize_and_hash(&Tree::default()).unwrap().1);
+
 /// A collection of trees (which can reference each other as subtrees),
 /// used to represent a directory hierarchy.
 ///
@@ -378,11 +381,15 @@ impl<'a> Cache<'a> {
         blob_to_pack_map: &'a index::BlobMap,
         pack_cache: &'a backend::CachedBackend,
     ) -> Self {
+        let mut tree_cache = FxHashMap::default();
+        // See ui/backup.rs: We don't bother uploading nothing, so let's precache nothing.
+        tree_cache.insert(*EMPTY_ID, Arc::new(Tree::default()));
+
         Self {
             index,
             blob_to_pack_map,
             pack_cache,
-            tree_cache: Forest::default(),
+            tree_cache,
         }
     }
 

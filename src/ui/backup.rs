@@ -37,6 +37,10 @@ pub struct Args {
     #[clap(short = 'P', long, conflicts_with = "dereference")]
     no_dereference: bool,
 
+    /// Allow empty snapshots.
+    #[clap(long)]
+    allow_empty: bool,
+
     /// The author of the snapshot (otherwise the hostname is used)
     #[clap(short, long, name = "name")]
     author: Option<String>,
@@ -201,6 +205,18 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
         progress_thread.join();
         run_res
     })?;
+    if root == *tree::EMPTY_ID && !args.allow_empty {
+        // We really did nothing, huh?
+        assert_eq!(back_stats.chunk_bytes.load(Ordering::Relaxed), 0);
+        assert_eq!(back_stats.tree_bytes.load(Ordering::Relaxed), 0);
+        assert_eq!(back_stats.indexed_packs.load(Ordering::Relaxed), 0);
+        assert_eq!(walk_stats.reused_bytes.load(Ordering::Relaxed), 0);
+        assert_eq!(back_stats.compressed_bytes.load(Ordering::Relaxed), 0);
+        assert_eq!(cached_backend.bytes_uploaded.load(Ordering::Relaxed), 0);
+
+        info!("Nothing backed up! Pass --allow-empty to create an empty snapshot.");
+        return Ok(());
+    }
 
     debug!("Root tree packed as {}", root);
 
@@ -485,6 +501,13 @@ fn backup_tree(
     };
 
     let mut finalize = |tree: tree::Tree| -> Result<ObjectId> {
+        // Don't bother serializing, packing, and uplodaing an empty tree.
+        // NB: For this to work, anything reading trees must also work in kind.
+        //     Thankfully all go through tree::Cache, so we can do that once, there.
+        if tree == tree::Tree::default() {
+            return Ok(*tree::EMPTY_ID);
+        }
+
         let (bytes, id) = tree::serialize_and_hash(&tree)?;
 
         if packed_blobs.borrow_mut().insert(id) {
