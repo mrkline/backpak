@@ -41,6 +41,10 @@ pub struct Args {
     #[clap(long)]
     allow_empty: bool,
 
+    /// Allow a snapshot to match the previous one.
+    #[clap(long)]
+    allow_repeat: bool,
+
     /// The author of the snapshot (otherwise the hostname is used)
     #[clap(short, long, name = "name")]
     author: Option<String>,
@@ -119,7 +123,7 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
 
     info!("Finding a parent snapshot");
     let snapshots = snapshot::load_chronologically(&cached_backend)?;
-    let parent = parent_snapshot(&paths, snapshots);
+    let parent = parent_snapshot(&paths, &snapshots);
     let parent = parent.as_ref();
 
     trace!("Loading all trees from the parent snapshot");
@@ -220,18 +224,6 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
 
     debug!("Root tree packed as {}", root);
 
-    // Print the same stats we shoed as progress to the debug log.
-    let chunk_bytes = nice_size(back_stats.chunk_bytes.load(Ordering::Relaxed));
-    let tree_bytes = nice_size(back_stats.tree_bytes.load(Ordering::Relaxed));
-    let np = nice_size(back_stats.indexed_packs.load(Ordering::Relaxed));
-    debug!("{chunk_bytes} new files, {tree_bytes} new metadata into {np} packs");
-    let rb = nice_size(walk_stats.reused_bytes.load(Ordering::Relaxed));
-    debug!("{rb} reused");
-    let zbytes = nice_size(back_stats.compressed_bytes.load(Ordering::Relaxed));
-    let ubytes = nice_size(cached_backend.bytes_uploaded.load(Ordering::Relaxed));
-    let dbytes = nice_size(cached_backend.bytes_downloaded.load(Ordering::Relaxed));
-    debug!("{zbytes} compressed, {ubytes} uploaded, {dbytes} downloaded");
-
     let author = match args.author {
         Some(a) => a,
         None => hostname::get()
@@ -243,13 +235,44 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
     let time = jiff::Zoned::now();
 
     let snapshot = Snapshot {
-        time,
+        time: time.clone(),
         author,
         tags: args.tags.into_iter().collect(),
         paths,
         tree: root,
     };
     trace!("{snapshot:?}");
+    let prev_but_now = snapshots.last().map(|(s, _sid)| {
+        let mut s = s.clone();
+        s.time = time;
+        s
+    });
+    match prev_but_now {
+        Some(p) if p == snapshot => {
+            // We really did nothing, huh?
+            assert_eq!(back_stats.chunk_bytes.load(Ordering::Relaxed), 0);
+            assert_eq!(back_stats.tree_bytes.load(Ordering::Relaxed), 0);
+            assert_eq!(back_stats.indexed_packs.load(Ordering::Relaxed), 0);
+            assert_eq!(back_stats.compressed_bytes.load(Ordering::Relaxed), 0);
+            assert_eq!(cached_backend.bytes_uploaded.load(Ordering::Relaxed), 0);
+
+            info!("Snapshot is the same as the last! Pass --allow-repeat to create a duplicate.");
+            return Ok(());
+        }
+        _ => (),
+    };
+
+    // Print the same stats we showed as progress to the debug log.
+    let chunk_bytes = nice_size(back_stats.chunk_bytes.load(Ordering::Relaxed));
+    let tree_bytes = nice_size(back_stats.tree_bytes.load(Ordering::Relaxed));
+    let np = nice_size(back_stats.indexed_packs.load(Ordering::Relaxed));
+    debug!("{chunk_bytes} new files, {tree_bytes} new metadata into {np} packs");
+    let rb = nice_size(walk_stats.reused_bytes.load(Ordering::Relaxed));
+    debug!("{rb} reused");
+    let zbytes = nice_size(back_stats.compressed_bytes.load(Ordering::Relaxed));
+    let ubytes = nice_size(cached_backend.bytes_uploaded.load(Ordering::Relaxed));
+    let dbytes = nice_size(cached_backend.bytes_downloaded.load(Ordering::Relaxed));
+    debug!("{zbytes} compressed, {ubytes} uploaded, {dbytes} downloaded");
 
     let snap_id = if !args.dry_run {
         snapshot::upload(&snapshot, &cached_backend)?
@@ -324,14 +347,11 @@ fn reject_matching_directories(paths: &BTreeSet<Utf8PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn parent_snapshot(
+fn parent_snapshot<'a>(
     paths: &BTreeSet<Utf8PathBuf>,
-    snapshots: Vec<(Snapshot, ObjectId)>,
-) -> Option<Snapshot> {
-    let parent = snapshots
-        .into_iter()
-        .rev()
-        .find(|snap| snap.0.paths == *paths);
+    snapshots: &'a [(Snapshot, ObjectId)],
+) -> Option<&'a Snapshot> {
+    let parent = snapshots.iter().rev().find(|snap| snap.0.paths == *paths);
     match &parent {
         Some(p) => debug!("Using snapshot {} as a parent", p.1),
         None => debug!("No parent snapshot found based on absolute paths"),
