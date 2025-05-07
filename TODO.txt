@@ -4,10 +4,6 @@
 
 Mention that they can get there from interrupted backups too.
 
-## Download concurrency flag
-
-Sometimes people are on different, slower Internet.
-
 ## Guard against colliding with another snapshot in the same working dir
 
 Track working dir in some global state somewhere? Shmem?
