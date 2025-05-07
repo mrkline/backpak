@@ -191,6 +191,10 @@ pub fn print_download_line(downloaded_bytes: u64) {
 pub fn truncate_path(p: &Utf8Path, term: &Term) -> String {
     // Arbitrary truncation; do something smarter?
     let w = term.size().1 as usize; // (h, w) wut
+    // How absurd. But do it so we don't panic on underflow
+    if w <= 3 {
+        return ".".repeat(w)
+    }
     let syms: Vec<_> = p.as_str().graphemes(true).collect();
     if syms.len() > w {
         // If the filename itself is more than the line length (minus "..."),
