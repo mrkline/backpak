@@ -1,3 +1,7 @@
+## Fix DANGER WILL ROBINSON
+
+Explicitly-finalized read?
+
 ## Clean up --stat and --sizes/--file-sizes combinations?
 
 ## Add check flag to delete, not warn, unreachable packs
