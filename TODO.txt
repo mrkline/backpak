@@ -1,6 +1,4 @@
-## Fix DANGER WILL ROBINSON
-
-Explicitly-finalized read?
+## Timely upload stats?
 
 ## Clean up --stat and --sizes/--file-sizes combinations?
 

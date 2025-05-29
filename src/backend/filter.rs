@@ -19,44 +19,44 @@ pub struct BackendFilter {
 struct UnfilterRead {
     from: String,
     unfilter: String,
-    copy_thread: Option<thread::JoinHandle<Result<()>>>,
+    copy_thread: Option<thread::JoinHandle<io::Result<()>>>,
     child: Child,
-}
-
-// DANGER WILL ROBINSIN:
-//
-// This might suck more than I initially thought - since the panic doens't happen until
-// after the read is dropped, callers might think it succeeded.
-// If we're not careful to pass this by value and drop it,
-// it breaks everything, especially our `safe_copy_to_file()` hopes.
-
-// It would be nice to have some join(self) to gracefully catch errors,
-// but then Backend::read() couldn't return a generic Read trait object,
-// we'd need some JoinableRead...
-impl Drop for UnfilterRead {
-    fn drop(&mut self) {
-        // Lacking that, await the unfilter process in the destructor
-        // and panic if it failed :/
-        self.copy_thread
-            .take()
-            .unwrap()
-            .join()
-            .unwrap()
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Piping {} through {} failed: {:#?}",
-                    self.from, self.unfilter, e
-                )
-            });
-        if !self.child.wait().unwrap().success() {
-            panic!("{} < {} failed", self.unfilter, self.from)
-        }
-    }
 }
 
 impl Read for UnfilterRead {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.child.stdout.as_mut().unwrap().read(buf)
+        // Try to read some from the filter program.
+        // Stdout shouldn't be None until we wait below.
+        let res = self
+            .child
+            .stdout
+            .as_mut()
+            .expect("UnfilteredRead::read() called after it returned 0")
+            .read(buf)?;
+
+        // If the last bytes were read, we have some cleanup to do.
+        if res == 0 {
+            // Make sure we actually fed all the bytes into the filter program.
+            let copy_thread = self.copy_thread.take().unwrap();
+            assert!(copy_thread.is_finished());
+            copy_thread.join().expect("unfilter-copy thread aborted")?;
+
+            // See if the process exited successfully;
+            // otherwise we'll have an incomplete file.
+            let j = self.child.wait()?;
+            if !j.success() {
+                let j = match j.code() {
+                    Some(c) => format!("failed with code {c}"),
+                    None => "was killed".to_owned(),
+                };
+                return Err(io::Error::other(format!(
+                    "{} < {} {j}",
+                    self.unfilter, self.from
+                )));
+            }
+        }
+
+        Ok(res)
     }
 }
 
@@ -78,10 +78,9 @@ impl Backend for BackendFilter {
 
         let copy_thread = thread::Builder::new()
             .name("unfilter-copy".to_string())
-            .spawn(move || -> anyhow::Result<()> {
-                io::copy(&mut inner_read, &mut to_unfilter)?;
-                Ok(())
-            })
+            // It's important to move to_unfilter in so it gets dropped here.
+            // Otherwise the pipe file descriptor stays open and we hang.
+            .spawn(move || io::copy(&mut inner_read, &mut to_unfilter).map(|_| ()))
             .unwrap(); // Panic if we can't spawn a thread
 
         Ok(Box::new(UnfilterRead {
