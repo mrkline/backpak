@@ -23,6 +23,12 @@ struct UnfilterRead {
     child: Child,
 }
 
+impl Drop for UnfilterRead {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+    }
+}
+
 impl Read for UnfilterRead {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // Try to read some from the filter program.
@@ -36,11 +42,6 @@ impl Read for UnfilterRead {
 
         // If the last bytes were read, we have some cleanup to do.
         if res == 0 {
-            // Make sure we actually fed all the bytes into the filter program.
-            let copy_thread = self.copy_thread.take().unwrap();
-            assert!(copy_thread.is_finished());
-            copy_thread.join().expect("unfilter-copy thread aborted")?;
-
             // See if the process exited successfully;
             // otherwise we'll have an incomplete file.
             let j = self.child.wait()?;
@@ -54,6 +55,11 @@ impl Read for UnfilterRead {
                     self.unfilter, self.from
                 )));
             }
+
+            // Make sure we actually fed all the bytes into the filter program.
+            let copy_thread = self.copy_thread.take().unwrap();
+            assert!(copy_thread.is_finished());
+            copy_thread.join().expect("unfilter-copy thread aborted")?;
         }
 
         Ok(res)
