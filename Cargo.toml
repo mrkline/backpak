@@ -50,8 +50,6 @@ num = { version = "0.4", default-features = false }
 num_cpus = "1.0"
 # Self-referencing chunk iterator
 ouroboros = "0.18"
-# par_iter
-rayon = "1.4"
 # Snapshots LAST~N parsing
 # Don't need Unicode for now.
 regex = { version = "1.0", default-features = false, features = [ "std", "perf" ] }
@@ -60,7 +58,7 @@ rusqlite = { version = "0.35.0", features = ["bundled"] }
 # We don't need DDOS-resistant hashes
 rustc-hash = "2.0"
 # Syscalls for setting file times
-rustix = { version = "1.0", default-features = false, features = [ "fs" ] }
+rustix = { version = "1.0", default-features = false, features = [ "fs", "process" ] }
 # Praise be unto thee
 serde = "1.0"
 serde_bytes = "0.11"

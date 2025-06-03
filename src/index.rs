@@ -28,12 +28,12 @@ use std::sync::{
 };
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::{Deserialize, Serialize};
 use tracing::*;
 
 use crate::backend;
+use crate::concurrently::concurrently;
 use crate::counters;
 use crate::file_util::{check_magic, nice_size};
 use crate::hashing::{HashingReader, HashingWriter, ObjectId};
@@ -203,7 +203,6 @@ pub fn build_master_index_with_sizes(
 
     #[derive(Debug, Default)]
     struct Results {
-        bad_indexes: BTreeSet<ObjectId>,
         superseded_indexes: BTreeSet<ObjectId>,
         loaded_indexes: BTreeMap<ObjectId, PackMap>,
         sizes: Vec<u64>,
@@ -211,43 +210,33 @@ pub fn build_master_index_with_sizes(
 
     let shared = Mutex::new(Results::default());
 
-    cached_backend
+    let todos = cached_backend
         .list_indexes()?
-        .par_iter()
-        .try_for_each_with(&shared, |shared, (index_file, index_len)| {
-            let index_id = backend::id_from_path(index_file)?;
-            let mut loaded_index = match load(&index_id, cached_backend) {
-                Ok(l) => l,
-                Err(e) => {
-                    error!("{:?}", e);
-                    shared.lock().unwrap().bad_indexes.insert(index_id);
-                    return Ok(());
-                }
-            };
-            let mut guard = shared.lock().unwrap();
-            guard.sizes.push(*index_len);
-            guard
-                .superseded_indexes
-                .append(&mut loaded_index.supersedes);
-            ensure!(
+        .into_iter()
+        .map(|(index_file, index_len)| {
+            let s = &shared;
+            move || {
+                let index_id = backend::id_from_path(&index_file)?;
+                let mut loaded_index = load(&index_id, cached_backend)?;
+                let mut guard = s.lock().unwrap();
+                guard.sizes.push(index_len);
                 guard
-                    .loaded_indexes
-                    .insert(index_id, loaded_index.packs)
-                    .is_none(),
-                "Duplicate index {} read from backend!",
-                index_file
-            );
-            Ok(())
-        })?;
+                    .superseded_indexes
+                    .append(&mut loaded_index.supersedes);
+                ensure!(
+                    guard
+                        .loaded_indexes
+                        .insert(index_id, loaded_index.packs)
+                        .is_none(),
+                    "Duplicate index {} read from backend!",
+                    index_file
+                );
+                Ok(())
+            }
+        });
+    concurrently(todos);
 
     let mut shared = shared.into_inner().unwrap();
-
-    if !shared.bad_indexes.is_empty() {
-        bail!(
-            "Errors loading indexes {:?}. Consider running backpak rebuild-index.",
-            shared.bad_indexes
-        );
-    }
 
     // Strip out superseded indexes.
     for superseded in &shared.superseded_indexes {
@@ -367,7 +356,7 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<In
         .with_context(|| format!("Couldn't load index {}", id))?;
     ensure!(
         *id == calculated_id,
-        "Index {}'s contents changed! Now hashes to {}",
+        "Index {}'s now hashes to {} - Consider running backpak rebuild-index.",
         id,
         calculated_id
     );

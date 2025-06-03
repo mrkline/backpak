@@ -4,11 +4,11 @@ use std::thread;
 use anyhow::{Result, bail};
 use clap::Parser;
 use console::Term;
-use rayon::prelude::*;
 use rustc_hash::{FxHashMap, FxHashSet};
 use tracing::*;
 
 use crate::backend;
+use crate::concurrently;
 use crate::config::Configuration;
 use crate::hashing::ObjectId;
 use crate::index;
@@ -70,16 +70,24 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) ->
                 print_progress(i, &Term::stdout(), &stats, &cached_backend.bytes_downloaded)
             });
             // Actually read the packs; do this in parallel as much as the backend allows
-            index.packs.par_iter().for_each(|(pack_id, manifest)| {
-                match check_pack(&cached_backend, pack_id, manifest, &stats.blobs_read) {
-                    Ok(()) => debug!("Pack {pack_id} verified"),
-                    Err(e) => {
-                        error!("Pack {pack_id}: {e:?}");
-                        borked_packs.fetch_add(1, Ordering::Relaxed);
-                    }
-                };
-                stats.packs_read.fetch_add(1, Ordering::Relaxed);
+            let checks = index.packs.iter().map(|(pack_id, manifest)| {
+                let cb = &cached_backend;
+                let s = &stats;
+                let b = &borked_packs;
+                move || {
+                    match check_pack(cb, &pack_id, &manifest, &s.blobs_read) {
+                        Ok(()) => debug!("Pack {pack_id} verified"),
+                        Err(e) => {
+                            error!("Pack {pack_id}: {e:?}");
+                            b.fetch_add(1, Ordering::Relaxed);
+                        }
+                    };
+                    s.packs_read.fetch_add(1, Ordering::Relaxed);
+                    Ok(())
+                }
             });
+            concurrently::concurrently(checks);
+
             progress.join();
             Ok(())
         })?;

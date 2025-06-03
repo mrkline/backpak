@@ -4,10 +4,10 @@ use std::thread;
 
 use anyhow::{Context, Result, ensure};
 use clap::Parser;
-use rayon::prelude::*;
 use tracing::*;
 
 use crate::backend;
+use crate::concurrently;
 use crate::config::Configuration;
 use crate::hashing::ObjectId;
 use crate::index;
@@ -58,18 +58,22 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) ->
     });
 
     info!("Reading all packs to build a new index");
-    cached_backend
+    let read_packs = cached_backend
         .list_packs()?
-        .par_iter()
-        .try_for_each_with::<_, _, Result<()>>(pack_tx, |pack_tx, (pack_file, _pack_len)| {
-            let id = backend::id_from_path(pack_file)?;
-            let manifest = pack::load_manifest(&id, &cached_backend)?;
-            let metadata = pack::PackMetadata { id, manifest };
-            pack_tx
-                .send(metadata)
-                .context("Pack thread closed unexpectedly")?;
-            Ok(())
-        })?;
+        .into_iter()
+        .map(|(pack_file, _pack_len)| {
+            let ptx = &pack_tx;
+            || {
+                let id = backend::id_from_path(pack_file)?;
+                let manifest = pack::load_manifest(&id, &cached_backend)?;
+                let metadata = pack::PackMetadata { id, manifest };
+                ptx.send(metadata)
+                    .context("Pack thread closed unexpectedly")?;
+                Ok(())
+            }
+        });
+    concurrently::concurrently(read_packs);
+    drop(pack_tx);
 
     let umode = if args.dry_run {
         upload::Mode::DryRun

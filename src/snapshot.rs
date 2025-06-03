@@ -29,12 +29,11 @@ use std::sync::{
 use anyhow::{Context, Result, bail, ensure};
 use camino::Utf8PathBuf;
 use jiff::{Timestamp, Zoned, tz::TimeZone};
-use rayon::prelude::*;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 
 use crate::{
-    backend, counters,
+    backend, concurrently, counters,
     file_util::check_magic,
     hashing::{HashingReader, HashingWriter, ObjectId},
 };
@@ -217,16 +216,19 @@ pub fn load_chronologically_with_total_size(
 ) -> Result<(Vec<(Snapshot, ObjectId)>, u64)> {
     let total = AtomicU64::new(0);
 
-    let mut snapshots = cached_backend
+    let get_snapshots = cached_backend
         .list_snapshots()?
-        .par_iter()
-        .map_with(&total, |tot, (file, len)| {
-            let snapshot_id = backend::id_from_path(file)?;
-            let snap = load(&snapshot_id, cached_backend)?;
-            tot.fetch_add(*len, Ordering::Relaxed);
-            Ok((snap, snapshot_id))
-        })
-        .collect::<Result<Vec<_>>>()?;
+        .into_iter()
+        .map(|(file, len)| {
+            let tot = &total;
+            move || {
+                let snapshot_id = backend::id_from_path(file)?;
+                let snap = load(&snapshot_id, cached_backend)?;
+                tot.fetch_add(len, Ordering::Relaxed);
+                Ok((snap, snapshot_id))
+            }
+        });
+    let mut snapshots = concurrently::map_concurrently(get_snapshots);
     snapshots.sort_by_key(|(snap, _)| snap.time.timestamp());
     Ok((snapshots, total.load(Ordering::SeqCst)))
 }

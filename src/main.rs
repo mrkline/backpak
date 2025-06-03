@@ -5,6 +5,7 @@ use tracing::*;
 
 use backpak::config;
 use backpak::counters;
+use backpak::fatal;
 use backpak::ui::*;
 
 #[derive(Debug, Parser)]
@@ -68,10 +69,7 @@ enum Command {
 }
 
 fn main() {
-    run().unwrap_or_else(|e| {
-        error!("{:?}", e);
-        std::process::exit(1);
-    });
+    run().unwrap_or_else(|e| fatal(e))
 }
 
 fn run() -> Result<()> {

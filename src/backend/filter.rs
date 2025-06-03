@@ -21,6 +21,7 @@ struct UnfilterRead {
     unfilter: String,
     copy_thread: Option<thread::JoinHandle<io::Result<()>>>,
     child: Child,
+    _cg: crate::ChildGuard,
 }
 
 impl Drop for UnfilterRead {
@@ -89,11 +90,13 @@ impl Backend for BackendFilter {
             .spawn(move || io::copy(&mut inner_read, &mut to_unfilter).map(|_| ()))
             .unwrap(); // Panic if we can't spawn a thread
 
+        let ufid = uf.id();
         Ok(Box::new(UnfilterRead {
             from: from.to_string(),
             unfilter: self.unfilter.clone(),
             copy_thread: Some(copy_thread),
             child: uf,
+            _cg: crate::ChildGuard::new(ufid),
         }))
     }
 
@@ -107,6 +110,7 @@ impl Backend for BackendFilter {
             .stdin(Stdio::piped())
             .spawn()
             .with_context(|| format!("Couldn't run {}", self.filter))?;
+        let _cg = crate::ChildGuard::new(f.id());
 
         let mut to_filter = f.stdin.take().unwrap();
         let mut from_filter = f.stdout.take().unwrap();

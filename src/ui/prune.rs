@@ -4,7 +4,6 @@ use std::thread;
 use anyhow::Result;
 use camino::Utf8Path;
 use clap::Parser;
-use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 use tracing::*;
 
@@ -62,7 +61,7 @@ pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<
     // Instead of a constant-time lookup per packed blob (is that blob in this set?),
     // each got a linear lookup over the number of snapshot forests.
     // (Overall, O(n) vs. O(n * m), where n = # of packed blobs and m = # of snapshots.)
-    let reachable_blobs = reachable_blobs(snapshots_and_forests.par_iter().map(|s| &s.forest));
+    let reachable_blobs = reachable_blobs(snapshots_and_forests.iter().map(|s| &s.forest));
 
     let (reusable_packs, packs_to_prune) = partition_reusable_packs(&index, &reachable_blobs);
     let (droppable_packs, sparse_packs) =
@@ -241,12 +240,10 @@ pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<
 }
 
 /// Collect all blobs from the provided forests
-fn reachable_blobs<'a, I: ParallelIterator<Item = &'a tree::Forest>>(
-    forests: I,
-) -> FxHashSet<ObjectId> {
+fn reachable_blobs<'a, I: Iterator<Item = &'a tree::Forest>>(forests: I) -> FxHashSet<ObjectId> {
     forests
         .map(blobs_in_forest)
-        .reduce(FxHashSet::default, |mut a, b| {
+        .fold(FxHashSet::default(), |mut a, b| {
             a.extend(b);
             a
         })
