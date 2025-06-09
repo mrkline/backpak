@@ -1,4 +1,4 @@
-use std::thread;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use camino::Utf8Path;
@@ -55,6 +55,7 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
         config.cache_size,
         backend::CacheBehavior::Normal,
     )?;
+    let (backend_config, cached_backend) = (Arc::new(backend_config), Arc::new(cached_backend));
     let index = index::build_master_index(&cached_backend)?;
     let blob_map = index::blob_to_pack_map(&index)?;
 
@@ -80,33 +81,28 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
         backup::Mode::LiveFire
     };
 
-    let back_stats = backup::BackupStatistics::default();
-    let mut new_snapshot = thread::scope(|s| -> Result<_> {
-        let mut backup = backup::spawn_backup_threads(
-            s,
-            bmode,
-            &backend_config,
-            &cached_backend,
-            Index::default(),
-            &back_stats,
-        );
+    let back_stats = Arc::new(backup::BackupStatistics::default());
+    let mut backup = backup::spawn_backup_tasks(
+        bmode,
+        backend_config.clone(),
+        cached_backend.clone(),
+        Index::default(),
+        back_stats,
+    );
 
-        let mut filter = filter::skip_matching_paths(&skips)?;
+    let mut filter = filter::skip_matching_paths(&skips)?;
 
-        let new_snapshot = walk_snapshot(
-            &snapshot_and_forest,
-            &mut filter,
-            &mut packed_blobs,
-            &mut backup,
-        )?;
+    let new_snapshot = walk_snapshot(
+        &snapshot_and_forest,
+        &mut filter,
+        &mut packed_blobs,
+        &mut backup,
+    )?;
 
-        // Important: make sure all new trees and the index are written BEFORE
-        // we upload the new snapshot.
-        // It's meaningless unless everything else is there first!
-        backup.join()?;
-
-        Ok(new_snapshot)
-    })?;
+    // Important: make sure all new trees and the index are written BEFORE
+    // we upload the new snapshot.
+    // It's meaningless unless everything else is there first!
+    backup.join()?;
 
     if new_snapshot == *target {
         info!("Nothing filtered; no new snapshot");

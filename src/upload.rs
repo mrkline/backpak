@@ -2,9 +2,10 @@
 //! [snapshots](crate::snapshot)) to a [backend]
 
 use std::fs::File;
-use std::sync::mpsc::Receiver;
+use std::sync::Arc;
 
 use anyhow::Result;
+use tokio::sync::mpsc::Receiver;
 
 use crate::backend;
 
@@ -13,12 +14,12 @@ pub enum Mode {
     LiveFire,
 }
 
-pub fn upload(
+pub async fn upload(
     mode: Mode,
-    cached_backend: &backend::CachedBackend,
-    rx: Receiver<(String, File)>,
+    cached_backend: Arc<backend::CachedBackend>,
+    mut rx: Receiver<(String, File)>,
 ) -> Result<()> {
-    while let Ok((path, fh)) = rx.recv() {
+    while let Some((path, fh)) = rx.recv().await {
         match mode {
             Mode::LiveFire => cached_backend.write(&path, fh)?,
             Mode::DryRun => {

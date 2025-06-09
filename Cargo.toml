@@ -70,6 +70,8 @@ sha2 = "0.10"
 tempfile = "3.0"
 # INI config is nice
 toml = "0.8"
+# Down we go
+tokio = { version = "1", features = [ "full" ] }
 # It's the good logger now.
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["std", "ansi", "fmt", "registry"] }

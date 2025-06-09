@@ -1,5 +1,7 @@
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::thread;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU32, AtomicU64, Ordering},
+};
 
 use anyhow::{Result, bail};
 use clap::Parser;
@@ -13,7 +15,7 @@ use crate::config::Configuration;
 use crate::hashing::ObjectId;
 use crate::index;
 use crate::pack;
-use crate::progress::{ProgressThread, print_download_line, spinner};
+use crate::progress::{ProgressTask, print_download_line, spinner};
 use crate::snapshot;
 use crate::tree;
 
@@ -39,7 +41,7 @@ pub struct ReadStatus {
     blobs_read: AtomicU64,
 }
 
-pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) -> Result<()> {
+pub async fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) -> Result<()> {
     let mut trouble = false;
 
     // NB: We always want to read when checking the backend!
@@ -49,14 +51,15 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) ->
         config.cache_size,
         backend::CacheBehavior::AlwaysRead,
     )?;
+    let cached_backend = Arc::new(cached_backend);
 
-    let index = index::build_master_index(&cached_backend)?;
+    let index = Arc::new(index::build_master_index(cached_backend.clone()).await?);
 
     info!("Downloading pack list");
     let all_packs = cached_backend.list_packs()?;
-    let borked_packs = AtomicU32::new(0);
+    let borked_packs = Arc::new(AtomicU32::new(0));
     if args.read_packs {
-        let stats = ReadStatus {
+        let stats = Arc::new(ReadStatus {
             packs_total: index.packs.len() as u32,
             blobs_total: index
                 .packs
@@ -64,33 +67,33 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) ->
                 .map(|manifest| manifest.len() as u64)
                 .sum(),
             ..Default::default()
+        });
+        let progress = {
+            let cb = cached_backend.clone();
+            ProgressTask::spawn(move |i| {
+                print_progress(i, &Term::stdout(), &stats, &cb.bytes_downloaded)
+            })
         };
-        thread::scope(|s| -> Result<()> {
-            let progress = ProgressThread::spawn(s, |i| {
-                print_progress(i, &Term::stdout(), &stats, &cached_backend.bytes_downloaded)
-            });
-            // Actually read the packs; do this in parallel as much as the backend allows
-            let checks = index.packs.iter().map(|(pack_id, manifest)| {
-                let cb = &cached_backend;
-                let s = &stats;
-                let b = &borked_packs;
-                move || {
-                    match check_pack(cb, &pack_id, &manifest, &s.blobs_read) {
-                        Ok(()) => debug!("Pack {pack_id} verified"),
-                        Err(e) => {
-                            error!("Pack {pack_id}: {e:?}");
-                            b.fetch_add(1, Ordering::Relaxed);
-                        }
-                    };
-                    s.packs_read.fetch_add(1, Ordering::Relaxed);
-                    Ok(())
-                }
-            });
-            concurrently::concurrently(checks);
+        // Actually read the packs; do this in parallel as much as the backend allows
+        let checks = index.clone().packs.iter().map(|(pack_id, manifest)| {
+            let cb = cached_backend.clone();
+            let s = stats.clone();
+            let b = borked_packs.clone();
+            async move {
+                match check_pack(&*cb, &pack_id, &manifest, &s.blobs_read) {
+                    Ok(()) => debug!("Pack {pack_id} verified"),
+                    Err(e) => {
+                        error!("Pack {pack_id}: {e:?}");
+                        b.fetch_add(1, Ordering::Relaxed);
+                    }
+                };
+                s.packs_read.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }
+        });
+        concurrently::concurrently(checks).await?;
 
-            progress.join();
-            Ok(())
-        })?;
+        progress.join();
     } else {
         // If we don't have to read the packs, just list them all
         // and make sure we find the indexed ones in that list.

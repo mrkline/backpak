@@ -22,15 +22,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::prelude::*;
 use std::sync::{
-    Mutex,
+    Arc, Mutex,
     atomic::{AtomicU64, Ordering},
-    mpsc::{Receiver, SyncSender},
 };
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde_derive::{Deserialize, Serialize};
 use tracing::*;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::backend;
 use crate::concurrently::concurrently;
@@ -75,12 +75,12 @@ pub enum Resumable {
 
 /// Gather metadata for completed packs from `rx` into an index file,
 /// and upload the index files when they reach a sufficient size.
-pub fn index(
+pub async fn index(
     resumable: Resumable,
     starting_index: Index,
-    rx: Receiver<PackMetadata>,
-    to_upload: SyncSender<(String, File)>,
-    indexed_packs: &AtomicU64,
+    mut rx: Receiver<PackMetadata>,
+    to_upload: Sender<(String, File)>,
+    indexed_packs: Arc<AtomicU64>,
 ) -> Result<bool> {
     let mut index = starting_index;
     let mut persisted = None;
@@ -93,7 +93,7 @@ pub fn index(
     }
 
     // For each pack...
-    while let Ok(PackMetadata { id, manifest }) = rx.recv() {
+    while let Some(PackMetadata { id, manifest }) = rx.recv().await {
         ensure!(
             index.packs.insert(id, manifest).is_none(),
             "Duplicate pack received: {}",
@@ -143,6 +143,7 @@ pub fn index(
 
         to_upload
             .send((index_name, renamed))
+            .await
             .context("indexer -> uploader channel exited early")?;
         Ok(true)
     } else {
@@ -189,15 +190,17 @@ fn to_file(fh: &mut fs::File, index: &Index) -> Result<ObjectId> {
 
 /// Load all indexes from the provided backend and combines them into a master
 /// index, removing any superseded ones.
-pub fn build_master_index(cached_backend: &backend::CachedBackend) -> Result<Index> {
-    build_master_index_with_sizes(cached_backend).map(|(mi, _ts)| mi)
+pub async fn build_master_index(cached_backend: Arc<backend::CachedBackend>) -> Result<Index> {
+    build_master_index_with_sizes(cached_backend)
+        .await
+        .map(|(mi, _ts)| mi)
 }
 
 /// [`build_master_index`] plus the size for each loaded index.
 ///
 /// Nice for usage reporting, since it saves us another backend query.
-pub fn build_master_index_with_sizes(
-    cached_backend: &backend::CachedBackend,
+pub async fn build_master_index_with_sizes(
+    cached_backend: Arc<backend::CachedBackend>,
 ) -> Result<(Index, Vec<u64>)> {
     info!("Building a master index");
 
@@ -208,16 +211,17 @@ pub fn build_master_index_with_sizes(
         sizes: Vec<u64>,
     }
 
-    let shared = Mutex::new(Results::default());
+    let shared = Arc::new(Mutex::new(Results::default()));
 
     let todos = cached_backend
         .list_indexes()?
         .into_iter()
         .map(|(index_file, index_len)| {
-            let s = &shared;
-            move || {
+            let s = shared.clone();
+            let cb = cached_backend.clone();
+            async move {
                 let index_id = backend::id_from_path(&index_file)?;
-                let mut loaded_index = load(&index_id, cached_backend)?;
+                let mut loaded_index = load(&index_id, &*cb)?;
                 let mut guard = s.lock().unwrap();
                 guard.sizes.push(index_len);
                 guard
@@ -234,9 +238,9 @@ pub fn build_master_index_with_sizes(
                 Ok(())
             }
         });
-    concurrently(todos);
+    concurrently(todos).await?;
 
-    let mut shared = shared.into_inner().unwrap();
+    let mut shared = Arc::into_inner(shared).unwrap().into_inner().unwrap();
 
     // Strip out superseded indexes.
     for superseded in &shared.superseded_indexes {

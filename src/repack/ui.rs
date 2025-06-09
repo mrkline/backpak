@@ -1,4 +1,4 @@
-use std::thread::Scope;
+use std::sync::Arc;
 
 use anyhow::Result;
 use console::Term;
@@ -10,36 +10,34 @@ use crate::{
 
 use super::*;
 
-pub struct ProgressThread<'scope> {
-    inner: progress::ProgressThread<'scope>,
+pub struct ProgressThread {
+    inner: progress::ProgressTask,
 }
 
-impl<'scope> ProgressThread<'scope> {
-    pub fn spawn<'env>(
-        s: &'scope Scope<'scope, 'env>,
-        bs: &'env backup::BackupStatistics,
-        ws: &'env WalkStatistics,
-        down: &'env AtomicU64,
-        up: &'env AtomicU64,
+impl ProgressThread {
+    pub fn spawn(
+        bs: Arc<backup::BackupStatistics>,
+        ws: Arc<WalkStatistics>,
+        down: Arc<AtomicU64>,
+        up: Arc<AtomicU64>,
     ) -> Self {
-        let inner = progress::ProgressThread::spawn(s, |i| {
-            print_progress(i, &Term::stdout(), bs, ws, down, up)
-        });
+        let inner =
+            progress::ProgressTask::spawn(|i| print_progress(i, &Term::stdout(), bs, ws, down, up));
         Self { inner }
     }
 
-    pub fn join(self) {
-        self.inner.join()
+    pub async fn join(self) {
+        self.inner.join().await
     }
 }
 
 fn print_progress(
     i: usize,
     term: &Term,
-    bstats: &backup::BackupStatistics,
-    wstats: &WalkStatistics,
-    down: &AtomicU64,
-    up: &AtomicU64,
+    bstats: Arc<backup::BackupStatistics>,
+    wstats: Arc<WalkStatistics>,
+    down: Arc<AtomicU64>,
+    up: Arc<AtomicU64>,
 ) -> Result<()> {
     if i > 0 {
         term.clear_last_lines(5)?;

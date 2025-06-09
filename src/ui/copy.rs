@@ -1,4 +1,4 @@
-use std::thread;
+use std::sync::Arc;
 
 use anyhow::Result;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -46,7 +46,7 @@ pub struct Target {
     snapshots: Vec<String>,
 }
 
-pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
+pub async fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
     let target_snapshots = &args.target.snapshots;
 
     // Trust but verify
@@ -60,6 +60,7 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
         config.cache_size,
         backend::CacheBehavior::Normal,
     )?;
+    let src_cached_backend = Arc::new(src_cached_backend);
     let src_index = index::build_master_index(&src_cached_backend)?;
     let src_blob_map = index::blob_to_pack_map(&src_index)?;
 
@@ -81,6 +82,8 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
 
     let (dst_backend_config, dst_cached_backend) =
         backend::open(&args.to, config.cache_size, backend::CacheBehavior::Normal)?;
+    let (dst_backend_config, dst_cached_backend) =
+        (Arc::new(dst_backend_config), Arc::new(dst_cached_backend));
     let dst_index = index::build_master_index(&dst_cached_backend)?;
 
     // Track all the blobs already in the destination.
@@ -102,56 +105,50 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
     } else {
         backup::Mode::LiveFire
     };
-    let back_stats = backup::BackupStatistics::default();
+    let back_stats = Arc::new(backup::BackupStatistics::default());
     let walk_stats = repack::WalkStatistics::default();
-    let new_snapshots = thread::scope(|s| -> Result<_> {
-        let mut backup = backup::spawn_backup_threads(
-            s,
-            bmode,
-            &dst_backend_config,
-            &dst_cached_backend,
-            wip_index,
-            &back_stats,
-        );
+    let mut backup = backup::spawn_backup_tasks(
+        bmode,
+        dst_backend_config.clone(),
+        dst_cached_backend.clone(),
+        wip_index,
+        back_stats.clone(),
+    );
 
-        let progress_thread = repack::ui::ProgressThread::spawn(
-            s,
+    let progress_thread = {
+        let scb = src_cached_backend.clone();
+        let dcb = dst_cached_backend.clone();
+        repack::ui::ProgressThread::spawn(
             &back_stats,
             &walk_stats,
-            &src_cached_backend.bytes_downloaded,
-            &dst_cached_backend.bytes_uploaded,
+            &scb.bytes_downloaded,
+            &dcb.bytes_uploaded,
         );
+    };
 
-        let run_res = (|| {
-            // Finish the WIP resume business.
-            if !args.dry_run {
-                backup::upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
-            }
-            drop(cwd_packfiles);
+    // Finish the WIP resume business.
+    if !args.dry_run {
+        backup::upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
+    }
+    drop(cwd_packfiles);
 
-            let filter = filter::skip_matching_paths(&skips)?;
+    let filter = filter::skip_matching_paths(&skips)?;
 
-            let new_snapshots = repack::walk_snapshots(
-                repack::Op::Copy,
-                &src_snapshots_and_forests,
-                filter,
-                &mut reader,
-                &mut packed_blobs,
-                &mut backup,
-                &walk_stats,
-            )?;
+    let new_snapshots = repack::walk_snapshots(
+        repack::Op::Copy,
+        &src_snapshots_and_forests,
+        filter,
+        &mut reader,
+        &mut packed_blobs,
+        &mut backup,
+        &walk_stats,
+    )?;
 
-            // Important: make sure all blobs and the index are written BEFORE
-            // we upload the snapshots.
-            // It's meaningless unless everything else is there first!
-            backup.join()?;
-
-            Ok(new_snapshots)
-        })();
-
-        progress_thread.join();
-        run_res
-    })?;
+    // Important: make sure all blobs and the index are written BEFORE
+    // we upload the snapshots.
+    // It's meaningless unless everything else is there first!
+    backup.join()?;
+    progress_thread.join();
 
     if !args.dry_run {
         for snap in &new_snapshots {

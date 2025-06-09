@@ -2,16 +2,15 @@ use std::{
     io::{self, Read, Write},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
-    thread::{self, Scope, ScopedJoinHandle, park_timeout},
     time::{Duration, Instant},
 };
 
 use anyhow::Result;
 use camino::Utf8Path;
 use console::Term;
-use tracing::*;
+use tokio::{sync::Notify, task};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::backup;
@@ -72,72 +71,58 @@ impl<W: Write> Write for AtomicCountWrite<'_, W> {
     }
 }
 
-pub struct ProgressThread<'scope> {
-    handle: ScopedJoinHandle<'scope, Result<()>>,
-    done_flag: Arc<AtomicBool>,
+pub struct ProgressTask {
+    handle: task::JoinHandle<()>,
+    done: Arc<Notify>,
 }
 
-impl<'scope> ProgressThread<'scope> {
-    pub fn spawn<'env, F>(s: &'scope Scope<'scope, 'env>, f: F) -> Self
+impl ProgressTask {
+    pub fn spawn<F>(f: F) -> Self
     where
-        F: FnMut(usize) -> Result<()> + Send + 'scope,
+        F: FnMut(usize) -> Result<()> + Send + 'static,
     {
         let rate = Duration::from_millis(100);
-        let done_flag = Arc::new(AtomicBool::new(false));
-        let df = done_flag.clone();
-        let handle = thread::Builder::new()
-            .name(String::from("progress-cli"))
-            .spawn_scoped(s, move || periodically(rate, &df, f))
-            .unwrap();
-        Self { handle, done_flag }
+        let done = Arc::new(Notify::new());
+        let df = done.clone();
+        let handle = tokio::spawn(periodically(rate, df, f)).unwrap();
+        Self { handle, done }
     }
 
-    pub fn join(self) {
-        self.done_flag.store(true, Ordering::SeqCst);
-        self.handle.thread().unpark();
-        self.handle
-            .join()
-            .unwrap()
-            // Hard to imagine a scenario where printing fails
-            // but we can succesfully warn about it.
-            // But for what it's worth...
-            .unwrap_or_else(|e| warn!("Failed to print progress: {e:?}"))
+    pub async fn join(self) {
+        self.done.notify_one();
+        self.handle.await.expect("Couldn't join progress task")
     }
 }
 
 /// Do a thing (presumably draw some progress UI) at the given rate until the exit flag is set.
-pub fn periodically<F: FnMut(usize) -> Result<()>>(
+pub async fn peiodically<F: FnMut(usize) -> Result<()>>(
     rate: Duration,
-    exit: &AtomicBool,
+    exit: Notify,
     mut f: F,
 ) -> Result<()> {
     let mut last = false;
     let mut i = 0;
+    let exit = exit.notified();
+    tokio::pin!(exit);
 
     loop {
         let start = Instant::now();
-        let next = start + rate;
 
         f(i)?;
         if last {
             return Ok(());
         }
+        let next = start + rate;
+        let now = Instant::now();
 
-        // Could we simplify this with a futex_wait on exit?
-        // Fork Mara's atomic-wait to fix the cpp-brain on Mac?
-        loop {
-            if exit.load(Ordering::Acquire) {
+        let sleep = tokio::time::sleep(next - now);
+        tokio::select! {
+            _ = sleep => {},
+            _ = &mut exit => {
                 // Make sure we print one last round with the final stats.
                 last = true;
-                break;
             }
-            let now = Instant::now();
-            if now >= next {
-                break;
-            } else {
-                // Meanwhile, callers can unpark this guy.
-                park_timeout(next - now);
-            }
+
         }
         i += 1;
     }

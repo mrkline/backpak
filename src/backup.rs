@@ -1,6 +1,6 @@
-//! Common backup machinery exposed as channel-chomping threads
+//! Common backup machinery exposed as channel-chomping tasks
 //!
-//! As a crappy diagram, [`spawn_backup_threads()`] spins up:
+//! As a crappy diagram, [`spawn_backup_tasks()`] spins up:
 //!
 //! ```text
 //!     chunk_tx --blobs--> chunk packer --files------->---------
@@ -33,8 +33,8 @@
 //!   backed-up indexes, but it's useful for pruning or resuming an interrupted
 //!   backup session.)
 //!
-//! - Each of these threads ultimately generate files which need to be... backed up!
-//!   That's the job of the uploader thread, which receives each in turn
+//! - Each of these tasks ultimately generate files which need to be... backed up!
+//!   That's the job of the uploader tasks, which receives each in turn
 //!   (still open, to avoid filesystem races and perf hits from closing and reopening)
 //!   and uploads them to the current [`CachedBackend`](crate::backend::CachedBackend).
 //!
@@ -48,15 +48,15 @@
 
 use std::fs::{self, File};
 use std::str::FromStr;
-use std::sync::{
-    atomic::AtomicU64,
-    mpsc::{Receiver, SyncSender, sync_channel},
-};
-use std::thread;
+use std::sync::{Arc, atomic::AtomicU64};
 
 use anyhow::{Context, Result, bail};
 use camino::Utf8Path;
 use rustc_hash::FxHashSet;
+use tokio::{
+    sync::mpsc::{Receiver, Sender, channel},
+    task,
+};
 use tracing::*;
 
 use crate::backend;
@@ -71,30 +71,30 @@ pub enum Mode {
     LiveFire,
 }
 
-pub struct Backup<'scope, 'env> {
-    pub chunk_tx: SyncSender<Blob>,
-    pub tree_tx: SyncSender<Blob>,
-    pub upload_tx: SyncSender<(String, File)>,
-    pub statistics: &'env BackupStatistics,
-    threads: thread::ScopedJoinHandle<'scope, Result<()>>,
+pub struct Backup {
+    pub chunk_tx: Sender<Blob>,
+    pub tree_tx: Sender<Blob>,
+    pub upload_tx: Sender<(String, File)>,
+    pub statistics: Arc<BackupStatistics>,
+    tasks: task::JoinHandle<Result<()>>,
 }
 
 #[derive(Debug, Default)]
 pub struct BackupStatistics {
-    pub chunk_bytes: AtomicU64,
-    pub tree_bytes: AtomicU64,
-    pub compressed_bytes: AtomicU64,
-    pub indexed_packs: AtomicU64,
+    pub chunk_bytes: Arc<AtomicU64>,
+    pub tree_bytes: Arc<AtomicU64>,
+    pub compressed_bytes: Arc<AtomicU64>,
+    pub indexed_packs: Arc<AtomicU64>,
 }
 
-impl Backup<'_, '_> {
-    /// Convenience function to join the threads
+impl Backup {
+    /// Convenience function to join the tasks
     /// assuming the channels haven't been moved out.
-    pub fn join(self) -> Result<()> {
+    pub async fn join(self) -> Result<()> {
         drop(self.chunk_tx);
         drop(self.tree_tx);
         drop(self.upload_tx);
-        self.threads.join().unwrap()?;
+        self.tasks.await??;
 
         // If everything exited cleanly, we uploaded the new index.
         // We can axe the WIP one, which we kept around until now to make sure we're resumable.
@@ -110,14 +110,13 @@ impl Backup<'_, '_> {
     }
 }
 
-pub fn spawn_backup_threads<'scope, 'env>(
-    s: &'scope thread::Scope<'scope, 'env>,
+pub fn spawn_backup_tasks(
     mode: Mode,
-    backend_config: &'env backend::Configuration,
-    cached_backend: &'env backend::CachedBackend,
+    backend_config: Arc<backend::Configuration>,
+    cached_backend: Arc<backend::CachedBackend>,
     starting_index: index::Index,
-    statistics: &'env BackupStatistics,
-) -> Backup<'scope, 'env> {
+    statistics: Arc<BackupStatistics>,
+) -> Backup {
     // Channels are all handoffs holding no elements - this simplifies reasoning about:
     // - When data is flowing through the system
     // - When some tasks are waiting on others
@@ -126,143 +125,116 @@ pub fn spawn_backup_threads<'scope, 'env>(
     // We can revisit this if profiling shows us spending a lot of time sleeping/waking
     // that could be eased by adding some slack in the channels.
 
-    let (chunk_tx, chunk_rx) = sync_channel(0);
-    let (tree_tx, tree_rx) = sync_channel(0);
-    let (upload_tx, upload_rx) = sync_channel(0);
+    let (chunk_tx, chunk_rx) = channel(0);
+    let (tree_tx, tree_rx) = channel(0);
+    let (upload_tx, upload_rx) = channel(0);
     let upload_tx2 = upload_tx.clone();
 
-    let threads = thread::Builder::new()
-        .name(String::from("backup master"))
-        .spawn_scoped(s, move || {
-            backup_master_thread(
-                mode,
-                chunk_rx,
-                tree_rx,
-                upload_tx2,
-                upload_rx,
-                backend_config,
-                cached_backend,
-                statistics,
-                starting_index,
-            )
-        })
-        .unwrap();
+    let tasks = tokio::spawn(backup_master_thread(
+        mode,
+        chunk_rx,
+        tree_rx,
+        upload_tx2,
+        upload_rx,
+        backend_config,
+        cached_backend,
+        statistics,
+        starting_index,
+    ));
 
     Backup {
         chunk_tx,
         tree_tx,
         upload_tx,
         statistics,
-        threads,
+        tasks,
     }
 }
 
 #[expect(clippy::too_many_arguments)] // We know, sit down.
-fn backup_master_thread<'env>(
+async fn backup_master_thread(
     mode: Mode,
     chunk_rx: Receiver<Blob>,
     tree_rx: Receiver<Blob>,
-    upload_tx: SyncSender<(String, File)>,
+    upload_tx: Sender<(String, File)>,
     upload_rx: Receiver<(String, File)>,
-    backend_config: &'env backend::Configuration,
-    cached_backend: &'env backend::CachedBackend,
-    statistics: &'env BackupStatistics,
+    backend_config: Arc<backend::Configuration>,
+    cached_backend: Arc<backend::CachedBackend>,
+    statistics: Arc<BackupStatistics>,
     starting_index: index::Index,
 ) -> Result<()> {
     // ALL THE CONCURRENCY
 
     // We shouldn't be swamped with a bunch of indexes at once since packing is the slow part,
     // and we only have two packers () feeding this.
-    let (chunk_index_tx, index_rx) = sync_channel(0);
+    let (chunk_index_tx, index_rx) = channel(0);
     let tree_index_tx = chunk_index_tx.clone();
     let chunk_pack_upload_tx = upload_tx;
     let tree_pack_upload_tx = chunk_pack_upload_tx.clone();
     let index_upload_tx = chunk_pack_upload_tx.clone();
     let pack_size = backend_config.pack_size;
 
-    let chunk_bytes = &statistics.chunk_bytes;
-    let tree_bytes = &statistics.tree_bytes;
-    let comp_bytes = &statistics.compressed_bytes;
-    let indexed_packs = &statistics.indexed_packs;
-
-    thread::scope(|s| {
-        let chunk_packer = thread::Builder::new()
-            .name(String::from("chunk packer"))
-            .spawn_scoped(s, move || {
-                pack::pack(
+    let chunk_packer = tokio::spawn(pack::pack(
                     pack_size,
                     chunk_rx,
                     chunk_index_tx,
                     chunk_pack_upload_tx,
-                    chunk_bytes,
-                    comp_bytes,
+                    statistics.chunk_bytes.clone(),
+                    statistics.compressed_bytes.clone(),
                 )
-            })
-            .unwrap();
+            );
 
-        let tree_packer = thread::Builder::new()
-            .name(String::from("tree packer"))
-            .spawn_scoped(s, move || {
-                pack::pack(
-                    pack_size,
-                    tree_rx,
-                    tree_index_tx,
-                    tree_pack_upload_tx,
-                    tree_bytes,
-                    comp_bytes,
-                )
-            })
-            .unwrap();
+    let tree_packer = tokio::spawn(pack::pack(
+                pack_size,
+                tree_rx,
+                tree_index_tx,
+                tree_pack_upload_tx,
+                statistics.tree_bytes.clone(),
+                statistics.compressed_bytes.clone(),
+            ));
 
-        let resumable = match mode {
-            Mode::LiveFire => index::Resumable::Yes,
-            // Don't bother making WIP indexes for a dry run.
-            Mode::DryRun => index::Resumable::No,
-        };
-        let indexer = thread::Builder::new()
-            .name(String::from("indexer"))
-            .spawn_scoped(s, move || {
-                index::index(
-                    resumable,
-                    starting_index,
-                    index_rx,
-                    index_upload_tx,
-                    indexed_packs,
-                )
-            })
-            .unwrap();
+    let resumable = match mode {
+        Mode::LiveFire => index::Resumable::Yes,
+        // Don't bother making WIP indexes for a dry run.
+        Mode::DryRun => index::Resumable::No,
+    };
+    let indexer = tokio::spawn(
+            index::index(
+                resumable,
+                starting_index,
+                index_rx,
+                index_upload_tx,
+                statistics.indexed_packs.clone(),
+            )
+        );
 
-        let umode = match mode {
-            Mode::LiveFire => upload::Mode::LiveFire,
-            Mode::DryRun => upload::Mode::DryRun,
-        };
-        let uploader = thread::Builder::new()
-            .name(String::from("uploader"))
-            .spawn_scoped(s, move || upload::upload(umode, cached_backend, upload_rx))
-            .unwrap();
+    let umode = match mode {
+        Mode::LiveFire => upload::Mode::LiveFire,
+        Mode::DryRun => upload::Mode::DryRun,
+    };
+    let uploader = tokio::spawn(upload::upload(umode, cached_backend.clone(), upload_rx));
 
-        let mut errors: Vec<anyhow::Error> = Vec::new();
+    let mut errors: Vec<anyhow::Error> = Vec::new();
 
-        let mut append_error = |thread: &'static str, result: Option<anyhow::Error>| {
-            if let Some(e) = result {
-                errors.push(e.context(thread));
-            }
-        };
-
-        append_error("Packing chunks failed", chunk_packer.join().unwrap().err());
-        append_error("Packing trees failed", tree_packer.join().unwrap().err());
-        append_error("Indexing failed", indexer.join().unwrap().err());
-        append_error("Uploading failed", uploader.join().unwrap().err());
-
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            for e in errors {
-                error!("{:?}", e);
-            }
-            bail!("backup failed");
+    let mut append_error = |task: &'static str, result: Option<anyhow::Error>| {
+        if let Some(e) = result {
+            errors.push(e.context(task));
         }
-    })
+    };
+
+    append_error("Packing chunks failed", chunk_packer.await.unwrap().err());
+    append_error("Packing trees failed", tree_packer.await.unwrap().err());
+    append_error("Indexing failed", indexer.await.unwrap().err());
+    append_error("Uploading failed", uploader.await.unwrap().err());
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        for e in errors {
+            error!("{:?}", e);
+        }
+        bail!("backup failed");
+    }
 }
 
 #[derive(Default)]
@@ -353,7 +325,7 @@ fn find_cwd_packfiles(index: &index::Index) -> Result<Vec<ObjectId>> {
     Ok(packfiles)
 }
 
-pub fn upload_cwd_packfiles(up: &mut SyncSender<(String, File)>, packs: &[ObjectId]) -> Result<()> {
+pub fn upload_cwd_packfiles(up: &mut Sender<(String, File)>, packs: &[ObjectId]) -> Result<()> {
     for p in packs {
         let name = format!("{p}.pack");
         let fd = File::open(&name).with_context(|| format!("Couldn't open {name}"))?;

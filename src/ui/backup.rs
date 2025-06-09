@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::io;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::thread;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 
 use anyhow::{Context, Result, bail, ensure};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -21,7 +23,7 @@ use crate::filter;
 use crate::fs_tree;
 use crate::hashing::{HashingWriter, ObjectId};
 use crate::index;
-use crate::progress::{ProgressThread, print_backup_lines, print_download_line, truncate_path};
+use crate::progress::{ProgressTask, print_backup_lines, print_download_line, truncate_path};
 use crate::rcu::Rcu;
 use crate::snapshot::{self, Snapshot};
 use crate::tree;
@@ -69,7 +71,7 @@ pub struct Args {
     paths: Vec<Utf8PathBuf>,
 }
 
-pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
+pub async fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<()> {
     // Let's canonicalize our paths (and make sure they're real!)
     // before we spin up a bunch of supporting infrastructure.
     let paths: BTreeSet<Utf8PathBuf> = args
@@ -101,28 +103,29 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
     // Do a quick scan of the paths to make sure we can read them and get
     // metadata before we get backends and indexes
     // and threads and all manner of craziness going.
-    let bytes_checked = AtomicU64::default();
-    thread::scope(|s| -> Result<_> {
-        let progress_thread =
-            ProgressThread::spawn(s, |i| print_path_check(i, &Term::stdout(), &bytes_checked));
+    {
+        let bytes_checked = Arc::new(AtomicU64::default());
+        let bc = bytes_checked.clone();
+        let progress_thread = ProgressTask::spawn(move |i| print_path_check(i, &Term::stdout(), &*bc));
 
         let check_res = check_paths(symlink_behavior, &paths, &skips, &bytes_checked)
             .context("Failed FS check prior to backup");
         progress_thread.join();
-        check_res
-    })?;
+        check_res?;
+    };
 
     let (backend_config, cached_backend) = backend::open(
         repository,
         config.cache_size,
         backend::CacheBehavior::Normal,
     )?;
+    let (backend_config, cached_backend) = (Arc::new(backend_config), Arc::new(cached_backend));
 
-    let index = index::build_master_index(&cached_backend)?;
+    let index = index::build_master_index(cached_backend.clone()).await?;
     let blob_map = index::blob_to_pack_map(&index)?;
 
     info!("Finding a parent snapshot");
-    let snapshots = snapshot::load_chronologically(&cached_backend)?;
+    let snapshots = snapshot::load_chronologically(cached_backend.clone()).await?;
     let parent = parent_snapshot(&paths, &snapshots);
     let parent = parent.as_ref();
 
@@ -153,62 +156,59 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
     } else {
         backup::Mode::LiveFire
     };
-    let back_stats = BackupStatistics::default();
-    let walk_stats = WalkStatistics::default();
-    let root = thread::scope(|s| -> Result<_> {
-        let mut backup = spawn_backup_threads(
-            s,
-            bmode,
-            &backend_config,
-            &cached_backend,
-            wip_index,
-            &back_stats,
-        );
+    let back_stats = Arc::new(BackupStatistics::default());
+    let walk_stats = Arc::new(WalkStatistics::default());
+    let mut backup = spawn_backup_tasks(
+        bmode,
+        backend_config.clone(),
+        cached_backend.clone(),
+        wip_index,
+        back_stats.clone(),
+    );
 
-        let progress_thread = ProgressThread::spawn(s, |i| {
+    let progress_thread = {
+        let bs = back_stats.clone();
+        let ws = walk_stats.clone();
+        let cb = cached_backend.clone();
+        ProgressTask::spawn(move |i| {
             print_progress(
                 i,
                 &Term::stdout(),
-                &back_stats,
-                &walk_stats,
-                &cached_backend.bytes_uploaded,
-                &cached_backend.bytes_downloaded,
+                &bs,
+                &ws,
+                &cb.bytes_uploaded,
+                &cb.bytes_downloaded,
             )
-        });
+        })
+    };
 
-        let run_res = (|| {
-            // Finish the WIP resume business.
-            if !args.dry_run {
-                upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
-            }
-            drop(cwd_packfiles);
+    // Finish the WIP resume business.
+    if !args.dry_run {
+        upload_cwd_packfiles(&mut backup.upload_tx, &cwd_packfiles)?;
+    }
+    drop(cwd_packfiles);
 
-            info!("Running backup...");
+    info!("Running backup...");
 
-            let root = backup_tree(
-                symlink_behavior,
-                &paths,
-                &skips,
-                parent.map(|p| &p.tree),
-                &parent_forest,
-                &mut packed_blobs,
-                &mut backup,
-                &walk_stats,
-            )?;
-            drop(parent_forest);
-            drop(packed_blobs);
+    let root = backup_tree(
+        symlink_behavior,
+        &paths,
+        &skips,
+        parent.map(|p| &p.tree),
+        &parent_forest,
+        &mut packed_blobs,
+        &mut backup,
+        &walk_stats,
+    )?;
+    drop(parent_forest);
+    drop(packed_blobs);
 
-            // Important: make sure all blobs and the index is written BEFORE
-            // we upload the snapshot.
-            // It's meaningless unless everything else is there first!
-            backup.join()?;
+    // Important: make sure all blobs and the index is written BEFORE
+    // we upload the snapshot.
+    // It's meaningless unless everything else is there first!
+    backup.join().await?;
+    progress_thread.join();
 
-            Ok(root)
-        })();
-
-        progress_thread.join();
-        run_res
-    })?;
     if root == *tree::EMPTY_ID && !args.allow_empty {
         // We really did nothing, huh?
         assert_eq!(back_stats.chunk_bytes.load(Ordering::Relaxed), 0);

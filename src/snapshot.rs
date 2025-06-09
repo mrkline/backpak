@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::io::prelude::*;
 use std::sync::{
-    LazyLock,
+    Arc, LazyLock,
     atomic::{AtomicU64, Ordering},
 };
 
@@ -202,33 +202,36 @@ pub fn load(id: &ObjectId, cached_backend: &backend::CachedBackend) -> Result<Sn
 }
 
 /// Load all snapshots from the given backend and sort them by date taken.
-pub fn load_chronologically(
-    cached_backend: &backend::CachedBackend,
+pub async fn load_chronologically(
+    cached_backend: Arc<backend::CachedBackend>,
 ) -> Result<Vec<(Snapshot, ObjectId)>> {
-    load_chronologically_with_total_size(cached_backend).map(|(v, _ts)| v)
+    load_chronologically_with_total_size(cached_backend)
+        .await
+        .map(|(v, _ts)| v)
 }
 
 /// [`load_chronologically`] plus the total snapshot size.
 ///
 /// Nice for usage reporting, since it saves us another backend query.
-pub fn load_chronologically_with_total_size(
-    cached_backend: &backend::CachedBackend,
+pub async fn load_chronologically_with_total_size(
+    cached_backend: Arc<backend::CachedBackend>,
 ) -> Result<(Vec<(Snapshot, ObjectId)>, u64)> {
-    let total = AtomicU64::new(0);
+    let total = Arc::new(AtomicU64::new(0));
 
     let get_snapshots = cached_backend
         .list_snapshots()?
         .into_iter()
         .map(|(file, len)| {
-            let tot = &total;
-            move || {
+            let tot = total.clone();
+            let cb = cached_backend.clone();
+            async move {
                 let snapshot_id = backend::id_from_path(file)?;
-                let snap = load(&snapshot_id, cached_backend)?;
+                let snap = load(&snapshot_id, &*cb)?;
                 tot.fetch_add(len, Ordering::Relaxed);
                 Ok((snap, snapshot_id))
             }
         });
-    let mut snapshots = concurrently::map_concurrently(get_snapshots);
+    let mut snapshots = concurrently::map_concurrently(get_snapshots).await?;
     snapshots.sort_by_key(|(snap, _)| snap.time.timestamp());
     Ok((snapshots, total.load(Ordering::SeqCst)))
 }

@@ -68,11 +68,12 @@ enum Command {
     Usage,
 }
 
-fn main() {
-    run().unwrap_or_else(|e| fatal(e))
+#[tokio::main(flavor = "multi_thread")]
+async fn main() {
+    run().await.unwrap_or_else(|e| fatal(e))
 }
 
-fn run() -> Result<()> {
+async fn run() -> Result<()> {
     let args = Args::parse();
     let logmode = match args.subcommand {
         Command::Cat(_) | Command::Diff(_) | Command::Dump(_) | Command::Ls(_) => LogMode::Quiet,
@@ -87,10 +88,10 @@ fn run() -> Result<()> {
 
     match args.subcommand {
         Command::Init(i) => init::run(&args.repository, i),
-        Command::Backup(b) => backup::run(conf, &args.repository, b),
-        Command::Cat(c) => cat::run(&conf, &args.repository, c),
-        Command::Check(c) => check::run(&conf, &args.repository, c),
-        Command::Copy(c) => copy::run(conf, &args.repository, c),
+        Command::Backup(b) => backup::run(conf, &args.repository, b).await,
+        Command::Cat(c) => cat::run(&conf, &args.repository, c).await,
+        Command::Check(c) => check::run(&conf, &args.repository, c).await,
+        Command::Copy(c) => copy::run(conf, &args.repository, c).await,
         Command::Diff(d) => diff::run(&conf, &args.repository, d),
         Command::Dump(d) => dump::run(&conf, &args.repository, d),
         Command::FilterSnapshot(f) => filter_snapshot::run(conf, &args.repository, f),

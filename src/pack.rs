@@ -20,8 +20,8 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{self, SeekFrom};
 use std::sync::{
+    Arc,
     atomic::{AtomicU64, Ordering},
-    mpsc::{Receiver, SyncSender},
 };
 
 use anyhow::{Context, Result, ensure};
@@ -29,6 +29,7 @@ use byte_unit::Byte;
 use serde_derive::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use tracing::*;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::backend;
 use crate::blob::{self, Blob};
@@ -71,23 +72,23 @@ fn serialize_and_hash(manifest: &[PackManifestEntry]) -> Result<(Vec<u8>, Object
 
 /// Packs blobs received from the given channel.
 /// Returns the number of bytes packed
-pub fn pack(
+pub async fn pack(
     target_size: Byte,
-    rx: Receiver<Blob>,
-    to_index: SyncSender<PackMetadata>,
-    to_upload: SyncSender<(String, File)>,
-    total_bytes_packed: &AtomicU64,
-    total_bytes_compressed: &AtomicU64,
+    mut rx: Receiver<Blob>,
+    to_index: Sender<PackMetadata>,
+    to_upload: Sender<(String, File)>,
+    total_bytes_packed: Arc<AtomicU64>,
+    total_bytes_compressed: Arc<AtomicU64>,
 ) -> Result<()> {
     let target_size = target_size.as_u64();
-    let mut writer = PackfileWriter::new(total_bytes_compressed)?;
+    let mut writer = PackfileWriter::new(&*total_bytes_compressed)?;
 
     let mut pass_bytes_written: u64 = 0; // Bytes written since the last size check
     let mut bytes_in_pack: u64 = 0;
     let mut bytes_before_next_check = target_size;
 
     // For each blob...
-    while let Ok(blob) = rx.recv() {
+    while let Some(blob) = rx.recv().await {
         // Each blob arriving here is assumed to be unique per backup run,
         // i.e., the backup/prune/copy main thread handles deduplication.
         // Handling it here seems better at first (DRY) but would only complicate things:
@@ -174,12 +175,14 @@ pub fn pack(
 
             to_upload
                 .send((finalized_path, persisted))
+                .await
                 .context("packer -> uploader channel exited early")?;
             to_index
                 .send(metadata)
+                .await
                 .context("packer -> indexer channel exited early")?;
 
-            writer = PackfileWriter::new(total_bytes_compressed)?;
+            writer = PackfileWriter::new(&*total_bytes_compressed)?;
             pass_bytes_written = 0;
             bytes_in_pack = 0;
             bytes_before_next_check = target_size;
@@ -190,9 +193,11 @@ pub fn pack(
         let finalized_path = format!("{}.pack", metadata.id);
         to_upload
             .send((finalized_path, persisted))
+            .await
             .context("packer -> uploader channel exited early")?;
         to_index
             .send(metadata)
+            .await
             .context("packer -> indexer channel exited early")?;
     }
     Ok(())

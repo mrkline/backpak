@@ -1,5 +1,6 @@
 use std::io;
 use std::io::prelude::*;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
@@ -53,7 +54,7 @@ pub enum Subcommand {
     Snapshot { id_prefix: String },
 }
 
-pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) -> Result<()> {
+pub async fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) -> Result<()> {
     unsafe {
         crate::prettify::prettify_serialize();
     }
@@ -63,10 +64,11 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) ->
         config.cache_size,
         backend::CacheBehavior::Normal,
     )?;
+    let cached_backend = Arc::new(cached_backend);
 
     match args.subcommand {
         Subcommand::Blob { id } => {
-            let index = index::build_master_index(&cached_backend)?;
+            let index = index::build_master_index(cached_backend.clone()).await?;
             let blob_map = index::blob_to_pack_map(&index)?;
             let containing_pack_id = blob_map
                 .get(&id)
@@ -98,7 +100,7 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) ->
             serde_json::to_writer(io::stdout(), &index)?;
         }
         Subcommand::Snapshot { id_prefix } => {
-            let chrono_list = snapshot::load_chronologically(&cached_backend)?;
+            let chrono_list = snapshot::load_chronologically(cached_backend.clone()).await?;
             let (snapshot, _id) = snapshot::find(&chrono_list, &id_prefix)?;
             serde_json::to_writer(io::stdout(), &snapshot)?;
         }
