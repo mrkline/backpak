@@ -28,6 +28,26 @@ where
     })
 }
 
+pub fn named_concurrently<S, F, I>(funs: I)
+where
+    S: Into<String>,
+    F: FnOnce() -> Result<()> + Send,
+    I: Iterator<Item = (S, F)>,
+{
+    thread::scope(|s| {
+        for (n, f) in funs {
+            thread::Builder::new()
+                .name(n.into())
+                .spawn_scoped(s, || {
+                    if let Err(e) = f() {
+                        fatal(e);
+                    }
+                })
+                .unwrap();
+        }
+    })
+}
+
 pub fn map_concurrently<T, F, I>(funs: I) -> Vec<T>
 where
     T: Send,
