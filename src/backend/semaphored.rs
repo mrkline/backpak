@@ -15,7 +15,7 @@ struct SemaphoreGuard<'a> {
     count: &'a AtomicU32,
 }
 
-fn dec(count: &AtomicU32) -> SemaphoreGuard {
+fn dec(count: &AtomicU32) -> SemaphoreGuard<'_> {
     // Sanity check:
     // https://www.remlab.net/op/futex-misc.shtml
 
