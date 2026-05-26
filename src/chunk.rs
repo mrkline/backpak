@@ -44,9 +44,9 @@ pub fn chunk_file<P: AsRef<Utf8Path>>(path: P) -> Result<impl Iterator<Item = Bl
 }
 
 fn new_cdc(src: &[u8]) -> FastCDC<'_> {
-    const MIN_SIZE: u32 = 1024 * 512;
-    const TARGET_SIZE: u32 = 1024 * 1024;
-    const MAX_SIZE: u32 = 1024 * 1024 * 8;
+    const MIN_SIZE: usize = 1024 * 512;
+    const TARGET_SIZE: usize = 1024 * 1024;
+    const MAX_SIZE: usize = 1024 * 1024 * 8;
     FastCDC::new(src, MIN_SIZE, TARGET_SIZE, MAX_SIZE)
 }
 

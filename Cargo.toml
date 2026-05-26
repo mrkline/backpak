@@ -34,7 +34,7 @@ data-encoding = "2.3"
 # Stats map
 enum-map = "2.5"
 # Chunkin'
-fastcdc = "3.0"
+fastcdc = "4.0"
 # I want to go $HOME.
 home = "0.5"
 # Default author - the hostname
@@ -54,7 +54,7 @@ ouroboros = "0.18"
 # Don't need Unicode for now.
 regex = { version = "1.0", default-features = false, features = [ "std", "perf" ] }
 # Local cache
-rusqlite = { version = "0.35.0", features = ["bundled"] }
+rusqlite = { version = "0.39.0", features = ["bundled"] }
 # We don't need DDOS-resistant hashes
 rustc-hash = "2.0"
 # Syscalls for setting file times
@@ -65,7 +65,7 @@ serde_bytes = "0.11"
 serde_derive = "1.0"
 serde_json = "1.0"
 # The good hash
-sha2 = "0.10"
+sha2 = "0.11"
 # Persisting to temporary locations
 tempfile = "3.0"
 # INI config is nice

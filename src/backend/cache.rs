@@ -69,7 +69,7 @@ impl Cache {
         // Last guy wins.
         conn.execute(
             "REPLACE INTO settings(key, value) VALUES ('size', ?1)",
-            [cache_size.as_u64()],
+            [cache_size.as_u64() as i64],
         )?;
 
         Ok(Self {
@@ -116,7 +116,7 @@ impl Cache {
     fn bump_row(&self, name: &str, size: u64) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "REPLACE INTO cache(name, time, size) VALUES (?1, ?2, ?3)",
-            (name, now_nanos(), size),
+            (name, now_nanos(), size as i64),
         )?;
         Ok(())
     }

@@ -69,7 +69,9 @@ impl std::str::FromStr for ObjectId {
             bytes.len() == <Sha224 as Digest>::output_size(),
             "Expected SHA224 base32hex"
         );
-        Ok(ObjectId::from_digest(*Sha224Digest::from_slice(&bytes)))
+        Ok(ObjectId::from_digest(
+            Sha224Digest::try_from(&*bytes).unwrap(),
+        ))
     }
 }
 
@@ -103,8 +105,15 @@ impl<'de> serde::Deserialize<'de> for ObjectId {
     where
         D: serde::Deserializer<'de>,
     {
+        use serde::de::Error;
         let bytes: Vec<u8> = serde_bytes::deserialize(deserializer)?;
-        Ok(ObjectId::from_digest(*Sha224Digest::from_slice(&bytes)))
+        match Sha224Digest::try_from(&*bytes) {
+            Ok(d) => Ok(ObjectId::from_digest(d)),
+            Err(_) => Err(D::Error::invalid_length(
+                bytes.len(),
+                &"224 bits in a SHA224 hash",
+            )),
+        }
     }
 }
 
