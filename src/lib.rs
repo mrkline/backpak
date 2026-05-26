@@ -26,6 +26,7 @@ pub mod progress;
 pub mod rcu;
 pub mod read;
 pub mod repack;
+pub mod semaphored;
 pub mod snapshot;
 pub mod tree;
 pub mod upload;

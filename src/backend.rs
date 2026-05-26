@@ -60,7 +60,7 @@ struct ConfigFile {
     unfilter: Option<String>,
 }
 
-/// Normalized version of [`ConfigFile`] where `filter` and `unfilter` must both be Some or None.
+/// Normalized version of `ConfigFile` where `filter` and `unfilter` must both be Some or None.
 #[derive(Debug)]
 pub struct Configuration {
     pub pack_size: Byte,
