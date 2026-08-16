@@ -209,9 +209,6 @@ impl CachedBackend {
                 } else {
                     debug!("Downloading {name}");
                     bump(Op::BackendRead);
-                    // NB: See backend::filter - we need this to drop _inside_
-                    // cache.insert() lest its hokey "waiting on a process inside drop()"
-                    // breaks things.
                     let counter = progress::AtomicCountRead::new(
                         backend.read(&destination(name))?,
                         &self.bytes_downloaded,
