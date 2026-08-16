@@ -184,9 +184,11 @@ impl CachedBackend {
                 let from = backend.path_of(&destination(name));
                 let fd = File::open(&from).with_context(|| format!("Couldn't open {from}"))?;
 
-                // Sorta - wrapping the file in AtomicCountRead would give us weird stuff
-                // when seeking (or add a shitton of bookeeping to avoid said weird stuff).
-                // Just add the file length on read.
+                // We *could* wrap the returned file handle in a AtomicCountRead
+                // to actually display the number of bytes read,
+                // but that's a different notion than when downloading from a server.
+                // ...Should we just leave bytes_downloaded at 0 and not display that
+                // on non-local adventures?
                 let len = fd.metadata()?.len();
                 self.bytes_downloaded.fetch_add(len, Ordering::Relaxed); // sorta
 
