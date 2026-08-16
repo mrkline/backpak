@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Read, Write},
+    io::{self, Read, Seek, Write},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -38,6 +38,15 @@ impl<R: Read> Read for AtomicCountRead<'_, R> {
         let num_read = self.inner.read(buf)?;
         self.count.fetch_add(num_read as u64, Ordering::Relaxed);
         Ok(num_read)
+    }
+}
+
+impl<R: Seek> Seek for AtomicCountRead<'_, R> {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        // We *want* to double-count bytes if we seek to retry.
+        // Progresses jumping backwards would be much stranger than
+        // byte counts seeming a little high.
+        self.inner.seek(pos)
     }
 }
 

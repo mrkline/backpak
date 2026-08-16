@@ -105,7 +105,7 @@ pub trait Backend {
     fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>>;
 
     /// Write the given read stream to the given key
-    fn write(&self, len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()>;
+    fn write(&self, len: u64, from: &mut dyn SeekableRead, to: &str) -> Result<()>;
 
     fn remove(&self, which: &str) -> Result<()>;
 
@@ -168,15 +168,15 @@ impl CachedBackend {
     }
 }
 
-pub trait SeekableRead: Read + Seek + Send + 'static {}
-impl<T> SeekableRead for T where T: Read + Seek + Send + 'static {}
+pub trait SeekableRead: Read + Seek + Send {}
+impl<T> SeekableRead for T where T: Read + Seek + Send {}
 
 // NB: We use a flat cache structure (where every file is just <hash>.pack/index/etc)
 // but prepend prefixes with `destination()` prior to giving the path to the backend.
 // (This allows prefix-based listing, which can save us a bunch on a big cloud store.)
 impl CachedBackend {
     /// Read the object at the given key and return its file.
-    fn read(&self, name: &str) -> Result<Box<dyn SeekableRead>> {
+    fn read(&self, name: &str) -> Result<Box<dyn SeekableRead + '_>> {
         match &self.inner {
             CachedBackendKind::File { backend } => {
                 debug!("Loading {name}");
@@ -303,20 +303,20 @@ impl CachedBackend {
         self.list("packs/")
     }
 
-    pub fn read_pack(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead>> {
+    pub fn read_pack(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead + '_>> {
         let base32 = id.to_string();
         let pack_path = format!("{}.pack", base32);
         self.read(&pack_path)
             .with_context(|| format!("Couldn't open {}", pack_path))
     }
 
-    pub fn read_index(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead>> {
+    pub fn read_index(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead + '_>> {
         let index_path = format!("{}.index", id);
         self.read(&index_path)
             .with_context(|| format!("Couldn't open {}", index_path))
     }
 
-    pub fn read_snapshot(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead>> {
+    pub fn read_snapshot(&self, id: &ObjectId) -> Result<Box<dyn SeekableRead + '_>> {
         let snapshot_path = format!("{}.snapshot", id);
         self.read(&snapshot_path)
             .with_context(|| format!("Couldn't open {}", snapshot_path))

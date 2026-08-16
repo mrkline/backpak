@@ -23,7 +23,7 @@ impl<B: Backend> Backend for Semaphored<B> {
         self.inner.read(from)
     }
 
-    fn write(&self, len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+    fn write(&self, len: u64, from: &mut dyn SeekableRead, to: &str) -> Result<()> {
         let _sem = semaphored::dec(&self.count);
         self.inner.write(len, from, to)
     }

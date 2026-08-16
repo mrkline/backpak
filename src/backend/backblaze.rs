@@ -72,8 +72,13 @@ impl Backend for BackblazeBackend {
         Ok(Box::new(r))
     }
 
-    fn write(&self, len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
-        retry(|| self.session.put(to, len, from))?;
+    fn write(&self, len: u64, from: &mut dyn SeekableRead, to: &str) -> Result<()> {
+        retry(|| {
+            // Rewind before each attempt so a retry sends all the bytes.
+            from.rewind()?;
+            let body: &mut dyn Read = &mut *from;
+            self.session.put(to, len, body)
+        })?;
         Ok(())
     }
 

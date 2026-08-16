@@ -100,7 +100,7 @@ impl Backend for BackendFilter {
         }))
     }
 
-    fn write(&self, _len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+    fn write(&self, _len: u64, from: &mut dyn SeekableRead, to: &str) -> Result<()> {
         debug!("{} > {to}", self.filter);
 
         let mut f = Command::new("sh")

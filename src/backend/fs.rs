@@ -84,7 +84,7 @@ impl Backend for FilesystemBackend {
         ))
     }
 
-    fn write(&self, _len: u64, from: &mut (dyn Read + Send), to: &str) -> Result<()> {
+    fn write(&self, _len: u64, from: &mut dyn SeekableRead, to: &str) -> Result<()> {
         let to = self.path_of(to);
         file_util::safe_copy_to_file(from, &to)?;
         Ok(())
