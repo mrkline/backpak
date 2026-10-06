@@ -99,14 +99,15 @@ impl Backend for FilesystemBackend {
     fn list(&self, prefix: &str) -> Result<Vec<(String, u64)>> {
         let prefix = self.base_directory.join(prefix);
 
-        if prefix.is_file() {
-            return Ok(vec![(prefix.to_string(), prefix.metadata()?.len())]);
-        }
-
         let str_and_len = |(p, len): &(Utf8PathBuf, u64)| -> Result<(String, u64)> {
             let s = p.strip_prefix(&self.base_directory).unwrap().to_string();
             Ok((s, *len))
         };
+
+        if prefix.is_file() {
+            let len = prefix.metadata()?.len();
+            return Ok(vec![str_and_len(&(prefix, len))?]);
+        }
 
         let paths: Vec<(String, u64)> = walk_dir(&prefix)?
             .iter()
@@ -133,4 +134,29 @@ fn walk_dir(dir: &Utf8Path) -> io::Result<Vec<(Utf8PathBuf, u64)>> {
         }
     }
     Ok(paths)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use std::io::Cursor;
+
+    use tempfile::tempdir;
+
+    #[test]
+    fn list_is_relative() -> Result<()> {
+        let td = tempdir()?;
+        let repository = Utf8Path::from_path(td.path()).unwrap();
+        initialize(repository, crate::pack::DEFAULT_PACK_SIZE, None, false)?;
+        let backend = FilesystemBackend::open(repository)?;
+
+        backend.write(3, &mut Cursor::new([1u8, 2, 3]), "packs/foo.pack")?;
+
+        let expected = [("packs/foo.pack".to_owned(), 3)];
+        assert_eq!(backend.list("packs/")?, expected);
+        // A prefix that names one file gives the same key as the directory listing.
+        assert_eq!(backend.list("packs/foo.pack")?, expected);
+        Ok(())
+    }
 }
