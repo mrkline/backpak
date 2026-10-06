@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use byte_unit::Byte;
 use camino::{Utf8Path, Utf8PathBuf};
-use rusqlite::Connection;
+use rusqlite::{Connection, TransactionBehavior};
 
 use crate::counters::{Op, bump};
 use crate::file_util;
@@ -38,7 +38,10 @@ impl Cache {
     pub fn new(dir: &Utf8Path, cache_size: Byte) -> Result<Self> {
         let mut conn = Connection::open(dir.join("cache_metadata.sqlite"))?;
 
-        let t = conn.transaction()?;
+        // Take the write lock before reading the version.
+        // A deferred transaction fails with SQLITE_BUSY if another process
+        // writes between our read and our write.
+        let t = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let ver: i32 = t.query_row("PRAGMA user_version", (), |r| r.get(0))?;
         if ver < 1 {
             t.execute(
@@ -143,7 +146,9 @@ impl Cache {
     pub fn prune(&self) -> Result<()> {
         // We want this all to be atomic.
         let mut c = self.conn.lock().unwrap();
-        let transaction = c.transaction()?;
+        // Take the write lock now, as in Cache::new(),
+        // so that no other process writes between our reads and the DELETE below.
+        let transaction = c.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
         // Get the max cache size.
         let max_size: i64 =
@@ -270,5 +275,43 @@ mod test {
         assert!(cache.prune().is_err());
 
         Ok(())
+    }
+
+    #[test]
+    fn concurrent_prune() -> Result<()> {
+        let td = tempdir()?;
+        let dir = Utf8Path::from_path(td.path()).unwrap();
+
+        // Each Cache has its own connection, like separate processes do.
+        // The small size makes each prune delete files,
+        // so the other cache can write between prune's reads and its writes.
+        let caches = [
+            Cache::new(dir, Byte::from_u64(8))?,
+            Cache::new(dir, Byte::from_u64(8))?,
+        ];
+
+        // Start the workers together so that their prunes overlap.
+        let start = std::sync::Barrier::new(caches.len());
+
+        std::thread::scope(|s| {
+            let workers: Vec<_> = caches
+                .iter()
+                .enumerate()
+                .map(|(c, cache)| {
+                    let start = &start;
+                    s.spawn(move || -> Result<()> {
+                        start.wait();
+                        for i in 0..1000 {
+                            cache.insert(&format!("{c}-{i}"), [0u8; 4].as_slice())?;
+                            cache.prune()?;
+                        }
+                        Ok(())
+                    })
+                })
+                .collect();
+            workers
+                .into_iter()
+                .try_for_each(|w| w.join().expect("cache worker panicked"))
+        })
     }
 }
