@@ -60,6 +60,14 @@ pub fn read_file(path: &Utf8Path) -> Result<Arc<LoadedFile>> {
     Ok(Arc::new(file))
 }
 
+pub trait WrappedFile: Read + Seek + Send {
+    fn into_file(self) -> File;
+}
+
+impl WrappedFile for File {
+    fn into_file(self) -> File { self }
+}
+
 /// Move the given file `from -> to`, renaming if possible.
 ///
 /// If a rename isn't possible, write out a copy.
@@ -67,10 +75,11 @@ pub fn read_file(path: &Utf8Path) -> Result<Arc<LoadedFile>> {
 ///
 /// Returns a file handle (assume at EOF) for `to`.
 #[cfg(unix)]
-pub fn move_opened<P, Q>(from: P, from_fh: File, to: Q) -> Result<File>
+pub fn move_opened<P, Q, R>(from: P, source: R, to: Q) -> Result<File>
 where
     P: AsRef<Utf8Path>,
     Q: AsRef<Utf8Path>,
+    R: WrappedFile
 {
     let from = from.as_ref();
     let to = to.as_ref();
@@ -79,11 +88,11 @@ where
     match std::fs::rename(from, to) {
         Ok(()) => {
             trace!("Renamed {from} to {to}");
-            Ok(from_fh)
+            Ok(source.into_file())
         },
         // Once stabilized: e.kind() == ErrorKind::CrossesDevices
-        Err(e) if e.raw_os_error() == Some(18) /* EXDEV */ => {
-            move_by_copy(from, from_fh, to)
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices /* EXDEV */ => {
+            move_by_copy(from, source, to)
         },
         Err(e) => anyhow::bail!(e),
     }
@@ -91,18 +100,19 @@ where
 
 /// Move the given file `from -> to` via copy (boo, Windows).
 #[cfg(windows)]
-pub fn move_opened<P, Q>(from: P, from_fh: File, to: Q) -> Result<File>
+pub fn move_opened<P, Q>(from: P, source: R, to: Q) -> Result<File>
 where
     P: AsRef<Utf8Path>,
     Q: AsRef<Utf8Path>,
+    R: WrappedFile
 {
     // On Windows, we can't move an open file. Boo, Windows.
-    move_by_copy(from.as_ref(), from_fh, to.as_ref())
+    move_by_copy(from.as_ref(), source, to.as_ref())
 }
 
-fn move_by_copy(from: &Utf8Path, mut from_fh: File, to: &Utf8Path) -> Result<File> {
-    from_fh.seek(std::io::SeekFrom::Start(0))?;
-    let to_fh = safe_copy_to_file(from_fh, to)?;
+fn move_by_copy<R: Read + Seek>(from: &Utf8Path, mut source: R, to: &Utf8Path) -> Result<File> {
+    source.seek(std::io::SeekFrom::Start(0))?;
+    let to_fh = safe_copy_to_file(source, to)?;
 
     // Axe /src/foo
     std::fs::remove_file(from).with_context(|| format!("Couldn't remove {from}"))?;

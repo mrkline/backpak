@@ -3,7 +3,7 @@
 
 use std::fs::File;
 use std::io::{self, prelude::*};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64};
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use byte_unit::Byte;
@@ -13,7 +13,7 @@ use tracing::*;
 
 use crate::{
     counters::{Op, bump},
-    file_util::{move_opened, nice_size},
+    file_util::{WrappedFile, move_opened, nice_size},
     hashing::ObjectId,
     pack, progress,
 };
@@ -183,16 +183,8 @@ impl CachedBackend {
                 bump(Op::BackendRead);
                 let from = backend.path_of(&destination(name));
                 let fd = File::open(&from).with_context(|| format!("Couldn't open {from}"))?;
-
-                // We *could* wrap the returned file handle in a AtomicCountRead
-                // to actually display the number of bytes read,
-                // but that's a different notion than when downloading from a server.
-                // ...Should we just leave bytes_downloaded at 0 and not display that
-                // on non-local adventures?
-                let len = fd.metadata()?.len();
-                self.bytes_downloaded.fetch_add(len, Ordering::Relaxed); // sorta
-
-                Ok(Box::new(fd))
+                let counter = progress::AtomicCountRead::new(fd, &self.bytes_downloaded);
+                Ok(Box::new(counter))
             }
             CachedBackendKind::Cached {
                 cache,
@@ -239,8 +231,8 @@ impl CachedBackend {
             CachedBackendKind::File { backend } => {
                 debug!("Saving {name} ({})", nice_size(len));
                 let to = backend.path_of(&destination(name));
-                move_opened(name, fh, to)?;
-                self.bytes_uploaded.fetch_add(len, Ordering::Relaxed);
+                let counter = progress::AtomicCountRead::new(fh, &self.bytes_uploaded);
+                move_opened(name, counter, to)?;
             }
             CachedBackendKind::Cached { cache, backend, .. } => {
                 // Write through!
@@ -250,15 +242,15 @@ impl CachedBackend {
                 let mut counter = progress::AtomicCountRead::new(fh, &self.bytes_uploaded);
                 backend.write(len, &mut counter, &destination(name))?;
                 // Insert it into the cache.
-                cache.insert_file(name, counter.into_inner())?;
+                cache.insert_file(name, counter.into_file())?;
                 // Prune the cache.
                 cache.prune()?;
             }
             CachedBackendKind::Memory { backend } => {
                 debug!("Saving {name} ({}, in-memory)", nice_size(len));
                 fh.seek(std::io::SeekFrom::Start(0))?;
-                backend.write(len, &mut fh, &destination(name))?;
-                self.bytes_uploaded.fetch_add(len, Ordering::Relaxed);
+                let mut counter = progress::AtomicCountRead::new(fh, &self.bytes_uploaded);
+                backend.write(len, &mut counter, &destination(name))?;
                 std::fs::remove_file(name)?;
             }
         }

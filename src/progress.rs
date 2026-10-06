@@ -1,4 +1,5 @@
 use std::{
+    fs::File,
     io::{self, Read, Seek, Write},
     sync::{
         Arc,
@@ -15,7 +16,7 @@ use tracing::*;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::backup;
-use crate::file_util::nice_size;
+use crate::file_util::{WrappedFile, nice_size};
 
 // Used for printing progress as we go
 pub struct AtomicCountRead<'a, R> {
@@ -26,10 +27,6 @@ pub struct AtomicCountRead<'a, R> {
 impl<'a, R: Read> AtomicCountRead<'a, R> {
     pub fn new(inner: R, count: &'a AtomicU64) -> Self {
         Self { inner, count }
-    }
-
-    pub fn into_inner(self) -> R {
-        self.inner
     }
 }
 
@@ -47,6 +44,12 @@ impl<R: Seek> Seek for AtomicCountRead<'_, R> {
         // Progresses jumping backwards would be much stranger than
         // byte counts seeming a little high.
         self.inner.seek(pos)
+    }
+}
+
+impl WrappedFile for AtomicCountRead<'_, File> {
+    fn into_file(self) -> File {
+        self.inner
     }
 }
 
@@ -177,11 +180,17 @@ pub fn print_backup_lines(
     let tb = nice_size(bstats.tree_bytes.load(Ordering::Relaxed));
     let rb = nice_size(reused_bytes);
     let cz = nice_size(bstats.compressed_bytes.load(Ordering::Relaxed));
-    let ub = nice_size(uploaded_bytes);
-    println!("{spin} P {cb} + {tb} | R {rb} | Z {cz} | U {ub}");
+    print!("{spin} P {cb} + {tb} | R {rb} | Z {cz}");
+    if uploaded_bytes > 0 {
+        let ub = nice_size(uploaded_bytes);
+        println!("| U {ub}");
+    }
+    else {
+        println!();
+    }
 
     let idxd = bstats.indexed_packs.load(Ordering::Relaxed);
-    let ispin = if idxd % 2 != 0 { 'i' } else { 'I' };
+    let ispin = if idxd % 2 != 0 { 'I' } else { 'i' };
     println!("{ispin} {idxd} packs indexed");
 }
 
@@ -189,10 +198,10 @@ pub fn print_download_line(downloaded_bytes: u64) {
     let db = nice_size(downloaded_bytes);
     // Flip every 500K.
     // Better symbols? Trying to commit to ASCII art only.
-    let dspin = if downloaded_bytes % 1000000 > 500000 {
-        'L'
-    } else {
+    let dspin = if downloaded_bytes % 1000000 <= 500000 {
         'D'
+    } else {
+        'd'
     };
     println!("{dspin} {db} downloaded");
 }
