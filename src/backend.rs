@@ -102,7 +102,7 @@ pub fn write_config<W: Write>(mut w: W, c: Configuration) -> Result<()> {
 /// A backend is anything we can read from, write to, list, and remove items from.
 pub trait Backend {
     /// Read from the given key
-    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>>;
+    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + '_>>;
 
     /// Write the given read stream to the given key
     fn write(&self, len: u64, from: &mut dyn SeekableRead, to: &str) -> Result<()>;

@@ -77,7 +77,7 @@ impl FilesystemBackend {
 }
 
 impl Backend for FilesystemBackend {
-    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
+    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + '_>> {
         let from = self.path_of(from);
         Ok(Box::new(
             fs::File::open(&from).with_context(|| format!("Couldn't open {from}"))?,

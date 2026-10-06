@@ -67,7 +67,7 @@ fn retry<T, F: FnMut() -> b2::Result<T>>(mut f: F) -> b2::Result<T> {
 }
 
 impl Backend for BackblazeBackend {
-    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
+    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + '_>> {
         let r = retry(|| self.session.get(from))?;
         Ok(Box::new(r))
     }

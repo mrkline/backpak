@@ -40,7 +40,7 @@ impl Default for MemoryBackend {
 }
 
 impl Backend for MemoryBackend {
-    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + 'static>> {
+    fn read(&self, from: &str) -> Result<Box<dyn Read + Send + '_>> {
         Ok(Box::new(self.read_cursor(from)?))
     }
 
