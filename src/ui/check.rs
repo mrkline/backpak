@@ -72,7 +72,8 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) ->
                     &Term::stdout(),
                     &stats,
                     &cached_backend.bytes_downloaded,
-                    &cached_backend.bytes_unfiltered)
+                    &cached_backend.bytes_unfiltered,
+                )
             });
             // Actually read the packs; do this in parallel as much as the backend allows
             let checks = index.packs.iter().map(|(pack_id, manifest)| {
@@ -80,7 +81,7 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, args: Args) ->
                 let s = &stats;
                 let b = &borked_packs;
                 move || {
-                    match check_pack(cb, &pack_id, &manifest, &s.blobs_read) {
+                    match check_pack(cb, pack_id, manifest, &s.blobs_read) {
                         Ok(()) => debug!("Pack {pack_id} verified"),
                         Err(e) => {
                             error!("Pack {pack_id}: {e:?}");
@@ -227,11 +228,11 @@ fn map_chunks_to_snapshots(
 }
 
 fn print_progress(
-        i: usize,
-        term: &Term,
-        stats: &ReadStatus,
-        down: &AtomicU64,
-        unfiltered: &AtomicU64,
+    i: usize,
+    term: &Term,
+    stats: &ReadStatus,
+    down: &AtomicU64,
+    unfiltered: &AtomicU64,
 ) -> Result<()> {
     if i > 0 {
         term.clear_last_lines(2)?;

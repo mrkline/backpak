@@ -133,13 +133,13 @@ pub fn run(config: &Configuration, repository: &camino::Utf8Path, mut args: Args
             }
             for (i, (snap, _id)) in snapshots.iter().enumerate() {
                 let i = i as isize;
-                if needed_indices.contains(&i) {
-                    if let Entry::Vacant(e) = indexed_forests.entry(i) {
-                        e.insert((
-                            snap.tree,
-                            tree::forest_from_root(&snap.tree, &mut tree_cache)?,
-                        ));
-                    }
+                if needed_indices.contains(&i)
+                    && let Entry::Vacant(e) = indexed_forests.entry(i)
+                {
+                    e.insert((
+                        snap.tree,
+                        tree::forest_from_root(&snap.tree, &mut tree_cache)?,
+                    ));
                 }
             }
             drop(needed_indices);

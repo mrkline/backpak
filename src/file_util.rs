@@ -65,7 +65,9 @@ pub trait WrappedFile: Read + Seek + Send {
 }
 
 impl WrappedFile for File {
-    fn into_file(self) -> File { self }
+    fn into_file(self) -> File {
+        self
+    }
 }
 
 /// Move the given file `from -> to`, renaming if possible.
@@ -79,7 +81,7 @@ pub fn move_opened<P, Q, R>(from: P, source: R, to: Q) -> Result<File>
 where
     P: AsRef<Utf8Path>,
     Q: AsRef<Utf8Path>,
-    R: WrappedFile
+    R: WrappedFile,
 {
     let from = from.as_ref();
     let to = to.as_ref();
@@ -104,7 +106,7 @@ pub fn move_opened<P, Q>(from: P, source: R, to: Q) -> Result<File>
 where
     P: AsRef<Utf8Path>,
     Q: AsRef<Utf8Path>,
-    R: WrappedFile
+    R: WrappedFile,
 {
     // On Windows, we can't move an open file. Boo, Windows.
     move_by_copy(from.as_ref(), source, to.as_ref())

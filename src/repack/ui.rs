@@ -54,7 +54,10 @@ fn print_progress(
     let ub = up.load(Ordering::Relaxed);
     print_backup_lines(i, bstats, rb, fb, ub);
 
-    print_download_line(down.load(Ordering::Relaxed), unfiltered.load(Ordering::Relaxed));
+    print_download_line(
+        down.load(Ordering::Relaxed),
+        unfiltered.load(Ordering::Relaxed),
+    );
 
     let cs = wstats.current_snapshot.borrow();
     println!("Snapshot: {cs}");

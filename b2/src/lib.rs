@@ -87,16 +87,16 @@ impl Session {
             })
             .collect::<Result<Vec<&str>>>()?;
 
-        if !capes.iter().any(|c| *c == "listFiles") {
+        if !capes.contains(&"listFiles") {
             return Err(bad("credentials can not list files"));
         }
-        if !capes.iter().any(|c| *c == "readFiles") {
+        if !capes.contains(&"readFiles") {
             return Err(bad("credentials can not read files"));
         }
-        if !capes.iter().any(|c| *c == "writeFiles") {
+        if !capes.contains(&"writeFiles") {
             return Err(bad("credentials can not write files"));
         }
-        if !capes.iter().any(|c| *c == "deleteFiles") {
+        if !capes.contains(&"deleteFiles") {
             return Err(bad("credentials can not delete files"));
         }
 

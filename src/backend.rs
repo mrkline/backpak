@@ -3,7 +3,7 @@
 
 use std::fs::File;
 use std::io::{self, prelude::*};
-use std::sync::atomic::{AtomicU64};
+use std::sync::atomic::AtomicU64;
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use byte_unit::Byte;

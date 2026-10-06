@@ -193,7 +193,7 @@ pub fn print_backup_lines(
     println!();
 
     let idxd = bstats.indexed_packs.load(Ordering::Relaxed);
-    let ispin = if idxd % 2 != 0 { 'I' } else { 'i' };
+    let ispin = if idxd.is_multiple_of(2) { 'I' } else { 'i' };
     println!("{ispin} {idxd} packs indexed");
 }
 
