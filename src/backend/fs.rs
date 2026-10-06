@@ -26,7 +26,7 @@ fn ensure_exists(e: &Utf8Path) -> Result<()> {
 pub fn initialize(
     repository: &Utf8Path,
     pack_size: Byte,
-    filter: Option<(String, String)>,
+    filters: Option<(String, String)>,
     force_cache: bool,
 ) -> Result<()> {
     if repository.exists() {
@@ -48,7 +48,7 @@ pub fn initialize(
     let c = super::Configuration {
         pack_size,
         kind: super::Kind::Filesystem { force_cache },
-        filter,
+        filters,
     };
     let fh = fs::OpenOptions::new()
         .write(true)

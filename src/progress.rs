@@ -167,12 +167,13 @@ pub fn spinner(i: usize) -> char {
 
 /// Two of em:
 ///
-/// Spinner | Packed | Reused | Compressed | Uploaded,
+/// Spinner | Packed | Reused | Compressed | Filtered | Uploaded,
 /// Index
 pub fn print_backup_lines(
     i: usize,
     bstats: &backup::BackupStatistics,
     reused_bytes: u64,
+    filtered_bytes: u64,
     uploaded_bytes: u64,
 ) {
     let spin = spinner(i);
@@ -181,20 +182,22 @@ pub fn print_backup_lines(
     let rb = nice_size(reused_bytes);
     let cz = nice_size(bstats.compressed_bytes.load(Ordering::Relaxed));
     print!("{spin} P {cb} + {tb} | R {rb} | Z {cz}");
+    if filtered_bytes > 0 {
+        let fb = nice_size(filtered_bytes);
+        print!(" | F {fb}");
+    }
     if uploaded_bytes > 0 {
         let ub = nice_size(uploaded_bytes);
-        println!("| U {ub}");
+        print!(" | U {ub}");
     }
-    else {
-        println!();
-    }
+    println!();
 
     let idxd = bstats.indexed_packs.load(Ordering::Relaxed);
     let ispin = if idxd % 2 != 0 { 'I' } else { 'i' };
     println!("{ispin} {idxd} packs indexed");
 }
 
-pub fn print_download_line(downloaded_bytes: u64) {
+pub fn print_download_line(downloaded_bytes: u64, unfiltered_bytes: u64) {
     let db = nice_size(downloaded_bytes);
     // Flip every 500K.
     // Better symbols? Trying to commit to ASCII art only.
@@ -203,7 +206,12 @@ pub fn print_download_line(downloaded_bytes: u64) {
     } else {
         'd'
     };
-    println!("{dspin} {db} downloaded");
+    print!("{dspin} {db} downloaded");
+    if unfiltered_bytes > 0 {
+        let ub = nice_size(unfiltered_bytes);
+        print!(" -> {ub} unfiltered");
+    }
+    println!();
 }
 
 pub fn truncate_path(p: &Utf8Path, term: &Term) -> String {

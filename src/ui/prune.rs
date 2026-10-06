@@ -181,8 +181,10 @@ pub fn run(config: &Configuration, repository: &Utf8Path, args: Args) -> Result<
             s,
             &back_stats,
             &walk_stats,
-            &cached_backend.bytes_downloaded,
+            &cached_backend.bytes_filtered,
+            &cached_backend.bytes_unfiltered,
             &cached_backend.bytes_uploaded,
+            &cached_backend.bytes_downloaded,
         );
 
         let run_res = (|| {

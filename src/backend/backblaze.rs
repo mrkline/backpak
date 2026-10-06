@@ -14,7 +14,7 @@ pub struct BackblazeBackend {
 pub fn initialize(
     repository: &camino::Utf8Path,
     pack_size: Byte,
-    filter: Option<(String, String)>,
+    filters: Option<(String, String)>,
     key_id: String,
     application_key: String,
     bucket: String,
@@ -28,7 +28,7 @@ pub fn initialize(
             bucket,
             concurrent_connections,
         },
-        filter,
+        filters,
     };
     let fh = fs::OpenOptions::new()
         .write(true)

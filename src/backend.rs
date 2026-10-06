@@ -13,7 +13,7 @@ use tracing::*;
 
 use crate::{
     counters::{Op, bump},
-    file_util::{WrappedFile, move_opened, nice_size},
+    file_util::{move_opened, nice_size},
     hashing::ObjectId,
     pack, progress,
 };
@@ -65,14 +65,14 @@ struct ConfigFile {
 pub struct Configuration {
     pub pack_size: Byte,
     pub kind: Kind,
-    pub filter: Option<(String, String)>,
+    pub filters: Option<(String, String)>,
 }
 
 pub fn read_config(p: &Utf8Path) -> Result<Configuration> {
     let s = std::fs::read_to_string(p).with_context(|| format!("Couldn't read config from {p}"))?;
     let cf: ConfigFile =
         toml::from_str(&s).with_context(|| format!("Couldn't parse config in {p}"))?;
-    let filter = match (cf.filter, cf.unfilter) {
+    let filters = match (cf.filter, cf.unfilter) {
         (Some(f), Some(u)) => Some((f, u)),
         (None, None) => None,
         _ => bail!("{p} config should set `filter` and `unfilter` or neither."),
@@ -80,12 +80,12 @@ pub fn read_config(p: &Utf8Path) -> Result<Configuration> {
     Ok(Configuration {
         pack_size: cf.pack_size,
         kind: cf.kind,
-        filter,
+        filters,
     })
 }
 
 pub fn write_config<W: Write>(mut w: W, c: Configuration) -> Result<()> {
-    let (filter, unfilter) = match c.filter {
+    let (filter, unfilter) = match c.filters {
         Some((f, u)) => (Some(f), Some(u)),
         None => (None, None),
     };
@@ -145,6 +145,7 @@ enum CachedBackendKind {
         cache: Cache,
         behavior: CacheBehavior,
         backend: Box<dyn Backend + Send + Sync>,
+        filters: Option<filter::Filters>,
     },
     // Test backend please ignore
     Memory {
@@ -156,6 +157,8 @@ pub struct CachedBackend {
     inner: CachedBackendKind,
     pub bytes_downloaded: AtomicU64,
     pub bytes_uploaded: AtomicU64,
+    pub bytes_filtered: AtomicU64,
+    pub bytes_unfiltered: AtomicU64,
 }
 
 impl CachedBackend {
@@ -164,6 +167,8 @@ impl CachedBackend {
             inner,
             bytes_downloaded: AtomicU64::new(0),
             bytes_uploaded: AtomicU64::new(0),
+            bytes_filtered: AtomicU64::new(0),
+            bytes_unfiltered: AtomicU64::new(0),
         }
     }
 }
@@ -190,6 +195,7 @@ impl CachedBackend {
                 cache,
                 behavior,
                 backend,
+                filters,
             } => {
                 let tr = if *behavior == CacheBehavior::AlwaysRead {
                     None
@@ -203,11 +209,23 @@ impl CachedBackend {
                 } else {
                     debug!("Downloading {name}");
                     bump(Op::BackendRead);
-                    let counter = progress::AtomicCountRead::new(
-                        backend.read(&destination(name))?,
-                        &self.bytes_downloaded,
-                    );
-                    let mut inserted = cache.insert(name, counter)?;
+                    let from = destination(name);
+                    let mut inserted = match filters {
+                        Some(f) => f.read(
+                            &**backend,
+                            &from,
+                            &self.bytes_downloaded,
+                            &self.bytes_unfiltered,
+                            |unfiltered| cache.insert(name, unfiltered),
+                        )?,
+                        None => {
+                            let counter = progress::AtomicCountRead::new(
+                                backend.read(&from)?,
+                                &self.bytes_downloaded,
+                            );
+                            cache.insert(name, counter)?
+                        }
+                    };
                     cache.prune()?;
                     inserted.seek(io::SeekFrom::Start(0))?;
                     Ok(Box::new(inserted))
@@ -234,15 +252,33 @@ impl CachedBackend {
                 let counter = progress::AtomicCountRead::new(fh, &self.bytes_uploaded);
                 move_opened(name, counter, to)?;
             }
-            CachedBackendKind::Cached { cache, backend, .. } => {
+            CachedBackendKind::Cached {
+                cache,
+                backend,
+                filters,
+                ..
+            } => {
                 // Write through!
                 fh.seek(std::io::SeekFrom::Start(0))?;
                 // Write it through to the backend.
                 debug!("Uploading {name} ({})", nice_size(len));
-                let mut counter = progress::AtomicCountRead::new(fh, &self.bytes_uploaded);
-                backend.write(len, &mut counter, &destination(name))?;
+                let to = destination(name);
+                match filters {
+                    Some(f) => f.write(
+                        &**backend,
+                        &mut fh,
+                        &to,
+                        &self.bytes_filtered,
+                        &self.bytes_uploaded,
+                    )?,
+                    None => {
+                        let mut counter =
+                            progress::AtomicCountRead::new(&mut fh, &self.bytes_uploaded);
+                        backend.write(len, &mut counter, &to)?;
+                    }
+                }
                 // Insert it into the cache.
-                cache.insert_file(name, counter.into_file())?;
+                cache.insert_file(name, fh)?;
                 // Prune the cache.
                 cache.prune()?;
             }
@@ -379,7 +415,7 @@ pub fn open(
     debug!("Read repository config: {c:?}");
     // Don't bother checking unfilter; we ensure both are set if one is above.
     let cached_backend = match &c.kind {
-        Kind::Filesystem { force_cache: false } if c.filter.is_none() => {
+        Kind::Filesystem { force_cache: false } if c.filters.is_none() => {
             // Uncached filesystem backends are a special case
             // (they let us directly manipulate files.)
             CachedBackendKind::File {
@@ -388,7 +424,7 @@ pub fn open(
         }
         some_cached => {
             // It's not a filesystem backend, what is it?
-            let mut backend: Box<dyn Backend + Send + Sync> = match some_cached {
+            let backend: Box<dyn Backend + Send + Sync> = match some_cached {
                 Kind::Filesystem { .. } => Box::new(fs::FilesystemBackend::open(repository)?),
                 Kind::Backblaze {
                     key_id,
@@ -403,18 +439,19 @@ pub fn open(
 
             let cache = cache::setup(cache_size)?;
 
-            if let Some((filter, unfilter)) = &c.filter {
-                backend = Box::new(filter::BackendFilter {
+            let filters = c
+                .filters
+                .as_ref()
+                .map(|(filter, unfilter)| filter::Filters {
                     filter: filter.clone(),
                     unfilter: unfilter.clone(),
-                    raw: backend,
                 });
-            }
 
             CachedBackendKind::Cached {
                 backend,
                 behavior,
                 cache,
+                filters,
             }
         }
     };

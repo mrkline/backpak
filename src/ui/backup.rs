@@ -171,6 +171,8 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
                 &Term::stdout(),
                 &back_stats,
                 &walk_stats,
+                &cached_backend.bytes_filtered,
+                &cached_backend.bytes_unfiltered,
                 &cached_backend.bytes_uploaded,
                 &cached_backend.bytes_downloaded,
             )
@@ -270,9 +272,12 @@ pub fn run(config: Configuration, repository: &Utf8Path, args: Args) -> Result<(
     let rb = nice_size(walk_stats.reused_bytes.load(Ordering::Relaxed));
     debug!("{rb} reused");
     let zbytes = nice_size(back_stats.compressed_bytes.load(Ordering::Relaxed));
+    let fbytes = nice_size(cached_backend.bytes_filtered.load(Ordering::Relaxed));
     let ubytes = nice_size(cached_backend.bytes_uploaded.load(Ordering::Relaxed));
+    debug!("{zbytes} compressed, {fbytes} filtered -> {ubytes} uploaded");
     let dbytes = nice_size(cached_backend.bytes_downloaded.load(Ordering::Relaxed));
-    debug!("{zbytes} compressed, {ubytes} uploaded, {dbytes} downloaded");
+    let ufbytes = nice_size(cached_backend.bytes_unfiltered.load(Ordering::Relaxed));
+    debug!("{dbytes} downloaded -> {ufbytes} unfiltered");
 
     let snap_id = if !args.dry_run {
         snapshot::upload(&snapshot, &cached_backend)?
@@ -309,6 +314,8 @@ fn print_progress(
     term: &Term,
     bstats: &backup::BackupStatistics,
     wstats: &WalkStatistics,
+    filtered: &AtomicU64,
+    unfiltered: &AtomicU64,
     up: &AtomicU64,
     down: &AtomicU64,
 ) -> Result<()> {
@@ -318,10 +325,12 @@ fn print_progress(
 
     let rb = wstats.reused_bytes.load(Ordering::Relaxed);
     let ub = up.load(Ordering::Relaxed);
-    print_backup_lines(i, bstats, rb, ub);
+    let fb = filtered.load(Ordering::Relaxed);
+    print_backup_lines(i, bstats, rb, fb, ub);
 
     let db = down.load(Ordering::Relaxed);
-    print_download_line(db);
+    let ufb = unfiltered.load(Ordering::Relaxed);
+    print_download_line(db, ufb);
 
     let cf = wstats.current_file.borrow();
     let cf = truncate_path(&cf, term);

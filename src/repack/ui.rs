@@ -19,11 +19,13 @@ impl<'scope> ProgressThread<'scope> {
         s: &'scope Scope<'scope, 'env>,
         bs: &'env backup::BackupStatistics,
         ws: &'env WalkStatistics,
-        down: &'env AtomicU64,
+        filtered: &'env AtomicU64,
+        unfiltered: &'env AtomicU64,
         up: &'env AtomicU64,
+        down: &'env AtomicU64,
     ) -> Self {
         let inner = progress::ProgressThread::spawn(s, |i| {
-            print_progress(i, &Term::stdout(), bs, ws, down, up)
+            print_progress(i, &Term::stdout(), bs, ws, filtered, unfiltered, up, down)
         });
         Self { inner }
     }
@@ -38,18 +40,21 @@ fn print_progress(
     term: &Term,
     bstats: &backup::BackupStatistics,
     wstats: &WalkStatistics,
-    down: &AtomicU64,
+    filtered: &AtomicU64,
+    unfiltered: &AtomicU64,
     up: &AtomicU64,
+    down: &AtomicU64,
 ) -> Result<()> {
     if i > 0 {
         term.clear_last_lines(5)?;
     }
 
     let rb = wstats.reused_bytes.load(Ordering::Relaxed);
+    let fb = filtered.load(Ordering::Relaxed);
     let ub = up.load(Ordering::Relaxed);
-    print_backup_lines(i, bstats, rb, ub);
+    print_backup_lines(i, bstats, rb, fb, ub);
 
-    print_download_line(down.load(Ordering::Relaxed));
+    print_download_line(down.load(Ordering::Relaxed), unfiltered.load(Ordering::Relaxed));
 
     let cs = wstats.current_snapshot.borrow();
     println!("Snapshot: {cs}");
