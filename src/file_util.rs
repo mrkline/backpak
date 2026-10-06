@@ -102,7 +102,7 @@ where
 
 /// Move the given file `from -> to` via copy (boo, Windows).
 #[cfg(windows)]
-pub fn move_opened<P, Q>(from: P, source: R, to: Q) -> Result<File>
+pub fn move_opened<P, Q, R>(from: P, source: R, to: Q) -> Result<File>
 where
     P: AsRef<Utf8Path>,
     Q: AsRef<Utf8Path>,
@@ -143,12 +143,16 @@ pub fn safe_copy_to_file<R: Read>(mut from: R, to: &Utf8Path) -> Result<File> {
         .with_context(|| format!("Couldn't write to {temp_path}"))?;
     drop(from);
 
+    // Sync before the rename.
+    // If we rename first, a crash can leave `to` with only part of its contents.
+    to_fh
+        .as_file()
+        .sync_all()
+        .with_context(|| format!("Couldn't sync {temp_path}"))?;
+
     let persisted = to_fh
         .persist(to)
         .with_context(|| format!("Couldn't persist {temp_path} to {to}"))?;
-    persisted
-        .sync_all()
-        .with_context(|| format!("Couldn't sync {to}"))?;
 
     Ok(persisted)
 }
@@ -164,5 +168,43 @@ pub fn nice_size(s: u64) -> String {
         // Don't split hairs, or KB.
         Bit | B | Kbit | Kibit | KB | KiB => format!("{a:.0}"),
         _ => format!("{a:.2}"),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use std::io;
+
+    use tempfile::tempdir;
+
+    /// Fails every read, like a connection that drops partway through a download.
+    struct Broken;
+
+    impl Read for Broken {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("connection dropped"))
+        }
+    }
+
+    #[test]
+    fn safe_copy_never_leaves_partial_file() -> Result<()> {
+        let td = tempdir()?;
+        let dir = Utf8Path::from_path(td.path()).unwrap();
+        let to = dir.join("foo.pack");
+
+        // A failed copy leaves no file at `to` and no .part file.
+        assert!(safe_copy_to_file(b"partial".chain(Broken), &to).is_err());
+        assert_eq!(std::fs::read_dir(dir)?.count(), 0);
+
+        safe_copy_to_file(b"complete".as_slice(), &to)?;
+        assert_eq!(std::fs::read(&to)?, b"complete");
+
+        // A failed copy over an existing file keeps the old contents.
+        assert!(safe_copy_to_file(b"partial".chain(Broken), &to).is_err());
+        assert_eq!(std::fs::read(&to)?, b"complete");
+        assert_eq!(std::fs::read_dir(dir)?.count(), 1);
+        Ok(())
     }
 }
